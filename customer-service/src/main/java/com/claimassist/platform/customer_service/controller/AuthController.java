@@ -84,8 +84,14 @@ public class AuthController {
             @RequestParam String code,
             @RequestParam String state) {
 
+        String codeVerifier = authorizationService.consumeCodeVerifier (state);
+
+        if (codeVerifier == null) {
+            throw new BadRequestException ("Invalid or expired state parameter");
+        }
+
         return ResponseEntity.ok (
-                tokenService.exchangeAuthorizationCode (code, state));
+                tokenService.exchangeAuthorizationCode (code, codeVerifier));
     }
 
     @PostMapping ("/refresh")
