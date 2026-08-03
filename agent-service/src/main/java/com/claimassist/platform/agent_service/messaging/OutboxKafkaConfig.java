@@ -13,6 +13,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.*;
 import org.springframework.kafka.listener.CommonErrorHandler;
+import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
@@ -26,6 +27,8 @@ public class OutboxKafkaConfig {
 
     private static final String CLAIM_UPDATE_REQUEST_TOPIC = "claim-update-request-event";
     private static final String CLAIM_UPDATE_RESPONSE_TOPIC = "claim-update-response-event";
+    private static final String CLAIM_UPDATE_REQUEST_DLT = CLAIM_UPDATE_REQUEST_TOPIC + ".DLT";
+    private static final String CLAIM_UPDATE_RESPONSE_DLT = CLAIM_UPDATE_RESPONSE_TOPIC + ".DLT";
 
     @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
     private String bootstrapServers;
@@ -110,12 +113,33 @@ public class OutboxKafkaConfig {
     }
 
     @Bean
+    public NewTopic claimUpdateRequestDLT() {
+        return TopicBuilder.name(CLAIM_UPDATE_REQUEST_DLT)
+                .partitions(topicPartitions)
+                .replicas(topicReplicationFactor)
+                .config(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, minInSyncReplicas)
+                .build();
+    }
+
+    @Bean
+    public NewTopic claimUpdateResponseDLT() {
+        return TopicBuilder.name(CLAIM_UPDATE_RESPONSE_DLT)
+                .partitions(topicPartitions)
+                .replicas(topicReplicationFactor)
+                .config(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, minInSyncReplicas)
+                .build();
+    }
+
+    @Bean
     public ConsumerFactory<String, String> outboxConsumerFactory() {
         Map<String, Object> config = new HashMap<>();
         config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         config.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        config.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        config.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 100);
+        config.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 30000);
         return new DefaultKafkaConsumerFactory<>(config);
     }
 
@@ -134,6 +158,8 @@ public class OutboxKafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(outboxConsumerFactory);
         factory.setCommonErrorHandler(outboxConsumerErrorHandler);
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
+        factory.getContainerProperties().setIdleEventInterval(60000L);
         return factory;
     }
 }

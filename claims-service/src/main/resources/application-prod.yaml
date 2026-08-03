@@ -42,6 +42,7 @@ spring:
       group-id: claims-service-prod
       max-poll-records: 500
       session-timeout-ms: 30000
+      enable-auto-commit: false
 
   security:
     oauth2:

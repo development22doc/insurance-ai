@@ -30,6 +30,10 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka</artifactId>
+		</dependency>
 		<!-- Keycloak / OAuth2 Resource Server support - provides Jwt, JwtDecoder,
 		     JwtAuthenticationToken, ReactiveJwtAuthenticationConverterAdapter, etc.
 		     used by KeycloakJwtAuthenticationConverter and CurrentUserProvider.

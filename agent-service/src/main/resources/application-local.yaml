@@ -37,6 +37,9 @@ spring:
     consumer:
       bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
       group-id: agent-service-local
+      max-poll-records: 100
+      session-timeout-ms: 30000
+      enable-auto-commit: false
 
   security:
     oauth2:
