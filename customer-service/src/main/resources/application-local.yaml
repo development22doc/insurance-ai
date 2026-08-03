@@ -38,12 +38,17 @@ spring:
       bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
       group-id: customer-service-local
 
-  security:
+   security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+  service-client:
+    registration-id: internal-service
+    client-id: ${SERVICE_CLIENT_ID:internal-service-client}
+    client-secret: ${SERVICE_CLIENT_SECRET:internal-service-secret}
+    token-uri: ${SERVICE_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
 
 eureka:
   client:

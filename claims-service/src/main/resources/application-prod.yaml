@@ -44,12 +44,17 @@ spring:
       session-timeout-ms: 30000
       enable-auto-commit: false
 
-  security:
+   security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+  service-client:
+    registration-id: internal-service
+    client-id: ${SERVICE_CLIENT_ID}
+    client-secret: ${SERVICE_CLIENT_SECRET}
+    token-uri: ${SERVICE_TOKEN_URI}
 
 eureka:
   client:
