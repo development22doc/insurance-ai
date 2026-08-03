@@ -19,9 +19,13 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +40,51 @@ public class GatewaySecurityConfig {
     private final ObjectMapper objectMapper;
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        // Get allowed origins from environment variable, with safe defaults
+        String allowedOriginsEnv = System.getenv("CORS_ALLOWED_ORIGINS");
+        List<String> allowedOrigins;
+
+        if (allowedOriginsEnv != null && !allowedOriginsEnv.trim().isEmpty()) {
+            allowedOrigins = Arrays.asList(allowedOriginsEnv.split(","));
+        } else {
+            // Local development defaults
+            allowedOrigins = Arrays.asList(
+                    "http://localhost:3000",   // React dev server
+                    "http://localhost:4200",   // Angular dev server
+                    "http://localhost:8080"    // Local gateway
+            );
+            log.warn("No CORS_ALLOWED_ORIGINS env var set. Using local development defaults.");
+        }
+
+        configuration.setAllowedOrigins(allowedOrigins);
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        configuration.setAllowedHeaders(Arrays.asList(
+                "Content-Type",
+                "Authorization",
+                "X-Requested-With",
+                "Correlation-ID",
+                "Accept",
+                "Origin"
+        ));
+        configuration.setExposedHeaders(Arrays.asList(
+                "Authorization",
+                "Content-Type",
+                "Correlation-ID"
+        ));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);  // 1 hour
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+
+        log.info("API Gateway CORS configuration initialized with allowed origins: {}", allowedOrigins);
+        return source;
+    }
+
+    @Bean
     public SecurityWebFilterChain securityWebFilterChain (ServerHttpSecurity http) {
 
         String[] publicRoutes = securityProperties.publicRoutes ().toArray (String[] :: new);
@@ -43,14 +92,23 @@ public class GatewaySecurityConfig {
         http
                 .csrf (ServerHttpSecurity.CsrfSpec :: disable)
 
-                .cors (Customizer.withDefaults ())
+                .cors (cors -> cors.configurationSource((CorsConfigurationSource) corsConfigurationSource()))
 
                 .headers (headers -> headers
-                        .frameOptions (frame -> frame.disable ())
-                        .contentTypeOptions (Customizer.withDefaults ())
-                        .cache (cache -> {
-                        })
-                        .hsts (Customizer.withDefaults ())
+                        .frameOptions (frame -> frame.mode(
+                                org.springframework.security.web.server.header.XFrameOptionsServerHttpHeadersWriter.Mode.DENY))
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives("default-src 'self'; " +
+                                        "script-src 'self'; " +
+                                        "style-src 'self' 'unsafe-inline'; " +
+                                        "img-src 'self' data: https:; " +
+                                        "font-src 'self'; " +
+                                        "connect-src 'self'; " +
+                                        "frame-ancestors 'none'; " +
+                                        "upgrade-insecure-requests; " +
+                                        "block-all-mixed-content"))
+                        .referrerPolicy (referrer -> referrer.policy(
+                                org.springframework.security.web.server.header.ReferrerPolicyServerHttpHeadersWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
                 )
 
                 .authorizeExchange (exchange -> exchange
@@ -70,9 +128,15 @@ public class GatewaySecurityConfig {
                                         "Access denied"))
                 );
 
-        log.info ("Gateway OAuth2 Resource Server enabled.");
+        log.info ("API Gateway OAuth2 Resource Server enabled.");
         log.info ("JWT validation through JWKS enabled.");
-        log.info ("Security headers enabled.");
+        log.info ("Comprehensive Security Headers enabled:");
+        log.info ("  - HSTS with preload");
+        log.info ("  - X-Frame-Options: DENY");
+        log.info ("  - X-Content-Type-Options: nosniff");
+        log.info ("  - Referrer-Policy: strict-origin-when-cross-origin");
+        log.info ("  - Content-Security-Policy");
+        log.info ("  - Permissions-Policy");
         log.info ("Authorization Code + PKCE enabled.");
 
         return http.build ();

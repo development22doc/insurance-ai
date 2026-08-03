@@ -19,6 +19,7 @@ import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedCli
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.context.annotation.Primary;
 
 @Slf4j
 
@@ -56,6 +57,7 @@ public class SharedSecurityAutoConfiguration {
      * Uses in-memory client service.
      */
     @Bean
+    @Primary
     public AuthorizedClientServiceOAuth2AuthorizedClientManager authorizedClientServiceManager(
             ClientRegistrationRepository clientRegistrationRepository) {
 
