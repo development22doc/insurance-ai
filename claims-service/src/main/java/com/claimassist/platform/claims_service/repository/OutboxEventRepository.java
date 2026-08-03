@@ -20,4 +20,13 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     List<OutboxEvent> findBatchForPublishing(@Param("status") OutboxStatus status, @Param("now") Instant now, Pageable pageable);
 
     Optional<OutboxEvent> findFirstByAggregateIdAndEventType(String aggregateId, String eventType);
+
+    @Query("SELECT COUNT(o) FROM OutboxEvent o WHERE o.status = :status AND o.createdAt < :threshold")
+    long countStalePendingEvents(@Param("status") OutboxStatus status, @Param("threshold") Instant threshold);
+
+    @Query("SELECT COUNT(o) FROM OutboxEvent o WHERE o.status = :status AND o.createdAt < :threshold")
+    long countStaleFailedEvents(@Param("status") OutboxStatus status, @Param("threshold") Instant threshold);
+
+    @Query("SELECT COUNT(o) FROM OutboxEvent o WHERE o.status = :status")
+    long countByStatus(@Param("status") OutboxStatus status);
 }
