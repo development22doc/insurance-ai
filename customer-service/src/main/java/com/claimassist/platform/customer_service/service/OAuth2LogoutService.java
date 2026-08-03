@@ -6,6 +6,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
+import com.claimassist.platform.customer_service.service.RefreshTokenService;
 
 @Service
 @RequiredArgsConstructor
@@ -13,6 +14,7 @@ public class OAuth2LogoutService {
 
     private final RestClient restClient;
     private final KeycloakProperties keycloakProperties;
+    private final RefreshTokenService refreshTokenService;
 
     /**
      * Performs OIDC RP-Initiated Logout using the refresh token.
@@ -31,5 +33,13 @@ public class OAuth2LogoutService {
                 .body (form)
                 .retrieve ()
                 .toBodilessEntity ();
+
+        // Revoke locally stored refresh token if present
+        try {
+            refreshTokenService.revoke(refreshToken);
+        } catch (Exception ignored) {
+            // best-effort
+        }
     }
+
 }
