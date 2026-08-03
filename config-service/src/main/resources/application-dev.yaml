@@ -1,0 +1,32 @@
+server:
+  port: 8888
+
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          uri: ${CONFIG_GIT_URI:file:///config-repo}
+          label: ${CONFIG_GIT_LABEL:main}
+          searchPaths: ""
+          timeout: 10
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://discovery-service:8761/eureka}
+    register-with-eureka: true
+    fetch-registry: false
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+management:
+  tracing:
+    sampling:
+      probability: 0.5
+
+logging:
+  level:
+    com.claimassist: INFO
+    org.springframework.cloud.config: INFO
+

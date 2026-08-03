@@ -1,0 +1,6 @@
+target/
+.idea/
+*.log
+build-*.txt
+build-*.log
+final-build.log

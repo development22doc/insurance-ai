@@ -1,0 +1,47 @@
+# Reference / documentation copy of every Keycloak-related property this
+# platform uses. The properties below are the ones actually applied - they
+# already live in local-config-repo/*.yml (served by config-service, which is
+# how every other setting in this platform is externalized) rather than in
+# any single service's classpath, so there is nothing to "activate" by
+# importing this file: it exists so a reviewer can see the whole Keycloak
+# configuration surface in one place without hunting across four config
+# files. If you copy these into a new environment's config repo, use
+# environment variables (shown below) rather than hardcoding values.
+
+# ---- customer-service, claims-service, agent-service (all three) --------
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Every resource server validates tokens against Keycloak's JWKS,
+          # discovered from this issuer, rather than a shared HMAC secret.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+
+# ---- api-gateway (reactive/WebFlux resource server) ----------------------
+# Same property, same effect - Spring Boot auto-configures a ReactiveJwtDecoder
+# instead of the servlet-side JwtDecoder because the gateway is WebFlux-only.
+# (Already shown above; not repeated here to avoid the appearance of two
+# different mechanisms - it is the same property, same issuer.)
+
+# ---- customer-service only: KeycloakProperties (see the Java record) ----
+keycloak:
+  server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8180}
+  realm: ${KEYCLOAK_REALM:claimassist}
+
+  # Public client used to proxy the resource-owner-password grant behind the
+  # existing /auth/login contract (KeycloakTokenService). No client secret in
+  # local dev because the client is public; in a real environment this
+  # should be a confidential client with directAccessGrantsEnabled - see
+  # "Production recommendations" in KEYCLOAK_SETUP.md for why Direct Access
+  # Grants should be phased out in favor of Authorization Code + PKCE.
+  token-client-id: ${KEYCLOAK_TOKEN_CLIENT_ID:claimassist-customer-app}
+  token-client-secret: ${KEYCLOAK_TOKEN_CLIENT_SECRET:}
+
+  # Confidential, service-account-only client used exclusively by
+  # KeycloakUserProvisioningService to create users at signup time via the
+  # Admin REST API. Its service account must be granted the
+  # realm-management "manage-users" client role (already wired in
+  # realm-export.json).
+  admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:claimassist-admin-service}
+  admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:local-dev-admin-client-secret}

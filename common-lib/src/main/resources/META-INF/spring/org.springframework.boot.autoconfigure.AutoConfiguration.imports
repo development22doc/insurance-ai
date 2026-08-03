@@ -1,0 +1,2 @@
+com.claimassist.platform.common_lib.security.SharedSecurityAutoConfiguration
+com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration

@@ -1,0 +1,131 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - '**.java'
+      - '**.xml'
+      - 'Dockerfile*'
+      - 'k8s/**'
+      - 'values*.yaml'
+      - '.github/workflows/deploy.yaml'
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_DEV }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm deploy to dev
+        run: |
+          helm repo add claimassist ${{ secrets.HELM_REPO_URL }}
+          helm repo update
+          helm upgrade --install claimassist-dev claimassist/insurance-ai \
+            -f values-dev.yaml \
+            --namespace insurance-platform \
+            --create-namespace \
+            --timeout 10m
+          kubectl rollout status deployment -n insurance-platform
+
+  deploy-qa:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    needs: deploy-dev
+    environment:
+      name: qa
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_QA }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm deploy to qa
+        run: |
+          helm repo add claimassist ${{ secrets.HELM_REPO_URL }}
+          helm repo update
+          helm upgrade --install claimassist-qa claimassist/insurance-ai \
+            -f values-qa.yaml \
+            --namespace insurance-platform \
+            --create-namespace \
+            --timeout 10m
+          kubectl rollout status deployment -n insurance-platform
+
+  deploy-uat:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_UAT }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm deploy to uat
+        run: |
+          helm repo add claimassist ${{ secrets.HELM_REPO_URL }}
+          helm repo update
+          helm upgrade --install claimassist-uat claimassist/insurance-ai \
+            -f values-uat.yaml \
+            --namespace insurance-platform \
+            --create-namespace \
+            --timeout 10m
+          kubectl rollout status deployment -n insurance-platform
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: deploy-uat
+    environment:
+      name: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm deploy to prod
+        run: |
+          helm repo add claimassist ${{ secrets.HELM_REPO_URL }}
+          helm repo update
+          helm upgrade --install claimassist-prod claimassist/insurance-ai \
+            -f values-prod.yaml \
+            --namespace insurance-platform \
+            --create-namespace \
+            --timeout 10m
+          kubectl rollout status deployment -n insurance-platform
+
+  rollback:
+    runs-on: ubuntu-latest
+    if: failure() && github.ref == 'refs/heads/main'
+    environment:
+      name: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm rollback
+        run: |
+          helm rollback claimassist-prod -n insurance-platform
+          kubectl rollout status deployment -n insurance-platform

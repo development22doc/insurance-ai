@@ -1,0 +1,46 @@
+server:
+  port: 8888
+  compression:
+    enabled: true
+
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          uri: ${CONFIG_GIT_URI}
+          label: ${CONFIG_GIT_LABEL:main}
+          searchPaths: ""
+          timeout: 10
+          cloneOnStart: true
+          forcePull: false
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL}
+    register-with-eureka: true
+    fetch-registry: false
+    lease-renewal-interval-in-seconds: 30
+    lease-expiration-duration-in-seconds: 90
+    healthcheck:
+      enabled: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+
+management:
+  tracing:
+    sampling:
+      probability: 0.1
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    com.claimassist: WARN
+    org.springframework.cloud.config: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
+

@@ -1,0 +1,3 @@
+CREATE DATABASE customer_db;
+CREATE DATABASE claims_db;
+CREATE DATABASE agent_db;

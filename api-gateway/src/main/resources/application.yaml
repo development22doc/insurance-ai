@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: api-gateway
+
+  config:
+    import: configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+
+server:
+  port: 8080

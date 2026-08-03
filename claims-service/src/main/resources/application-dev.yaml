@@ -1,0 +1,68 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/claimassist_claims_dev
+    username: ${POSTGRES_USER:claimassist}
+    password: ${POSTGRES_PASSWORD:changeme}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    producer:
+      acks: all
+      retries: 2147483647
+      batch-size: 16384
+      linger-ms: 10
+      compression-type: snappy
+      delivery-timeout-ms: 120000
+      properties:
+        linger.ms: 10
+        request.timeout.ms: 30000
+        retry.backoff.ms: 1000
+    consumer:
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+      group-id: claims-service-dev
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8180/realms/claimassist}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://keycloak:8180/realms/claimassist/protocol/openid-connect/certs}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://discovery-service:8761/eureka}
+    register-with-eureka: true
+    fetch-registry: true
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+management:
+  tracing:
+    sampling:
+      probability: 0.5
+
+logging:
+  level:
+    com.claimassist: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.springframework.kafka: INFO
+

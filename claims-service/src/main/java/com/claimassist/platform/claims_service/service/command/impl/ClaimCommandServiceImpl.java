@@ -1,0 +1,154 @@
+package com.claimassist.platform.claims_service.service.command.impl;
+
+import com.claimassist.platform.claims_service.dto.claim.ClaimResponse;
+import com.claimassist.platform.claims_service.entity.Claim;
+import com.claimassist.platform.claims_service.entity.ClaimParty;
+import com.claimassist.platform.claims_service.entity.ClaimPartyId;
+import com.claimassist.platform.claims_service.entity.ClaimStatusHistory;
+import com.claimassist.platform.claims_service.mapper.ClaimMapper;
+import com.claimassist.platform.claims_service.repository.ClaimPartyRepository;
+import com.claimassist.platform.claims_service.repository.ClaimRepository;
+import com.claimassist.platform.claims_service.repository.ClaimStatusHistoryRepository;
+import com.claimassist.platform.claims_service.service.command.ClaimCommandService;
+import com.claimassist.platform.claims_service.service.command.ClaimCommands.SubmitClaimCommand;
+import com.claimassist.platform.claims_service.service.command.ClaimCommands.UpdateClaimStatusCommand;
+import com.claimassist.platform.claims_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.claims_service.support.IdempotencyService;
+import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
+import com.claimassist.platform.common_lib.enums.ClaimRole;
+import com.claimassist.platform.common_lib.enums.ClaimStatus;
+import com.claimassist.platform.common_lib.error.BadRequestException;
+import com.claimassist.platform.common_lib.error.ClaimStateTransitionException;
+import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * CQRS command-side implementation for the Claim aggregate.
+ * <p>
+ * {@link #applyStatusChange} is the single, shared enforcement point for the
+ * {@link ClaimStatus} state machine - both the human-facing REST endpoint
+ * (see ClaimController) and {@code ClaimUpdateConsumer} (the AI agent's saga)
+ * call this exact method, so there is no way for the two entry points to
+ * silently diverge on what's a legal transition.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+@Transactional
+public class ClaimCommandServiceImpl implements ClaimCommandService {
+
+    private static final String SUBMIT_CLAIM_OPERATION = "claims.submitClaim";
+
+    private final ClaimRepository claimRepository;
+    private final ClaimPartyRepository claimPartyRepository;
+    private final ClaimStatusHistoryRepository claimStatusHistoryRepository;
+    private final ClaimMapper claimMapper;
+    private final CustomerServiceGateway customerServiceGateway;
+    private final IdempotencyService idempotencyService;
+
+    @Override
+    public ClaimResponse submitClaim(SubmitClaimCommand command) {
+        // Idempotent by design: a client retry (timeout, double-submit) with the
+        // same Idempotency-Key returns the ORIGINAL claim instead of opening a
+        // second claim for the same incident.
+        return idempotencyService.execute(
+                command.idempotencyKey(), SUBMIT_CLAIM_OPERATION, command.submittedByUserId(),
+                ClaimResponse.class, () -> doSubmitClaim(command)
+        );
+    }
+
+    private ClaimResponse doSubmitClaim(SubmitClaimCommand command) {
+        // Never trust a client-supplied policyId at face value - confirm it's a
+        // real, ACTIVE policy before opening a claim against it. Also confirms
+        // customer-service considers this policy valid, which is the closest this
+        // system gets to "does this policy belong to this caller" without
+        // duplicating customer-service's own ownership table here.
+        PolicyCoverageDto policy = customerServiceGateway.getPolicyCoverage(command.policyId());
+        if (!"ACTIVE".equals(policy.status())) {
+            throw new BadRequestException("Cannot file a claim against a policy that is not ACTIVE (current status: " + policy.status() + ")");
+        }
+
+        Claim claim = Claim.builder()
+                .claimNumber(generateClaimNumber())
+                .policyId(command.policyId())
+                .incidentType(command.incidentType())
+                .incidentDate(command.incidentDate())
+                .estimatedAmountCents(command.estimatedAmountCents())
+                .status(ClaimStatus.SUBMITTED)
+                .build();
+        claim = claimRepository.save(claim);
+
+        ClaimParty policyholder = ClaimParty.builder()
+                .id(new ClaimPartyId(claim.getId(), command.submittedByUserId()))
+                .claim(claim)
+                .claimRole(ClaimRole.POLICYHOLDER)
+                .build();
+        claimPartyRepository.save(policyholder);
+
+        claimStatusHistoryRepository.save(ClaimStatusHistory.builder()
+                .claimId(claim.getId())
+                .fromStatus("NONE")
+                .toStatus(ClaimStatus.SUBMITTED.name())
+                .changedBy(command.submittedByUserId().toString())
+                .build());
+
+        return claimMapper.toClaimResponse(claim);
+    }
+
+    /**
+     * NOT annotated with @PreAuthorize on purpose: this method is called from
+     * two very different contexts - an authenticated HTTP request (where
+     * @PreAuthorize on the CONTROLLER method, which still has a populated
+     * SecurityContext, is the right place to enforce it - see ClaimController)
+     * and a Kafka listener thread (ClaimUpdateConsumer), which has no HTTP
+     * request and therefore no SecurityContext for @PreAuthorize's SpEL to read
+     * "the current user" from at all. Each caller is responsible for its own
+     * authorization check appropriate to its context before calling this.
+     */
+    @Override
+    @org.springframework.cache.annotation.CacheEvict(
+            cacheNames = com.claimassist.platform.claims_service.config.RedisCacheConfig.CLAIM_STATUS_CACHE,
+            key = "#command.claimId()")
+    public Claim applyStatusChange(UpdateClaimStatusCommand command) {
+        Claim claim = claimRepository.findById(command.claimId())
+                .orElseThrow(() -> new ResourceNotFoundException("Claim", command.claimId().toString()));
+
+        ClaimStatus from = claim.getStatus();
+        ClaimStatus to;
+        try {
+            to = ClaimStatus.valueOf(command.newStatus());
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Unknown claim status: " + command.newStatus());
+        }
+
+        if (!from.canTransitionTo(to)) {
+            throw new ClaimStateTransitionException(from.name(), to.name());
+        }
+
+        claim.setStatus(to);
+        claim = claimRepository.save(claim);
+
+        claimStatusHistoryRepository.save(ClaimStatusHistory.builder()
+                .claimId(claim.getId())
+                .fromStatus(from.name())
+                .toStatus(to.name())
+                .changedBy(command.changedBy())
+                .note(command.note())
+                .build());
+
+        log.info("Claim {} transitioned {} -> {} (by {})", claim.getClaimNumber(), from, to, command.changedBy());
+
+        return claim;
+    }
+
+    private String generateClaimNumber() {
+        return "CLM-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    }
+}

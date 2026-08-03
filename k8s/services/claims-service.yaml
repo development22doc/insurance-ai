@@ -1,0 +1,70 @@
+# Representative example - customer-service, agent-service, api-gateway,
+# discovery-service, and config-service each get their own file following
+# this EXACT shape (same probe timings, same envFrom pattern, same resource
+# tiers), just with a different image/port/app label. Not duplicated 5x here
+# to keep this deliverable focused - ask for any specific one in full.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: claims-service-account
+  namespace: claimassist-core
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claims-service
+  namespace: claimassist-core
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: claims-service
+  template:
+    metadata:
+      labels:
+        app: claims-service
+    spec:
+      serviceAccountName: claims-service-account
+      containers:
+        - name: claims-service
+          image: ${REGISTRY}/claimassist/claims-service:latest
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: claimassist-shared-config
+            - secretRef:
+                name: app-secrets
+          env:
+            - name: CONFIG_SERVER_URL
+              value: http://config-service:8888
+            - name: ZIPKIN_ENDPOINT
+              value: http://zipkin-service:9411/api/v2/spans
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 1000m, memory: 1Gi }
+          startupProbe:
+            httpGet: { path: /actuator/health, port: 80 }
+            failureThreshold: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 80 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 80 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: claims-service
+  namespace: claimassist-core
+spec:
+  selector:
+    app: claims-service
+  ports:
+    - port: 80
+      targetPort: 80

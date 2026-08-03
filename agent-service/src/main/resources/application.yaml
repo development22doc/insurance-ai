@@ -1,0 +1,99 @@
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"
+
+spring:
+  application:
+    name: agent-service
+  config:
+    import: configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "0"
+    validate-on-migrate: true
+  lifecycle:
+    timeout-per-shutdown-phase: 25s
+  ai:
+    openai:
+      base-url: https://openrouter.ai/api
+      api-key: ${AI_API_KEY}
+      chat:
+        options:
+          model: ${AI_MODEL:google/gemini-3-flash-preview}
+          temperature: 0.2   # low but not zero - deterministic-leaning without being fully rigid on phrasing; the FACTS still always come from tools, never from temperature
+
+server:
+  shutdown: graceful   # let an in-flight streaming agent response finish instead of being cut mid-token
+
+outbox:
+  publisher:
+    poll-interval-ms: 2000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://zipkin-service.claimassist-core.svc.cluster.local:9411/api/v2/spans}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      claimsService:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+      customerService:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+  retry:
+    instances:
+      claimsService:
+        max-attempts: 3
+        wait-duration: 300ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - feign.FeignException.ServiceUnavailable
+          - feign.FeignException.GatewayTimeout
+          - java.io.IOException
+        ignore-exceptions:
+          - feign.FeignException.Unauthorized
+          - feign.FeignException.NotFound
+      customerService:
+        max-attempts: 3
+        wait-duration: 300ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - feign.FeignException.ServiceUnavailable
+          - feign.FeignException.GatewayTimeout
+          - java.io.IOException
+        ignore-exceptions:
+          - feign.FeignException.Unauthorized
+          - feign.FeignException.NotFound
