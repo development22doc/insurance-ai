@@ -41,6 +41,8 @@ public class ClaimSagaOrchestratorService {
     private final SagaProcessedMessageRepository processedMessageRepository;
     private final SagaOutboxPublisher sagaOutboxPublisher;
     private final SagaMetricsService sagaMetricsService;
+    private final SagaCompensationHandler compensationHandler;
+    private final SagaIdempotencyManager idempotencyManager;
     private final ObjectMapper objectMapper;
 
     @Value("${saga.orchestrator.timeout-seconds:180}")
@@ -201,6 +203,11 @@ public class ClaimSagaOrchestratorService {
         if (result.step() == SagaStepType.PAYMENT || result.step() == SagaStepType.NOTIFICATION) {
             saga.setStatus(SagaOrchestrationStatus.COMPENSATING);
             saga.setCompensationRequired(true);
+
+            // Trigger compensation handler
+            compensationHandler.executeCompensation(saga.getSagaId(), result.step(), saga.getClaimId(),
+                    "Step " + result.step().name() + " failed: " + result.errorMessage());
+
             dispatchStep(saga, SagaStepType.COMPENSATION, saga.getAttempts());
             return;
         }

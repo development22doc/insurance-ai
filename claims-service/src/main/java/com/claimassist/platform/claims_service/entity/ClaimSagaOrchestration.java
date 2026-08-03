@@ -66,6 +66,15 @@ public class ClaimSagaOrchestration {
 
     String lastError;
 
+    // Failure recovery tracking
+    Instant nextRetryAt;
+    Instant lastRecoveryAttemptAt;
+    String lastRecoveryError;
+
+    @Column(nullable = false)
+    @Builder.Default
+    int recoveryFailureCount = 0;
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
