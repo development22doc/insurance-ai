@@ -1,0 +1,80 @@
+# Production environment values (moved from repository root)
+# Source: ../values-prod.yaml
+
+replicaCount:
+  claimsService: 4
+  customerService: 4
+  agentService: 4
+  apiGateway: 3
+  configService: 2
+  discoveryService: 2
+
+image:
+  registry: docker.io
+  repository: claimassist
+  tag: latest
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  host: api.claimassist.io
+  tls: true
+  certIssuer: letsencrypt-prod
+
+autoscaling:
+  enabled: true
+  minReplicas: 4
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 70
+
+resources:
+  claims:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: 2000m, memory: 2Gi }
+  customer:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: 2000m, memory: 2Gi }
+  agent:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: 2000m, memory: 2Gi }
+  gateway:
+    requests: { cpu: 400m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  config:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { cpu: 800m, memory: 1Gi }
+
+persistence:
+  postgres:
+    size: 500Gi
+    storageClass: ssd
+  mongodb:
+    size: 500Gi
+    storageClass: ssd
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+podAntiAffinity:
+  enabled: true
+  type: preferred
+
+prometheus:
+  enabled: true
+  retention: 60d
+  storageSize: 100Gi
+
+grafana:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+
+monitoring:
+  alerting:
+    enabled: true
+    slackChannel: alerts
+

@@ -1,0 +1,59 @@
+# QA environment values (moved from repository root)
+# Source: ../values-qa.yaml
+
+replicaCount:
+  claimsService: 3
+  customerService: 3
+  agentService: 3
+  apiGateway: 2
+  configService: 1
+  discoveryService: 1
+
+image:
+  registry: docker.io
+  repository: claimassist
+  tag: qa-latest
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  host: api-qa.claimassist.io
+  tls: true
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+resources:
+  claims:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  customer:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  agent:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  gateway:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  config:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+persistence:
+  postgres:
+    size: 50Gi
+    storageClass: ssd
+
+prometheus:
+  enabled: true
+  retention: 15d
+
+grafana:
+  enabled: true
+

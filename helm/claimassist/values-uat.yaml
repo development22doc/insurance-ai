@@ -1,0 +1,59 @@
+# UAT environment values (moved from repository root)
+# Source: ../values-uat.yaml
+
+replicaCount:
+  claimsService: 3
+  customerService: 3
+  agentService: 3
+  apiGateway: 2
+  configService: 1
+  discoveryService: 1
+
+image:
+  registry: docker.io
+  repository: claimassist
+  tag: uat-latest
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  host: api-uat.claimassist.io
+  tls: true
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+resources:
+  claims:
+    requests: { cpu: 300m, memory: 768Mi }
+    limits: { cpu: 1200m, memory: 1.5Gi }
+  customer:
+    requests: { cpu: 300m, memory: 768Mi }
+    limits: { cpu: 1200m, memory: 1.5Gi }
+  agent:
+    requests: { cpu: 300m, memory: 768Mi }
+    limits: { cpu: 1200m, memory: 1.5Gi }
+  gateway:
+    requests: { cpu: 250m, memory: 384Mi }
+    limits: { cpu: 600m, memory: 768Mi }
+  config:
+    requests: { cpu: 150m, memory: 384Mi }
+    limits: { cpu: 600m, memory: 768Mi }
+
+persistence:
+  postgres:
+    size: 100Gi
+    storageClass: ssd
+
+prometheus:
+  enabled: true
+  retention: 30d
+
+grafana:
+  enabled: true
+

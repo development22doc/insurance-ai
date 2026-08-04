@@ -112,11 +112,11 @@ kubectl apply -f k8s/network-policies.yaml
 
 ### Environment-Specific Values
 
-- **Local Development**: `values-local.yaml`
-- **Development**: `values-dev.yaml`
-- **QA**: `values-qa.yaml`
-- **UAT**: `values-uat.yaml`
-- **Production**: `values-prod.yaml`
+- **Local Development**: `helm/claimassist/values-local.yaml`
+- **Development**: `helm/claimassist/values-dev.yaml`
+- **QA**: `helm/claimassist/values-qa.yaml`
+- **UAT**: `helm/claimassist/values-uat.yaml`
+- **Production**: `helm/claimassist/values-prod.yaml`
 
 ### Config Server
 

@@ -1,0 +1,88 @@
+# Repository root values.yaml moved into helm/claimassist as values-root.yaml
+# Source: ../../values.yaml
+
+# This file contains the original repository-level default values.
+# It has been moved to avoid duplicate top-level Helm values files and to
+# keep all Helm values inside the chart directory.
+
+# Default Helm values for ClaimAssist
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount:
+  claimsService: 2
+  customerService: 2
+  agentService: 2
+  apiGateway: 2
+  configService: 1
+  discoveryService: 1
+
+image:
+  registry: localhost:5000
+  repository: claimassist
+  tag: latest
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  host: claimassist.local
+
+resources:
+  claims:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  customer:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  agent:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  gateway:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  config:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+persistence:
+  postgres:
+    size: 10Gi
+    storageClass: standard
+
+postgres:
+  enabled: true
+  auth:
+    username: claimassist
+    password: changeme
+
+redis:
+  enabled: true
+  host: redis-service
+  port: 6379
+
+kafka:
+  enabled: true
+  brokers: kafka-service:9092
+
+zipkin:
+  enabled: true
+  endpoint: http://zipkin-service:9411/api/v2/spans
+
+prometheus:
+  enabled: true
+  retention: 15d
+
+grafana:
+  enabled: true
+  admin:
+    user: admin
+    password: changeme
+
