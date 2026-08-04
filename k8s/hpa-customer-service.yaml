@@ -2,7 +2,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: customer-service-hpa
-  namespace: insurance-platform
+  namespace: claimassist-core
   labels:
     app: customer-service
 spec:
