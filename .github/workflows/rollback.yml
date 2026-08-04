@@ -1,0 +1,87 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to rollback'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      revision:
+        description: 'Revision to rollback to (leave empty for previous)'
+        required: false
+        type: string
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: ${{ github.event.inputs.environment }}
+
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.27.0'
+
+    - name: Configure kubectl
+      run: |
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+        chmod 600 $HOME/.kube/config
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: '3.12.0'
+
+    - name: Get current Helm release history
+      run: |
+        echo "=== Helm Release History ==="
+        helm history claimassist-platform -n claimassist-core
+
+    - name: Perform rollback
+      run: |
+        if [ -z "${{ github.event.inputs.revision }}" ]; then
+          echo "Rolling back to previous release..."
+          helm rollback claimassist-platform -n claimassist-core
+        else
+          echo "Rolling back to revision ${{ github.event.inputs.revision }}..."
+          helm rollback claimassist-platform ${{ github.event.inputs.revision }} -n claimassist-core
+        fi
+
+    - name: Wait for rollback to complete
+      run: |
+        kubectl rollout status deployment/api-gateway -n claimassist-core --timeout=5m
+        kubectl rollout status deployment/customer-service -n claimassist-core --timeout=5m
+        kubectl rollout status deployment/claims-service -n claimassist-core --timeout=5m
+        kubectl rollout status deployment/agent-service -n claimassist-core --timeout=5m
+
+    - name: Verify rollback
+      run: |
+        echo "=== Current Deployment Status ==="
+        kubectl get pods -n claimassist-core
+        echo ""
+        echo "=== Service Status ==="
+        kubectl get services -n claimassist-core
+        echo ""
+        echo "=== Latest Helm Release ==="
+        helm status claimassist-platform -n claimassist-core
+
+    - name: Send rollback notification
+      if: always()
+      run: |
+        echo "Rollback completed to environment: ${{ github.event.inputs.environment }}"
+
