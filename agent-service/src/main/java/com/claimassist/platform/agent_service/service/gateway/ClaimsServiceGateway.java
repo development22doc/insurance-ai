@@ -7,6 +7,7 @@ import com.claimassist.platform.common_lib.enums.ClaimPermission;
 import feign.FeignException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.CredentialsExpiredException;
@@ -37,18 +38,21 @@ public class ClaimsServiceGateway {
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "statusFallback")
     @Retry(name = INSTANCE)
+    @TimeLimiter(name = INSTANCE)
     public ClaimStatusDto getClaimStatus(Long claimId) {
         return claimsClient.getClaimStatus(claimId);
     }
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "documentsFallback")
     @Retry(name = INSTANCE)
+    @TimeLimiter(name = INSTANCE)
     public List<ClaimDocumentSummaryDto> getClaimDocuments(Long claimId) {
         return claimsClient.getClaimDocuments(claimId);
     }
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "permissionFallback")
     @Retry(name = INSTANCE)
+    @TimeLimiter(name = INSTANCE)
     public boolean checkPermission(Long claimId, ClaimPermission permission) {
         return claimsClient.checkPermission(claimId, permission);
     }

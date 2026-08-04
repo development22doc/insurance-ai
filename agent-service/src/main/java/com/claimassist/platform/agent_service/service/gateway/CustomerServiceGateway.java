@@ -4,6 +4,7 @@ import com.claimassist.platform.agent_service.client.CustomerClient;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -24,6 +25,7 @@ public class CustomerServiceGateway {
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "policyFallback")
     @Retry(name = INSTANCE)
+    @TimeLimiter(name = INSTANCE)
     public PolicyCoverageDto getPolicyCoverage(Long policyId) {
         return customerClient.getPolicyCoverage(policyId);
     }
