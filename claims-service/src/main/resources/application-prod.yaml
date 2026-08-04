@@ -99,3 +99,8 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
 
+# Production CORS defaults. Override via CORS_ALLOWED_ORIGINS env var or
+# application property 'cors.allowed-origins'. Use comma-separated values.
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:https://api.claimassist.example.com,https://app.claimassist.example.com}
+

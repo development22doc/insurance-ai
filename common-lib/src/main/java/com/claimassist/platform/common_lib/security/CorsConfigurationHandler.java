@@ -1,9 +1,11 @@
 package com.claimassist.platform.common_lib.security;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -14,12 +16,16 @@ import java.util.List;
 /**
  * CORS configuration for servlet-based services.
  * Configures cross-origin resource sharing with restrictive defaults.
- * Individual services can override allowedOrigins via environment variables.
+ * Individual services can override allowedOrigins via the `cors.allowed-origins`
+ * application property or the CORS_ALLOWED_ORIGINS environment variable.
  */
 @Slf4j
 @Configuration
+@RequiredArgsConstructor
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class CorsConfigurationHandler {
+
+    private final Environment environment;
 
     /**
      * Creates a CORS configuration source with restrictive defaults.
@@ -39,11 +45,16 @@ public class CorsConfigurationHandler {
 
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Get allowed origins from environment variable, with safe local defaults
+        // Prefer explicit application property 'cors.allowed-origins', then
+        // fallback to the CORS_ALLOWED_ORIGINS environment variable. If neither
+        // is provided, use local development defaults.
+        String allowedOriginsProp = environment.getProperty("cors.allowed-origins");
         String allowedOriginsEnv = System.getenv("CORS_ALLOWED_ORIGINS");
         List<String> allowedOrigins;
 
-        if (allowedOriginsEnv != null && !allowedOriginsEnv.trim().isEmpty()) {
+        if (allowedOriginsProp != null && !allowedOriginsProp.trim().isEmpty()) {
+            allowedOrigins = Arrays.asList(allowedOriginsProp.split(","));
+        } else if (allowedOriginsEnv != null && !allowedOriginsEnv.trim().isEmpty()) {
             allowedOrigins = Arrays.asList(allowedOriginsEnv.split(","));
         } else {
             // Local development defaults - no production use
@@ -52,7 +63,7 @@ public class CorsConfigurationHandler {
                     "http://localhost:4200",   // Angular dev server
                     "http://localhost:8080"    // Local gateway
             );
-            log.warn("No CORS_ALLOWED_ORIGINS env var set. Using local development defaults.");
+            log.warn("No CORS allowed origins configured. Using local development defaults.");
         }
 
         configuration.setAllowedOrigins(allowedOrigins);
