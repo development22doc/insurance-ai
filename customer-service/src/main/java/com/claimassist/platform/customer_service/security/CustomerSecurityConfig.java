@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -33,7 +35,16 @@ public class CustomerSecurityConfig {
         log.info ("Initializing Customer Service Security Filter Chain.");
 
         httpSecurity
-                .csrf (csrf -> csrf.disable ())
+                .csrf (csrf -> csrf
+                        // Use a cookie-backed CSRF token repository for browser-based flows
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        // Ignore CSRF for actuator, webhook and API endpoints which are stateless/consumed by machines
+                        .ignoringRequestMatchers(
+                                new AntPathRequestMatcher("/actuator/**"),
+                                new AntPathRequestMatcher("/webhooks/**"),
+                                new AntPathRequestMatcher("/api/**")
+                        )
+                )
                 .cors (cors -> cors.configurationSource (corsConfigurationSource))
                 .headers (headers -> {
                         headers.frameOptions (frameOptions -> frameOptions.deny ());
