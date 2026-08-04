@@ -24,7 +24,7 @@ spec:
         - name: config-service
           image: ${REGISTRY}/claimassist/config-service:latest
           ports:
-            - containerPort: 80
+            - containerPort: 8888
           envFrom:
             - configMapRef:
                 name: claimassist-shared-config
@@ -37,11 +37,11 @@ spec:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: 500m, memory: 512Mi }
           readinessProbe:
-            httpGet: { path: /actuator/health, port: 80 }
+            httpGet: { path: /actuator/health, port: 8888 }
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /actuator/health, port: 80 }
+            httpGet: { path: /actuator/health, port: 8888 }
             initialDelaySeconds: 30
             periodSeconds: 15
 ---
