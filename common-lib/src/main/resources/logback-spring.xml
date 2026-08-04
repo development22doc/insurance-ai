@@ -1,0 +1,45 @@
+<configuration>
+    <!-- Console appender that emits structured JSON using logstash-logback-encoder -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml" />
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp>
+                    <fieldName>timestamp</fieldName>
+                    <timeZone>UTC</timeZone>
+                </timestamp>
+                <version>
+                    <fieldName>version</fieldName>
+                </version>
+                <loggerName>
+                    <fieldName>logger</fieldName>
+                </loggerName>
+                <threadName>
+                    <fieldName>thread</fieldName>
+                </threadName>
+                <logLevel>
+                    <fieldName>level</fieldName>
+                </logLevel>
+                <message>
+                    <fieldName>message</fieldName>
+                </message>
+                <mdc>
+                    <!-- Include common MDC keys so they are always present in JSON output -->
+                    <includeMdcKeyName>correlationId</includeMdcKeyName>
+                    <includeMdcKeyName>requestId</includeMdcKeyName>
+                    <includeMdcKeyName>traceId</includeMdcKeyName>
+                    <includeMdcKeyName>spanId</includeMdcKeyName>
+                </mdc>
+                <stackTrace>
+                    <fieldName>exception</fieldName>
+                </stackTrace>
+            </providers>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+</configuration>
+

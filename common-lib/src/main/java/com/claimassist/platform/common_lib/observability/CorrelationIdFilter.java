@@ -94,12 +94,42 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         if (value == null) {
             return "";
         }
-        String normalized = key.toLowerCase();
-        if (normalized.contains("authorization") || normalized.contains("cookie") || normalized.contains("token")
-                || normalized.contains("secret") || normalized.contains("password")) {
+        String normalizedKey = key == null ? "" : key.toLowerCase();
+        String normalizedValue = value == null ? "" : value.trim();
+
+        // If header name indicates sensitive content, mask generically
+        if (normalizedKey.contains("authorization") || normalizedKey.contains("password")
+                || normalizedKey.contains("secret") || normalizedKey.contains("client")
+                || normalizedKey.contains("api") || normalizedKey.contains("token")
+                || normalizedKey.contains("refresh") || normalizedKey.contains("access")) {
+            // For Authorization header, preserve scheme (e.g., Bearer) but mask token
+            if (normalizedKey.contains("authorization") && normalizedValue.contains(" ")) {
+                String scheme = normalizedValue.substring(0, normalizedValue.indexOf(' '));
+                return scheme + " ***";
+            }
             return "***";
         }
+
+        // Mask values that look like JWTs or long tokens even if header name isn't sensitive
+        if (looksLikeJwt(normalizedValue) || looksLikeLongToken(normalizedValue)) {
+            // If it looks like 'Bearer <token>' mask token part
+            if (normalizedValue.toLowerCase().startsWith("bearer ")) {
+                return "Bearer ***";
+            }
+            return "***";
+        }
+
         return value;
+    }
+
+    private boolean looksLikeJwt(String v) {
+        // crude check: JWTs have three parts separated by dots
+        return v != null && v.chars().filter(ch -> ch == '.').count() == 2;
+    }
+
+    private boolean looksLikeLongToken(String v) {
+        // treat long base64-like strings as tokens
+        return v != null && v.length() > 40;
     }
 
     private String valueOrDash(String value) {
