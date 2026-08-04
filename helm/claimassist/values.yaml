@@ -1,0 +1,43 @@
+# Chart-level defaults for claimassist
+replicaCount:
+  apiGateway: 2
+
+image:
+  registry: localhost:5000
+  repository: claimassist
+  tag: latest
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  host: claimassist.local
+
+resources:
+  requests: { cpu: 200m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+postgres:
+  enabled: true
+  auth:
+    username: claimassist
+    password: changeme
+
+zipkin:
+  enabled: true
+  endpoint: http://zipkin-service:9411/api/v2/spans
+
+config:
+  redis:
+    host: redis-service
+    port: 6379
+  kafka:
+    brokers: kafka-service:9092
+

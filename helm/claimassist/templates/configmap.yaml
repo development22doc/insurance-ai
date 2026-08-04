@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-shared-config
+data:
+  POSTGRES_USER: {{ .Values.postgres.auth.username | quote }}
+  POSTGRES_PASSWORD: {{ .Values.postgres.auth.password | quote }}
+  REDIS_HOST: {{ .Values.config.redis.host | quote }}
+  REDIS_PORT: "{{ .Values.config.redis.port }}"
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.config.kafka.brokers | quote }}
+  ZIPKIN_ENDPOINT: {{ .Values.zipkin.endpoint | quote }}
+  SPRING_PROFILES_ACTIVE: k8s
+

@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels:
+    app: api-gateway
+spec:
+  replicas: {{ .Values.replicaCount.apiGateway | default 1 }}
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/api-gateway:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | quote }}
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: claimassist-shared-config
+            - secretRef:
+                name: app-secrets
+          env:
+            - name: CONFIG_SERVER_URL
+              value: http://config-service:8888
+            - name: ZIPKIN_ENDPOINT
+              value: "{{ .Values.zipkin.endpoint }}"
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | default "200m" }}
+              memory: {{ .Values.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.resources.limits.memory | default "512Mi" }}
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 80
+            failureThreshold: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 15
+
