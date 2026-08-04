@@ -37,6 +37,7 @@ public class ClaimsSecurityConfig {
                 .headers (headers -> {
                         headers.frameOptions (frameOptions -> frameOptions.deny ());
                         headers.xssProtection ();
+                        headers.contentTypeOptions ();
                         headers.cacheControl ();
                         headers.httpStrictTransportSecurity (hsts -> hsts
                                 .includeSubDomains (true)
