@@ -130,29 +130,9 @@ services:
       retries: 5
     mem_limit: 1g
 
-  mongo:
-    image: mongo:6.0
-    container_name: claimassist-mongo
-    restart: unless-stopped
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    networks:
-      - backend
-    healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping')\" || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
 volumes:
   pgdata:
   keycloak_pgdata:
-  mongodb_data:
 networks:
   backend:
     driver: bridge

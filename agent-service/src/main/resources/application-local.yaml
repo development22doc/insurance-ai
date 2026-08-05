@@ -1,14 +1,16 @@
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/claimassist_agent_local
-    username: ${POSTGRES_USER:claimassist}
-    password: ${POSTGRES_PASSWORD:claimassist}
+    username: claimassist
+    password: claimassist
+    driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
+      maximum-pool-size: 20
+      minimum-idle: 5
       connection-timeout: 20000
-      idle-timeout: 300000
-      max-lifetime: 1200000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      auto-commit: false
 
   jpa:
     hibernate:
@@ -20,6 +22,12 @@ spring:
         jdbc:
           batch_size: 20
           fetch_size: 50
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "0"
+    validate-on-migrate: true
 
   data:
     redis:
@@ -72,6 +80,13 @@ eureka:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
     register-with-eureka: true
     fetch-registry: true
+
+outbox:
+  publisher:
+    poll-interval-ms: 999999999
+    batch-size: 10
+    max-attempts: 3
+    retry-delay-ms: 1000
 
 logging:
   level:

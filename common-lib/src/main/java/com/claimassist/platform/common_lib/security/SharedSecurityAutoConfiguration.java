@@ -30,15 +30,26 @@ import org.springframework.context.annotation.Primary;
 public class SharedSecurityAutoConfiguration {
 
     /**
-     * Configures the OAuth2AuthorizedClientManager for client-credentials flow.
-     * Uses in-memory storage for simplicity; does not require an HTTP session.
-     * Implements token caching and automatic renewal before expiry.
+     * Configures the OAuth2AuthorizedClientManager for web/servlet environments.
+     * Uses OAuth2AuthorizedClientRepository for persistence across requests.
+     * Only created if both ClientRegistrationRepository and OAuth2AuthorizedClientRepository are available.
+     * This bean is conditionally created and serves as a fallback for servlet environments
+     * if the primary authorizedClientServiceManager is not suitable.
      */
-    @Bean
-    @ConditionalOnBean(ClientRegistrationRepository.class)
-    public OAuth2AuthorizedClientManager authorizedClientManager(
-            ClientRegistrationRepository clientRegistrationRepository,
-            OAuth2AuthorizedClientRepository authorizedClientRepository) {
+    @Bean(name = "webEnvironmentAuthorizedClientManager")
+    public OAuth2AuthorizedClientManager webEnvironmentAuthorizedClientManager(
+            ObjectProvider<ClientRegistrationRepository> clientRegistrationRepositoryProvider,
+            ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClientRepositoryProvider) {
+
+        ClientRegistrationRepository clientRegistrationRepository =
+                clientRegistrationRepositoryProvider.getIfAvailable();
+        OAuth2AuthorizedClientRepository authorizedClientRepository =
+                authorizedClientRepositoryProvider.getIfAvailable();
+
+        if (clientRegistrationRepository == null || authorizedClientRepository == null) {
+            log.debug("ClientRegistrationRepository or OAuth2AuthorizedClientRepository not available - OAuth2 client-credentials flow disabled for web environments in this service");
+            return null;
+        }
 
         OAuth2AuthorizedClientProvider authorizedClientProvider =
                 OAuth2AuthorizedClientProviderBuilder.builder()
@@ -46,18 +57,24 @@ public class SharedSecurityAutoConfiguration {
                         .refreshToken()        // Enable refresh token grant type
                         .build();
 
-        DefaultOAuth2AuthorizedClientManager authorizedClientManager =
+        DefaultOAuth2AuthorizedClientManager webAuthorizedClientManager =
                 new DefaultOAuth2AuthorizedClientManager(
                         clientRegistrationRepository,
                         authorizedClientRepository);
 
-        authorizedClientManager.setAuthorizedClientProvider(authorizedClientProvider);
-        return authorizedClientManager;
+        webAuthorizedClientManager.setAuthorizedClientProvider(authorizedClientProvider);
+        return webAuthorizedClientManager;
     }
 
     /**
-     * Alternative bean for non-servlet environments (Kafka, scheduled tasks, batch jobs).
-     * Uses in-memory client service. Only created if ClientRegistrationRepository is available
+     * Primary bean for OAuth2AuthorizedClientManager - for non-servlet environments.
+     * Used in Kafka consumers, scheduled tasks, batch jobs, and other background services.
+     * Uses in-memory client service for simplicity; does not require an HTTP session.
+     * Implements token caching and automatic renewal before expiry.
+     *
+     * This is marked as @Primary because it's the most commonly needed implementation
+     * across the ClaimAssist platform for service-to-service authentication.
+     * Only created if ClientRegistrationRepository is available
      * (i.e., if security.service-client.clientId is configured).
      */
     @Bean
@@ -86,7 +103,7 @@ public class SharedSecurityAutoConfiguration {
                         clientService);
 
         authorizedClientManager.setAuthorizedClientProvider(authorizedClientProvider);
-        log.debug("AuthorizedClientServiceOAuth2AuthorizedClientManager bean created successfully");
+        log.debug("AuthorizedClientServiceOAuth2AuthorizedClientManager (primary) bean created successfully");
         return authorizedClientManager;
     }
 
