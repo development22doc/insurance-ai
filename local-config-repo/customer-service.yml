@@ -1,0 +1,72 @@
+server:
+  port: 8081
+
+logging:
+  level:
+    org.springframework.security: TRACE
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+    enable:
+      jvm: true
+      process: true
+      logback: true
+      tomcat: true
+      jdbc: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        jdbc.connections.usage: true
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/customer_db
+    username: claimassist
+    password: claimassist
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+
+keycloak:
+  server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8180}
+  realm: ${KEYCLOAK_REALM:claimassist}
+  client-id: ${KEYCLOAK_CLIENT_ID:claimassist-customer-app}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+  redirect-uri: ${KEYCLOAK_REDIRECT_URI:http://localhost:8081/auth/callback}
+  admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:claimassist-admin-service}
+  admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:}

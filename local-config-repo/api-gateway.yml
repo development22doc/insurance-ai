@@ -1,0 +1,117 @@
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    reactor.netty.http.client: DEBUG
+  pattern:
+    level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"
+
+spring:
+  application:
+    name: api-gateway
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          default-filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+
+          routes:
+            - id: customer-service
+              uri: lb://CUSTOMER-SERVICE
+              predicates:
+                - Path=/customer/**
+
+            - id: claim-service
+              uri: lb://CLAIM-SERVICE
+              predicates:
+                - Path=/claims/**
+
+            - id: policy-service
+              uri: lb://POLICY-SERVICE
+              predicates:
+                - Path=/policies/**
+
+            - id: notification-service
+              uri: lb://NOTIFICATION-SERVICE
+              predicates:
+                - Path=/notifications/**
+
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+
+server:
+  shutdown: graceful
+
+app:
+  security:
+    public-routes:
+      - /customer/auth/signup
+      - /customer/auth/authorize
+      - /customer/auth/callback
+      - /customer/auth/refresh
+      - /customer/auth/logout
+      - /customer/webhooks/**
+      - /actuator/**
+      - /v3/api-docs/**
+      - /swagger-ui/**
+      - /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+
+  metrics:
+    enable:
+      jvm: true
+      process: true
+      logback: true
+      redis: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        redis.command.duration: true
+    tags:
+      application: ${spring.application.name}
+    export:
+      prometheus:
+        enabled: true
+
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+  tracing:
+    sampling:
+      probability: 1.0
+
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}

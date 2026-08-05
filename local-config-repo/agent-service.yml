@@ -1,0 +1,192 @@
+server:
+  port: 8083
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+    enable:
+      jvm: true
+      process: true
+      logback: true
+      tomcat: true
+      jdbc: true
+      redis: true
+      kafka: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        jdbc.connections.usage: true
+        redis.command.duration: true
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/agent_db
+    username: claimassist
+    password: claimassist
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      observation-enabled: ${KAFKA_PRODUCER_OBSERVATION_ENABLED:true}
+    listener:
+      observation-enabled: ${KAFKA_LISTENER_OBSERVATION_ENABLED:true}
+    producer:
+      acks: ${KAFKA_PRODUCER_ACKS:all}
+      retries: ${KAFKA_PRODUCER_RETRIES:2147483647}
+      batch-size: ${KAFKA_PRODUCER_BATCH_SIZE:16384}
+      linger-ms: ${KAFKA_PRODUCER_LINGER_MS:10}
+      properties:
+        compression.type: ${KAFKA_PRODUCER_COMPRESSION:snappy}
+        delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:120000}
+        request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
+        retry.backoff.ms: ${KAFKA_RETRY_BACKOFF_MS:1000}
+  ai:
+    openai:
+      api-key: ${AI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o-mini
+  security:
+    oauth2:
+      client:
+        provider:
+          keycloak:
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
+        registration:
+          internal-service:
+            provider: keycloak
+            authorization-grant-type: client_credentials
+            client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+            client-secret: ${SERVICE_CLIENT_SECRET:}
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+security:
+  service-client:
+    registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+outbox:
+  publisher:
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:2000}
+    initial-delay-ms: ${OUTBOX_INITIAL_DELAY_MS:2000}
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    max-attempts: ${OUTBOX_MAX_ATTEMPTS:5}
+    retry:
+      base-delay-ms: ${OUTBOX_RETRY_BASE_DELAY_MS:1000}
+      max-delay-ms: ${OUTBOX_RETRY_MAX_DELAY_MS:60000}
+      multiplier: ${OUTBOX_RETRY_MULTIPLIER:2.0}
+  topics:
+    partitions: ${OUTBOX_TOPIC_PARTITIONS:3}
+    replication-factor: ${OUTBOX_TOPIC_REPLICATION_FACTOR:1}
+    min-in-sync-replicas: ${OUTBOX_TOPIC_MIN_IN_SYNC_REPLICAS:1}
+internal:
+  api:
+    secret: ${INTERNAL_API_SECRET:}
+
+cache:
+   session:
+     ttl-seconds: ${CACHE_SESSION_TTL_SECONDS:1800}
+   agent-event:
+     ttl-seconds: ${CACHE_AGENT_EVENT_TTL_SECONDS:300}
+   llm-response:
+     ttl-seconds: ${CACHE_LLM_RESPONSE_TTL_SECONDS:3600}
+
+resilience4j:
+   retry:
+     configs:
+       default:
+         max-attempts: 3
+         wait-duration: 1000
+         retry-exceptions:
+           - org.springframework.web.client.HttpServerErrorException
+           - java.io.IOException
+           - java.net.ConnectException
+           - feign.FeignException.ServiceUnavailable
+           - feign.FeignException.GatewayTimeout
+         ignore-exceptions:
+           - feign.FeignException.BadRequest
+           - feign.FeignException.NotFound
+           - feign.FeignException.Unauthorized
+           - org.springframework.security.authentication.CredentialsExpiredException
+     instances:
+       customerService:
+         base-config: default
+       claimsService:
+         base-config: default
+   circuitbreaker:
+     configs:
+       default:
+         failure-rate-threshold: 50
+         slow-call-rate-threshold: 50
+         slow-call-duration-threshold: 5000
+         sliding-window-size: 10
+         sliding-window-type: COUNT_BASED
+         minimum-number-of-calls: 5
+         permitted-number-of-calls-in-half-open-state: 3
+         automatic-transition-enabled: true
+         wait-duration-in-open-state: 10000
+     instances:
+       customerService:
+         base-config: default
+       claimsService:
+         base-config: default
+    timeout:
+      configs:
+        default:
+          timeout-duration: 5000
+          cancel-running-future: true
+      instances:
+        customerService:
+          base-config: default
+        claimsService:
+          base-config: default
+    bulkhead:
+      configs:
+        default:
+          max-concurrent-calls: 10
+          max-wait-duration: 5000
+      instances:
+        customerService:
+          base-config: default
+        claimsService:
+          base-config: default
+    ratelimiter:
+      configs:
+        default:
+          limit-refresh-period: 1m
+          limit-for-period: 100
+          timeout-duration: 5000
+      instances:
+        customerService:
+          base-config: default
+        claimsService:
+          base-config: default
