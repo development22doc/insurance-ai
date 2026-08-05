@@ -8,3 +8,12 @@ docs/
 helm/
 k8s/
 .github/
+CONFIG_AUDIT_REPORT.md
+MONGODB_USAGE_REPORT.md
+STARTUP_ANALYSIS_AND_FIXES.md
+STARTUP_FIXES_SUMMARY.md
+*.bat
+startup-log.txt
+build-*.txt
+build-*.log
+final-build.log
