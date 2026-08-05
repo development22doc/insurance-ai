@@ -5,6 +5,10 @@ logging:
 spring:
   application:
     name: claims-service
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   config:
     import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
   flyway:

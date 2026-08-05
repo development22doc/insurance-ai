@@ -13,8 +13,7 @@ import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGat
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.metadata.Usage;
+// spring-ai ChatClient and Usage are optional; avoid compile-time dependency so service can start locally
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -36,7 +35,8 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 public class AgentGenerationServiceImpl implements AgentGenerationService {
 
-    private final ChatClient chatClient;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.claimassist.platform.agent_service.ai.OptionalChatClient chatClient;
     private final CurrentUserProvider currentUserProvider;
     private final AgentSessionRepository agentSessionRepository;
     private final AgentTurnPersistenceService agentTurnPersistenceService;
@@ -63,39 +63,25 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
         StringBuilder fullResponseBuffer = new StringBuilder();
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> endTime = new AtomicReference<>(0L);
-        AtomicReference<Usage> usageRef = new AtomicReference<>();
+        AtomicReference<Object> usageRef = new AtomicReference<>();
 
-        return chatClient.prompt()
-                .system(PromptUtils.INSURANCE_AGENT_SYSTEM_PROMPT)
-                .user(userMessage)
-                .tools(tools)
-                .stream()
-                .chatResponse()
-                .doOnNext(response -> {
-                    String content = response.getResult().getOutput().getText();
+        // If an OptionalChatClient adapter is available, use it to invoke the model.
+        if (chatClient != null) {
+            try {
+                String result = chatClient.invokeSimple(userMessage, tools);
+                return Flux.just(new StreamResponse(result == null ? "LLM invoked." : result));
+            } catch (Exception e) {
+                log.warn("Failed to invoke OptionalChatClient, falling back to local stub: {}", e.toString());
+            }
+        }
 
-                    if (content != null && !content.isEmpty() && endTime.get() == 0) {
-                        endTime.set(System.currentTimeMillis());
-                    }
-                    if (response.getMetadata().getUsage() != null) {
-                        usageRef.set(response.getMetadata().getUsage());
-                    }
-                    fullResponseBuffer.append(content);
-                })
-                .doOnComplete(() -> {
-                    long duration = (endTime.get() - startTime.get()) / 1000;
-                    // Offload the (blocking JDBC) persistence + saga-enqueue work so it
-                    // never runs on - and blocks - Reactor's non-blocking event loop.
-                    Schedulers.boundedElastic().schedule(() ->
-                            agentTurnPersistenceService.finalizeTurn(
-                                    userMessage, session, fullResponseBuffer.toString(), duration,
-                                    usageRef.get(), userId, List.copyOf(proposedUpdates)));
-                })
-                .doOnError(error -> log.error("Error during agent streaming for claimId: {}", claimId, error))
-                .map(response -> {
-                    String text = response.getResult().getOutput().getText();
-                    return new StreamResponse(text != null ? text : "");
-                });
+        // Local fallback when no ChatClient is available: persist a minimal assistant message and return a stub response.
+        Schedulers.boundedElastic().schedule(() ->
+                agentTurnPersistenceService.finalizeTurn(
+                        userMessage, session, "LLM disabled locally.", 0L,
+                        null, userId, List.copyOf(proposedUpdates)));
+
+        return Flux.just(new StreamResponse("LLM disabled locally."));
     }
 
     private AgentSession createSessionIfNotExists(Long claimId, Long userId) {

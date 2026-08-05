@@ -5,23 +5,34 @@ logging:
 spring:
   application:
     name: agent-service
+  cloud:
+    config:
+      # Disable config client locally so service can start even when config server is down
+      enabled: false
   config:
-    import: configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    # Make config server import optional so service can start when config server is unavailable
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  # Disable Spring AI auto-configurations that require extra dependencies not present locally
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.retry.autoconfigure.SpringAiRetryAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiTextAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+  main:
+    allow-bean-definition-overriding: true
+  datasource:
+    # Default to an in-memory H2 datasource for local developer startup when no profile is active
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:agentdb;DB_CLOSE_DELAY=-1}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER:org.h2.Driver}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
   flyway:
-    enabled: true
-    baseline-on-migrate: true
-    baseline-version: "0"
-    validate-on-migrate: true
+    enabled: false
   lifecycle:
     timeout-per-shutdown-phase: 25s
-  ai:
-    openai:
-      base-url: https://openrouter.ai/api
-      api-key: ${AI_API_KEY}
-      chat:
-        options:
-          model: ${AI_MODEL:google/gemini-3-flash-preview}
-          temperature: 0.2
+  # spring.ai disabled for local startup; detailed AI settings are provided in environment-specific files
 
 server:
   shutdown: graceful

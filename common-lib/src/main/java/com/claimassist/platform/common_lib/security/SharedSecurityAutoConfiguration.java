@@ -8,6 +8,7 @@ import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
@@ -34,6 +35,7 @@ public class SharedSecurityAutoConfiguration {
      * Implements token caching and automatic renewal before expiry.
      */
     @Bean
+    @ConditionalOnBean(ClientRegistrationRepository.class)
     public OAuth2AuthorizedClientManager authorizedClientManager(
             ClientRegistrationRepository clientRegistrationRepository,
             OAuth2AuthorizedClientRepository authorizedClientRepository) {

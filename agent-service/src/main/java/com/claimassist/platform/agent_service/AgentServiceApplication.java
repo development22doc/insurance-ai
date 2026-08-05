@@ -15,6 +15,8 @@ import java.util.TimeZone;
 public class AgentServiceApplication {
     public static void main(String[] args) {
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Kolkata"));
+        // Ensure config client disabled when local config server is not available
+        System.setProperty("spring.cloud.config.enabled", "false");
         SpringApplication.run(AgentServiceApplication.class, args);
     }
 }

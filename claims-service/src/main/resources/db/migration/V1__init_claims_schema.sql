@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS processed_events (
 );
 
 CREATE TABLE IF NOT EXISTS idempotency_records (
-    key           VARCHAR(255) PRIMARY KEY,
+    "key"         VARCHAR(255) PRIMARY KEY,
     user_id       BIGINT NOT NULL,
     operation     VARCHAR(255) NOT NULL,
     response_body TEXT NOT NULL,
