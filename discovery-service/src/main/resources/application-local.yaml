@@ -2,19 +2,16 @@ server:
   port: 8761
 
 eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
   server:
     enable-self-preservation: false
     eviction-interval-timer-in-ms: 5000
   instance:
     prefer-ip-address: true
 
-management:
-  tracing:
-    sampling:
-      probability: 1.0
-
 logging:
   level:
     com.netflix.eureka: DEBUG
     com.netflix.discovery: DEBUG
-

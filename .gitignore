@@ -4,3 +4,7 @@ target/
 build-*.txt
 build-*.log
 final-build.log
+docs/
+helm/
+k8s/
+.github/

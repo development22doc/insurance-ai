@@ -6,22 +6,12 @@ spring:
   application:
     name: claims-service
   config:
-    import: configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
   flyway:
     enabled: true
     baseline-on-migrate: true
     baseline-version: "0"
     validate-on-migrate: true
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      timeout: 2s
-      lettuce:
-        pool:
-          max-active: 32
-          max-idle: 16
-          min-idle: 4
   lifecycle:
     timeout-per-shutdown-phase: 25s
 

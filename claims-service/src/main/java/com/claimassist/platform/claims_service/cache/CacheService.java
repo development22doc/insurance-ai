@@ -2,6 +2,7 @@ package com.claimassist.platform.claims_service.cache;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -16,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class CacheService {
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final ObjectProvider<RedisTemplate<String, Object>> redisTemplateProvider;
 
     // Cache TTLs (in seconds)
     public static final long CUSTOMER_CACHE_TTL = 300;      // 5 minutes
@@ -40,7 +41,12 @@ public class CacheService {
      */
     public <T> T get(String key, Class<T> type) {
         try {
-            Object value = redisTemplate.opsForValue().get(key);
+            RedisTemplate<String, Object> template = redisTemplateProvider.getIfAvailable();
+            if (template == null) {
+                log.debug("Cache MISS: {} (Redis not available)", key);
+                return null;
+            }
+            Object value = template.opsForValue().get(key);
             if (value != null) {
                 if (type.isInstance(value)) {
                     log.debug("Cache HIT: {}", key);
@@ -69,11 +75,16 @@ public class CacheService {
      */
     public void set(String key, Object value, long ttlSeconds) {
         try {
+            RedisTemplate<String, Object> template = redisTemplateProvider.getIfAvailable();
+            if (template == null) {
+                log.debug("Cache SET SKIPPED: {} (Redis not available)", key);
+                return;
+            }
             if (value == null) {
                 log.warn("Attempted to cache null value: {}", key);
                 return;
             }
-            redisTemplate.opsForValue().set(key, value, ttlSeconds, TimeUnit.SECONDS);
+            template.opsForValue().set(key, value, ttlSeconds, TimeUnit.SECONDS);
             log.debug("Cache SET: key={}, ttl={}s", key, ttlSeconds);
         } catch (Exception e) {
             log.error("Error setting cache: {}", key, e);
@@ -87,7 +98,12 @@ public class CacheService {
      */
     public void delete(String key) {
         try {
-            redisTemplate.delete(key);
+            RedisTemplate<String, Object> template = redisTemplateProvider.getIfAvailable();
+            if (template == null) {
+                log.debug("Cache DELETE SKIPPED: {} (Redis not available)", key);
+                return;
+            }
+            template.delete(key);
             log.debug("Cache DELETE: {}", key);
         } catch (Exception e) {
             log.error("Error deleting from cache: {}", key, e);
@@ -101,9 +117,14 @@ public class CacheService {
      */
     public void deleteByPattern(String pattern) {
         try {
-            var keys = redisTemplate.keys(pattern);
+            RedisTemplate<String, Object> template = redisTemplateProvider.getIfAvailable();
+            if (template == null) {
+                log.debug("Cache EVICT SKIPPED: pattern={} (Redis not available)", pattern);
+                return;
+            }
+            var keys = template.keys(pattern);
             if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
+                template.delete(keys);
                 log.debug("Cache EVICT: pattern={}, count={}", pattern, keys.size());
             }
         } catch (Exception e) {
@@ -158,7 +179,12 @@ public class CacheService {
      */
     public void clearAll() {
         try {
-            redisTemplate.getConnectionFactory().getConnection().flushAll();
+            RedisTemplate<String, Object> template = redisTemplateProvider.getIfAvailable();
+            if (template == null) {
+                log.debug("Cache CLEAR SKIPPED (Redis not available)");
+                return;
+            }
+            template.getConnectionFactory().getConnection().flushAll();
             log.warn("Cleared entire Redis cache");
         } catch (Exception e) {
             log.error("Error clearing cache", e);
@@ -173,7 +199,12 @@ public class CacheService {
      */
     public long countKeysByPattern(String pattern) {
         try {
-            var keys = redisTemplate.keys(pattern);
+            RedisTemplate<String, Object> template = redisTemplateProvider.getIfAvailable();
+            if (template == null) {
+                log.debug("Cache COUNT SKIPPED: pattern={} (Redis not available)", pattern);
+                return 0;
+            }
+            var keys = template.keys(pattern);
             return keys != null ? keys.size() : 0;
         } catch (Exception e) {
             log.error("Error counting cache keys: {}", pattern, e);

@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -54,15 +55,22 @@ public class SharedSecurityAutoConfiguration {
 
     /**
      * Alternative bean for non-servlet environments (Kafka, scheduled tasks, batch jobs).
-     * Uses in-memory client service.
+     * Uses in-memory client service. Only created if ClientRegistrationRepository is available
+     * (i.e., if security.service-client.clientId is configured).
      */
     @Bean
     @Primary
     public AuthorizedClientServiceOAuth2AuthorizedClientManager authorizedClientServiceManager(
-            ClientRegistrationRepository clientRegistrationRepository) {
+            ObjectProvider<ClientRegistrationRepository> clientRegistrationRepositoryProvider) {
+
+        ClientRegistrationRepository repository = clientRegistrationRepositoryProvider.getIfAvailable();
+        if (repository == null) {
+            log.debug("ClientRegistrationRepository not available - OAuth2 client-credentials flow disabled for this service");
+            return null;
+        }
 
         InMemoryOAuth2AuthorizedClientService clientService =
-                new InMemoryOAuth2AuthorizedClientService(clientRegistrationRepository);
+                new InMemoryOAuth2AuthorizedClientService(repository);
 
         OAuth2AuthorizedClientProvider authorizedClientProvider =
                 OAuth2AuthorizedClientProviderBuilder.builder()
@@ -72,10 +80,11 @@ public class SharedSecurityAutoConfiguration {
 
         AuthorizedClientServiceOAuth2AuthorizedClientManager authorizedClientManager =
                 new AuthorizedClientServiceOAuth2AuthorizedClientManager(
-                        clientRegistrationRepository,
+                        repository,
                         clientService);
 
         authorizedClientManager.setAuthorizedClientProvider(authorizedClientProvider);
+        log.debug("AuthorizedClientServiceOAuth2AuthorizedClientManager bean created successfully");
         return authorizedClientManager;
     }
 
@@ -102,7 +111,7 @@ public class SharedSecurityAutoConfiguration {
      * tasks), where no end-user JWT exists, falls back to client-credentials.
      */
     @Bean
-    public RequestInterceptor requestInterceptor (ServiceClientCredentialsTokenProvider tokenProvider) {
+    public RequestInterceptor requestInterceptor (ObjectProvider<ServiceClientCredentialsTokenProvider> tokenProviderProvider) {
 
         return requestTemplate -> {
 
@@ -116,14 +125,17 @@ public class SharedSecurityAutoConfiguration {
                         "Authorization",
                         "Bearer " + jwt.getTokenValue ());
             } else {
-                try {
-                    requestTemplate.header(
-                            "Authorization",
-                            "Bearer " + tokenProvider.getAccessToken());
-                } catch (IllegalStateException ignored) {
-                    // No client-credentials registration in this service/profile.
-                    // Keep request untouched here - downstream call will fail normally
-                    // if auth is required, which is preferable to startup failure.
+                ServiceClientCredentialsTokenProvider tokenProvider = tokenProviderProvider.getIfAvailable();
+                if (tokenProvider != null) {
+                    try {
+                        requestTemplate.header(
+                                "Authorization",
+                                "Bearer " + tokenProvider.getAccessToken());
+                    } catch (IllegalStateException ignored) {
+                        // No client-credentials registration in this service/profile.
+                        // Keep request untouched here - downstream call will fail normally
+                        // if auth is required, which is preferable to startup failure.
+                    }
                 }
             }
 

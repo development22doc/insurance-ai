@@ -21,10 +21,10 @@ spring:
       chat:
         options:
           model: ${AI_MODEL:google/gemini-3-flash-preview}
-          temperature: 0.2   # low but not zero - deterministic-leaning without being fully rigid on phrasing; the FACTS still always come from tools, never from temperature
+          temperature: 0.2
 
 server:
-  shutdown: graceful   # let an in-flight streaming agent response finish instead of being cut mid-token
+  shutdown: graceful
 
 outbox:
   publisher:

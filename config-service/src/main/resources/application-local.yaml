@@ -1,15 +1,6 @@
 server:
   port: 8888
 
-spring:
-  cloud:
-    config:
-      server:
-        git:
-          uri: ${CONFIG_GIT_URI:file:///D:/Mayur/1/Deployment/insurance-ai-platform/local-config-repo}
-          label: ${CONFIG_GIT_LABEL:main}
-          searchPaths: ""
-
 eureka:
   client:
     service-url:
@@ -17,13 +8,7 @@ eureka:
     register-with-eureka: true
     fetch-registry: false
 
-management:
-  tracing:
-    sampling:
-      probability: 1.0
-
 logging:
   level:
     com.claimassist: DEBUG
     org.springframework.cloud.config: DEBUG
-

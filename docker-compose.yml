@@ -1,4 +1,4 @@
-version: "2.4"
+
 services:
   postgres:
     image: postgres:16
@@ -152,6 +152,7 @@ services:
 volumes:
   pgdata:
   keycloak_pgdata:
+  mongodb_data:
 networks:
   backend:
     driver: bridge

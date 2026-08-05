@@ -21,6 +21,18 @@ spring:
           batch_size: 20
           fetch_size: 50
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -41,12 +53,13 @@ spring:
       session-timeout-ms: 30000
       enable-auto-commit: false
 
-   security:
+  security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+
   service-client:
     registration-id: internal-service
     client-id: ${SERVICE_CLIENT_ID:internal-service-client}
@@ -60,11 +73,6 @@ eureka:
     register-with-eureka: true
     fetch-registry: true
 
-management:
-  tracing:
-    sampling:
-      probability: 1.0
-
 logging:
   level:
     com.claimassist: DEBUG
@@ -72,4 +80,3 @@ logging:
     org.hibernate.SQL: DEBUG
     org.springframework.kafka: DEBUG
     org.springframework.ai: DEBUG
-

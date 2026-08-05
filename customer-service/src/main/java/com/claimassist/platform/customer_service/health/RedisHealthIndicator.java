@@ -1,6 +1,6 @@
 package com.claimassist.platform.customer_service.health;
 
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -9,13 +9,17 @@ import org.springframework.stereotype.Component;
 
 /**
  * Health indicator for Redis connectivity.
+ * Requires RedisTemplate to be available; will fail at startup if Redis is not configured.
  */
 @Component("redisHealth")
-@RequiredArgsConstructor
 @Slf4j
 public class RedisHealthIndicator implements HealthIndicator {
 
     private final RedisTemplate<String, Object> redisTemplate;
+
+    public RedisHealthIndicator(RedisTemplate<String, Object> redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
 
     @Override
     public Health health() {
@@ -40,4 +44,3 @@ public class RedisHealthIndicator implements HealthIndicator {
         }
     }
 }
-

@@ -1,25 +1,41 @@
 spring:
+  flyway:
+    enabled: false
   datasource:
-    url: jdbc:postgresql://localhost:5432/claimassist_claims_local
-    username: ${POSTGRES_USER:claimassist}
-    password: ${POSTGRES_PASSWORD:claimassist}
+    url: jdbc:h2:mem:claimassist_claims_local;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-      connection-timeout: 20000
+      maximum-pool-size: 5
+      minimum-idle: 0
+      connection-timeout: 5000
       idle-timeout: 300000
       max-lifetime: 1200000
+      auto-commit: false
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        dialect: org.hibernate.dialect.H2Dialect
         format_sql: true
         jdbc:
           batch_size: 20
           fetch_size: 50
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -41,12 +57,13 @@ spring:
       session-timeout-ms: 30000
       enable-auto-commit: false
 
-   security:
+  security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+
   service-client:
     registration-id: internal-service
     client-id: ${SERVICE_CLIENT_ID:internal-service-client}
@@ -60,11 +77,6 @@ eureka:
     register-with-eureka: true
     fetch-registry: true
 
-management:
-  tracing:
-    sampling:
-      probability: 1.0
-
 logging:
   level:
     com.claimassist: DEBUG
@@ -72,4 +84,3 @@ logging:
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
     org.springframework.kafka: DEBUG
-

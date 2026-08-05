@@ -9,12 +9,10 @@ spring:
     config:
       server:
         git:
-          uri: ${CONFIG_GIT_URI:file:///D:/Mayur/1/Deployment/insurance-ai-platform/local-config-repo}
+          uri: ${CONFIG_GIT_URI:file:D:/Mayur/claimsassist/insurance-ai-platform/local-config-repo}
           default-label: ${CONFIG_GIT_LABEL:main}
           clone-on-start: true
 
-server:
-  port: 8888
 
 management:
   endpoints:

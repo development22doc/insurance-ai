@@ -6,21 +6,11 @@ spring:
   application:
     name: customer-service
   config:
-    import: configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
   flyway:
     enabled: true
     baseline-on-migrate: true
     baseline-version: "0"
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      timeout: 2s
-      lettuce:
-        pool:
-          max-active: 32   # sized for high concurrency - see RedisCacheConfig javadoc
-          max-idle: 16
-          min-idle: 4
   lifecycle:
     timeout-per-shutdown-phase: 20s
 

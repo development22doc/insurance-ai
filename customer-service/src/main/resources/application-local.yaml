@@ -1,4 +1,6 @@
 spring:
+  flyway:
+    enabled: false
   datasource:
     url: jdbc:postgresql://localhost:5432/claimassist_customer_local
     username: ${POSTGRES_USER:claimassist}
@@ -12,7 +14,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -20,6 +22,18 @@ spring:
         jdbc:
           batch_size: 20
           fetch_size: 50
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -38,17 +52,26 @@ spring:
       bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
       group-id: customer-service-local
 
-   security:
+  security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
-  service-client:
-    registration-id: internal-service
-    client-id: ${SERVICE_CLIENT_ID:internal-service-client}
-    client-secret: ${SERVICE_CLIENT_SECRET:internal-service-secret}
-    token-uri: ${SERVICE_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
+
+      client:
+        registration:
+          internal-service:
+            provider: keycloak
+            client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+            client-secret: ${SERVICE_CLIENT_SECRET:local-dev-admin-client-secret}
+            authorization-grant-type: client_credentials
+
+        provider:
+          keycloak:
+            token-uri: ${SERVICE_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
+
+
 
 eureka:
   client:
@@ -57,15 +80,9 @@ eureka:
     register-with-eureka: true
     fetch-registry: true
 
-management:
-  tracing:
-    sampling:
-      probability: 1.0
-
 logging:
   level:
     com.claimassist: DEBUG
     org.springframework.security: DEBUG
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-
