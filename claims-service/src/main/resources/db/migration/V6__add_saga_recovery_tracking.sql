@@ -15,6 +15,5 @@ ALTER TABLE claim_saga_orchestrations
 
 -- Index for recovery scanning
 CREATE INDEX IF NOT EXISTS idx_saga_recovery_status_next_retry
-    ON claim_saga_orchestrations (status, next_retry_at)
-    WHERE status = 'FAILED' AND next_retry_at IS NOT NULL;
+    ON claim_saga_orchestrations (status, next_retry_at);
 

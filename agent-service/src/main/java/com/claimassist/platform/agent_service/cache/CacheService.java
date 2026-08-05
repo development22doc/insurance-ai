@@ -3,6 +3,7 @@ package com.claimassist.platform.agent_service.cache;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
@@ -12,11 +13,13 @@ import java.util.concurrent.TimeUnit;
  * Provides typed caching with TTL, eviction, and invalidation support.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
+// Redis is optional for local developer startup; inject it only when available
+// (use autowired(required=false) below)
 public class CacheService {
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private RedisTemplate<String, Object> redisTemplate;
 
     // Cache TTLs (in seconds)
     public static final long SESSION_CACHE_TTL = 1800;     // 30 minutes

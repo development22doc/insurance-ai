@@ -16,7 +16,7 @@ import com.claimassist.platform.common_lib.event.ClaimUpdateRequestEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.metadata.Usage;
+// Usage metadata from spring-ai is optional; avoid compile-time dependency
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,10 +50,23 @@ public class AgentTurnPersistenceService {
 
     @Transactional
     public void finalizeTurn(String userMessage, AgentSession session, String fullText, long durationSeconds,
-                              Usage usage, Long userId, List<ProposedUpdate> proposedUpdates) {
+                              Object usage, Long userId, List<ProposedUpdate> proposedUpdates) {
 
-        int promptTokens = usage != null ? usage.getPromptTokens() : 0;
-        int completionTokens = usage != null ? usage.getCompletionTokens() : 0;
+        // If a concrete Usage object from spring-ai is provided at runtime, attempt to extract tokens
+        int promptTokens = 0;
+        int completionTokens = 0;
+        if (usage != null) {
+            try {
+                java.lang.reflect.Method m1 = usage.getClass().getMethod("getPromptTokens");
+                java.lang.reflect.Method m2 = usage.getClass().getMethod("getCompletionTokens");
+                Object p = m1.invoke(usage);
+                Object c = m2.invoke(usage);
+                promptTokens = p instanceof Number ? ((Number) p).intValue() : 0;
+                completionTokens = c instanceof Number ? ((Number) c).intValue() : 0;
+            } catch (Exception e) {
+                // ignore - fallback to zero
+            }
+        }
 
         agentMessageRepository.save(AgentMessage.builder()
                 .agentSession(session)

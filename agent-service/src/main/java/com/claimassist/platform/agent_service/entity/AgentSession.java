@@ -1,6 +1,9 @@
 package com.claimassist.platform.agent_service.entity;
 
 import jakarta.persistence.EmbeddedId;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.*;
@@ -23,5 +26,9 @@ import lombok.experimental.FieldDefaults;
 public class AgentSession {
 
     @EmbeddedId
+    @AttributeOverrides({
+            @AttributeOverride(name = "claimId", column = @Column(name = "claim_id")),
+            @AttributeOverride(name = "userId", column = @Column(name = "user_id"))
+    })
     AgentSessionId id;
 }
