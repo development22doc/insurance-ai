@@ -3,4 +3,6 @@ spring:
     name: api-gateway
 
   config:
-    import: configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    # Make the config server import optional so the gateway can start when
+    # the config server is not running locally (useful for development).
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}

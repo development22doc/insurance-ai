@@ -1,25 +1,28 @@
 spring:
   flyway:
-    enabled: false
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "0"
+    validate-on-migrate: true
   datasource:
-    url: jdbc:h2:mem:claimassist_claims_local;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false;MODE=PostgreSQL
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
+    url: jdbc:postgresql://localhost:5432/claimassist_claims_local
+    username: claimassist
+    password: claimassist
+    driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 5
-      minimum-idle: 0
-      connection-timeout: 5000
-      idle-timeout: 300000
-      max-lifetime: 1200000
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 600000
+      max-lifetime: 1800000
       auto-commit: false
 
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: validate
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
         jdbc:
           batch_size: 20
@@ -76,6 +79,13 @@ eureka:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
     register-with-eureka: true
     fetch-registry: true
+
+outbox:
+  publisher:
+    poll-interval-ms: 999999999
+    batch-size: 10
+    max-attempts: 3
+    retry-delay-ms: 1000
 
 logging:
   level:

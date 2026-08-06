@@ -40,7 +40,7 @@ management:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/customer_db
+    url: jdbc:postgresql://localhost:5432/claimassist_customer_local
     username: claimassist
     password: claimassist
 

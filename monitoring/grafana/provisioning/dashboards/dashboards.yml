@@ -1,0 +1,10 @@
+﻿apiVersion: 1
+providers:
+  - name: 'ClaimAssist Dashboards'
+    orgId: 1
+    folder: 'ClaimAssist'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

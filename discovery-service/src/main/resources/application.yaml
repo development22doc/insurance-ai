@@ -2,6 +2,37 @@ spring:
   application:
     name: discovery-service
 
+server:
+  port: 8761
+
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+    tls:
+      enabled: false
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  server:
+    enable-self-preservation: true
+    enable-self-preservation-for-replication: true
+    eviction-interval-timer-in-ms: 60000
+    peer-eureka-nodes-update-interval-ms: 600000
+    peer-eureka-status-refresh-interval-ms: 30000
+    min-available-instances-for-peer-replication: -1
+    peer-node-read-timeout-ms: 200
+    registry-sync-retries: 0
+    registry-sync-retry-wait-ms: 30000
+    number-of-replication-retries: 0
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+logging:
+  level:
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN
 
 management:
   endpoints:
