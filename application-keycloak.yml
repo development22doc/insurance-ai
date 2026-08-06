@@ -1,6 +1,6 @@
 # Reference / documentation copy of every Keycloak-related property this
 # platform uses. The properties below are the ones actually applied - they
-# already live in local-config-repo/*.yml (served by config-service, which is
+# already live in config-repo/*.yml (served by config-service, which is
 # how every other setting in this platform is externalized) rather than in
 # any single service's classpath, so there is nothing to "activate" by
 # importing this file: it exists so a reviewer can see the whole Keycloak

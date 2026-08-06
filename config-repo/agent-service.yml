@@ -1,0 +1,67 @@
+server:
+  port: 8083
+
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/claimassist_agent_local
+    username: claimassist
+    password: claimassist
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+  kafka:
+    # Default to the host Kafka listener. When running services from the host
+    # (IntelliJ / java -jar) use the broker at `localhost:9092`. When running
+    # services inside Docker compose override KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    # in the container environment.
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      observation-enabled: ${KAFKA_PRODUCER_OBSERVATION_ENABLED:true}
+      acks: ${KAFKA_PRODUCER_ACKS:all}
+      retries: ${KAFKA_PRODUCER_RETRIES:2147483647}
+      batch-size: ${KAFKA_PRODUCER_BATCH_SIZE:16384}
+      linger-ms: ${KAFKA_PRODUCER_LINGER_MS:10}
+      properties:
+        compression.type: ${KAFKA_PRODUCER_COMPRESSION:snappy}
+        delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:120000}
+        request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
+        retry.backoff.ms: ${KAFKA_RETRY_BACKOFF_MS:1000}
+    listener:
+      observation-enabled: ${KAFKA_LISTENER_OBSERVATION_ENABLED:true}
+  ai:
+    openai:
+      api-key: ${AI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o-mini
+  security:
+    oauth2:
+      client:
+        provider:
+          keycloak:
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
+      registration:
+        internal-service:
+          provider: keycloak
+          authorization-grant-type: client_credentials
+          client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+          client-secret: ${SERVICE_CLIENT_SECRET:}
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+
+security:
+  service-client:
+    registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+

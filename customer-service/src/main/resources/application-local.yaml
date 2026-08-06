@@ -2,7 +2,7 @@ spring:
   flyway:
     enabled: false
   datasource:
-    url: jdbc:postgresql://localhost:5432/claimassist_customer_local
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_customer_local
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD:claimassist}
     hikari:
