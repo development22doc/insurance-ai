@@ -5,38 +5,6 @@ logging:
   level:
     org.springframework.security: TRACE
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,metrics,info,prometheus
-  endpoint:
-    health:
-      show-details: when-authorized
-      show-components: when-authorized
-      probes:
-        enabled: true
-  health:
-    livenessState:
-      enabled: true
-    readinessState:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    tags:
-      application: ${spring.application.name}
-    enable:
-      jvm: true
-      process: true
-      logback: true
-      tomcat: true
-      jdbc: true
-    distribution:
-      percentiles-histogram:
-        http.server.requests: true
-        jdbc.connections.usage: true
 
 spring:
   datasource:
@@ -70,3 +38,4 @@ keycloak:
   redirect-uri: ${KEYCLOAK_REDIRECT_URI:http://localhost:8081/auth/callback}
   admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:claimassist-admin-service}
   admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:}
+

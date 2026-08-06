@@ -9,7 +9,7 @@ spring:
     config:
       server:
         git:
-          uri: ${CONFIG_GIT_URI:file:C:\claimassist\insurance-ai\local-config-repo}
+          uri: ${CONFIG_GIT_URI:file:./config-repo}
           default-label: ${CONFIG_GIT_LABEL:master}
           clone-on-start: true
           timeout: 10

@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/claimassist_agent_local
-    username: claimassist
-    password: claimassist
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_agent_local
+    username: ${POSTGRES_USER:claimassist}
+    password: ${POSTGRES_PASSWORD:claimassist}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 20

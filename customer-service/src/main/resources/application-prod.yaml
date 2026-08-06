@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/claimassist_customer_prod
+    url: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:5432}/claimassist_customer_prod
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     hikari:

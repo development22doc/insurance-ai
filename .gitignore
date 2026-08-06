@@ -4,9 +4,10 @@ target/
 build-*.txt
 build-*.log
 final-build.log
+# Keep documentation tracked
 docs/
-helm/
-k8s/
+infrastructure/helm/
+infrastructure/kubernetes/
 .github/
 CONFIG_AUDIT_REPORT.md
 MONGODB_USAGE_REPORT.md
@@ -14,7 +15,13 @@ STARTUP_ANALYSIS_AND_FIXES.md
 STARTUP_FIXES_SUMMARY.md
 *.bat
 startup-log.txt
-build-*.txt
-build-*.log
-final-build.log
 .env
+
+# Logs directory - tracked with .gitkeep, but ignore runtime logs
+logs/
+!logs/.gitkeep
+
+# OS specific
+.DS_Store
+Thumbs.db
+

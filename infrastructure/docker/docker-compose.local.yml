@@ -1,4 +1,3 @@
-﻿
 version: '3.8'
 
 
@@ -10,13 +9,13 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      TZ: Asia/Kolkata
-      PGTZ: Asia/Kolkata
+      TZ: ${TZ:Asia/Kolkata}
+      PGTZ: ${PGTZ:Asia/Kolkata}
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./infrastructure/docker/postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ./postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     networks:
       - backend
     healthcheck:
@@ -30,6 +29,7 @@ services:
           memory: 512M
         reservations:
           memory: 256M
+
   redis:
     image: redis:7
     container_name: claimassist-redis
@@ -49,6 +49,7 @@ services:
           memory: 256M
         reservations:
           memory: 128M
+
   kafka:
     image: apache/kafka:3.8.0
     container_name: claimassist-kafka
@@ -71,8 +72,6 @@ services:
     networks:
       - backend
     healthcheck:
-      # Simplified healthcheck: always succeed in this dev environment to avoid
-      # false negatives due to missing utilities inside the Kafka image.
       test: ["CMD-SHELL", "exit 0"]
       interval: 15s
       timeout: 5s
@@ -83,6 +82,7 @@ services:
           memory: 1G
         reservations:
           memory: 512M
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -97,6 +97,7 @@ services:
         condition: service_healthy
     networks:
       - backend
+
   zipkin:
     image: openzipkin/zipkin:3
     container_name: claimassist-zipkin
@@ -106,7 +107,6 @@ services:
     networks:
       - backend
     healthcheck:
-      # Zipkin image may not include curl or expose actuator; mark as started.
       test: ["CMD-SHELL", "exit 0"]
       interval: 15s
       timeout: 5s
@@ -117,6 +117,7 @@ services:
           memory: 256M
         reservations:
           memory: 128M
+
   keycloak-postgres:
     image: postgres:16
     container_name: claimassist-keycloak-postgres
@@ -140,6 +141,7 @@ services:
           memory: 256M
         reservations:
           memory: 128M
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     container_name: claimassist-keycloak
@@ -154,18 +156,17 @@ services:
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:${KEYCLOAK_ADMIN_CLIENT_SECRET}}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:admin}
     ports:
       - "8180:8080"
     volumes:
-      - ./infrastructure/docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     depends_on:
       keycloak-postgres:
         condition: service_healthy
     networks:
       - backend
     healthcheck:
-      # Keycloak image may not include curl; treat as started in dev.
       test: ["CMD-SHELL", "exit 0"]
       interval: 15s
       timeout: 5s
@@ -176,6 +177,7 @@ services:
           memory: 1G
         reservations:
           memory: 512M
+
   prometheus:
     image: prom/prometheus:latest
     container_name: claimassist-prometheus
@@ -187,7 +189,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     networks:
       - backend
@@ -202,6 +204,7 @@ services:
           memory: 512M
         reservations:
           memory: 256M
+
   loki:
     image: grafana/loki:2.8.2
     container_name: claimassist-loki
@@ -211,7 +214,7 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ./infrastructure/monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - ../monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki_data:/loki
     networks:
       - backend
@@ -226,16 +229,15 @@ services:
           memory: 256M
         reservations:
           memory: 128M
+
   promtail:
     image: grafana/promtail:latest
     container_name: claimassist-promtail
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail.yml
     volumes:
-      - ./infrastructure/monitoring/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
-      # Mount the repository logs directory into the container at /var/log so
-      # promtail can read service log folders like /var/log/discovery-service/*.log
-      - ./logs:/var/log:ro
+      - ../monitoring/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - ../../logs:/var/log:ro
     ports:
       - "9080:9080"
     networks:
@@ -244,7 +246,6 @@ services:
       loki:
         condition: service_healthy
     healthcheck:
-      # Simplified check - promtail is working if the container is running
       test: ["CMD", "sh", "-c", "exit 0"]
       interval: 15s
       timeout: 5s
@@ -255,6 +256,7 @@ services:
           memory: 128M
         reservations:
           memory: 64M
+
   grafana:
     image: grafana/grafana:latest
     container_name: claimassist-grafana
@@ -267,8 +269,8 @@ services:
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
-      - ./infrastructure/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./infrastructure/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ../monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - grafana_data:/var/lib/grafana
     networks:
       - backend
@@ -286,12 +288,15 @@ services:
           memory: 512M
         reservations:
           memory: 256M
+
 volumes:
   pgdata:
   keycloak_pgdata:
   prometheus_data:
   loki_data:
   grafana_data:
+
 networks:
   backend:
     driver: bridge
+

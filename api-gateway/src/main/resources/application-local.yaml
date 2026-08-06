@@ -33,7 +33,7 @@ spring:
             - Path=/customer/**
 
 # Public routes that should be accessible without a bearer JWT. These are
-# normally supplied by the centralized config repository (local-config-repo),
+# normally supplied by the centralized config repository (config-repo),
 # but we provide local defaults so the gateway allows the OAuth authorization
 # endpoints to be reached while developing without the config server.
 app:

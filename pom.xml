@@ -29,6 +29,8 @@
         <maven.compiler.target>21</maven.compiler.target>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Common versions for child modules -->
+        <lombok.version>1.18.28</lombok.version>
     </properties>
 
     <build>

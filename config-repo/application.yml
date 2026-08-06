@@ -1,0 +1,113 @@
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+    enable:
+      jvm: true
+      process: true
+      logback: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+# Common resilience4j defaults shared across services
+resilience4j:
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 1000
+        retry-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - java.io.IOException
+          - java.net.ConnectException
+          - feign.FeignException.ServiceUnavailable
+          - feign.FeignException.GatewayTimeout
+        ignore-exceptions:
+          - feign.FeignException.BadRequest
+          - feign.FeignException.NotFound
+          - feign.FeignException.Unauthorized
+          - org.springframework.security.authentication.CredentialsExpiredException
+    instances:
+      customerService:
+        base-config: default
+  circuitbreaker:
+    configs:
+      default:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 5000
+        sliding-window-size: 10
+        sliding-window-type: COUNT_BASED
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-enabled: true
+        wait-duration-in-open-state: 10000
+    instances:
+      customerService:
+        base-config: default
+  timeout:
+    configs:
+      default:
+        timeout-duration: 5000
+        cancel-running-future: true
+    instances:
+      customerService:
+        base-config: default
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 10
+        max-wait-duration: 5000
+    instances:
+      customerService:
+        base-config: default
+  ratelimiter:
+    configs:
+      default:
+        limit-refresh-period: 1m
+        limit-for-period: 100
+        timeout-duration: 5000
+    instances:
+      customerService:
+        base-config: default
+
+# Common outbox defaults
+outbox:
+  publisher:
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:2000}
+    initial-delay-ms: ${OUTBOX_INITIAL_DELAY_MS:2000}
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    max-attempts: ${OUTBOX_MAX_ATTEMPTS:5}
+    retry:
+      base-delay-ms: ${OUTBOX_RETRY_BASE_DELAY_MS:1000}
+      max-delay-ms: ${OUTBOX_RETRY_MAX_DELAY_MS:60000}
+      multiplier: ${OUTBOX_RETRY_MULTIPLIER:2.0}
+  topics:
+    partitions: ${OUTBOX_TOPIC_PARTITIONS:3}
+    replication-factor: ${OUTBOX_TOPIC_REPLICATION_FACTOR:1}
+    min-in-sync-replicas: ${OUTBOX_TOPIC_MIN_IN_SYNC_REPLICAS:1}
+
+# Common internal API secret placeholder
+internal:
+  api:
+    secret: ${INTERNAL_API_SECRET:}
+
