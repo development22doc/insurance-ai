@@ -22,7 +22,7 @@ spring:
           fetch_size: 50
 
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       acks: all
       retries: 2147483647
@@ -35,18 +35,20 @@ spring:
         request.timeout.ms: 30000
         retry.backoff.ms: 1000
     consumer:
-      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
       group-id: agent-service-dev
       max-poll-records: 100
       session-timeout-ms: 30000
       enable-auto-commit: false
 
-   security:
+  security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://keycloak:8180/realms/claimassist/protocol/openid-connect/certs}
+
+security:
   service-client:
     registration-id: internal-service
     client-id: ${SERVICE_CLIENT_ID:internal-service-client}
@@ -74,4 +76,3 @@ logging:
     org.hibernate.SQL: WARN
     org.springframework.kafka: INFO
     org.springframework.ai: INFO
-

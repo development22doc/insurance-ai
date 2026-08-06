@@ -44,12 +44,14 @@ spring:
       session-timeout-ms: 30000
       enable-auto-commit: false
 
-   security:
+  security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+
+security:
   service-client:
     registration-id: internal-service
     client-id: ${SERVICE_CLIENT_ID}
@@ -104,4 +106,3 @@ logging:
 # application property 'cors.allowed-origins'. Use comma-separated values.
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:https://api.claimassist.example.com,https://app.claimassist.example.com}
-

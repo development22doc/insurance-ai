@@ -79,6 +79,19 @@
 			<artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
 			<version>2.8.9</version>
 		</dependency>
+		<dependency>
+			<groupId>com.claimassist.platform</groupId>
+			<artifactId>common-lib</artifactId>
+			<version>1.0.0</version>
+			<!-- common-lib brings in the servlet web starter transitively; exclude it here
+				 so the gateway stays on the reactive WebFlux stack (required by Spring Cloud Gateway). -->
+			<exclusions>
+				<exclusion>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-starter-web</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
 	</dependencies>
 
 	<dependencyManagement>

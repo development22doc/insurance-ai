@@ -1,0 +1,1275 @@
+{
+  "info": {
+    "_postman_id": "87b6aa1a-117f-4c2a-901c-e63c924d8382",
+    "name": "ClaimAssist Insurance-AI Platform - End to End",
+    "description": "End-to-end debugging collection for the insurance-ai (ClaimAssist) microservices platform: discovery-service (Eureka), config-service (Spring Cloud Config), api-gateway, customer-service, claims-service and agent-service.\n\n## How to use this\n1. Bring the stack up (docker-compose.yml, or run each service's Application class locally with SPRING_PROFILES_ACTIVE=local). Confirm everything is green in folder **00 - Infra Health Checks**.\n2. Run folder **01 - Auth** in order (Signup -> Authorize -> Callback). This populates the collection variables access_token / refresh_token / customer_id that every other request re-uses automatically (collection-level Bearer auth).\n3. Work through **02 -> 05** top to bottom - each folder's requests are ordered so that earlier responses (policy_id, claim_id) feed later requests via test scripts.\n4. **06 - API Gateway** is included last and documents a couple of known routing gaps in the current gateway config rather than a golden path - read its folder description before relying on it.\n\nImport the companion environment file alongside this collection and select it in the top-right environment picker before running anything.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "57155386",
+    "_collection_link": "https://go.postman.co/collection/57155386-87b6aa1a-117f-4c2a-901c-e63c924d8382?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "00 - Infra Health Checks",
+      "item": [
+        {
+          "name": "Discovery Service (Eureka) - Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "discovery_service_url/actuator/health",
+              "host": [
+                "discovery_service_url"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "Eureka server. Confirms discovery-service is up before starting other services."
+          },
+          "response": []
+        },
+        {
+          "name": "Discovery Service - Registered Apps (Eureka UI)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "discovery_service_url/eureka/apps",
+              "host": [
+                "discovery_service_url"
+              ],
+              "path": [
+                "eureka",
+                "apps"
+              ]
+            },
+            "description": "Lists every service instance currently registered with Eureka. Great sanity check that customer/claims/agent/gateway all came up and registered."
+          },
+          "response": []
+        },
+        {
+          "name": "Config Service - Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "config_service_url/actuator/health",
+              "host": [
+                "config_service_url"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "Spring Cloud Config Server. All other services pull their config from here on boot."
+          },
+          "response": []
+        },
+        {
+          "name": "Config Service - Resolve claims-service config (local profile)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "config_service_url/claims-service/local",
+              "host": [
+                "config_service_url"
+              ],
+              "path": [
+                "claims-service",
+                "local"
+              ]
+            },
+            "description": "Shows the resolved property set claims-service would receive for the 'local' profile. Handy for confirming config-server -> git repo wiring."
+          },
+          "response": []
+        },
+        {
+          "name": "API Gateway - Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "gateway_url/actuator/health",
+              "host": [
+                "gateway_url"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "Spring Cloud Gateway. Public route (see app.security.public-routes)."
+          },
+          "response": []
+        },
+        {
+          "name": "API Gateway - Registered Routes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "gateway_url/actuator/gateway/routes",
+              "host": [
+                "gateway_url"
+              ],
+              "path": [
+                "actuator",
+                "gateway",
+                "routes"
+              ]
+            },
+            "description": "Lists the routes the gateway currently has loaded (customer-service, claim-service, policy-service, notification-service predicates)."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Service - Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "customer_service_url/actuator/health",
+              "host": [
+                "customer_service_url"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "Public route - no token needed."
+          },
+          "response": []
+        },
+        {
+          "name": "Claims Service - Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "claims_service_url/actuator/health",
+              "host": [
+                "claims_service_url"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Agent Service - Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "agent_service_url/actuator/health",
+              "host": [
+                "agent_service_url"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Hit these first, in order, whenever you spin the stack up. All actuator/health endpoints are on the public-route allow-list, so no bearer token is required for this folder."
+    },
+    {
+      "name": "01 - Auth (Keycloak + customer-service)",
+      "item": [
+        {
+          "name": "1. Signup (creates Customer + Keycloak user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"{{username}}\",\n    \"fullName\": \"{{full_name}}\",\n    \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "customer_service_url/auth/signup",
+              "host": [
+                "customer_service_url"
+              ],
+              "path": [
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Public endpoint. Creates a row in customer-service's own `customers` table AND provisions a matching Keycloak user (see KeycloakUserProvisioningService). username must be a valid email (see SignupRequest validation), password >= 8 chars.\n\nRun this once per {{username}} - re-running with the same username returns 400 'A customer already exists with username: ...'."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Authorize (starts OAuth2 Code+PKCE flow)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "customer_service_url/auth/authorize",
+              "host": [
+                "customer_service_url"
+              ],
+              "path": [
+                "auth",
+                "authorize"
+              ]
+            },
+            "description": "Public endpoint. customer-service builds the PKCE code_verifier/code_challenge, stores it keyed by `state`, and 302-redirects to Keycloak's /auth endpoint.\n\nPostman does not follow the redirect into a real browser login form, so the practical way to exercise this by hand is:\n  1. Open this same URL directly in a normal browser tab:\n     {{customer_service_url}}/auth/authorize\n  2. Log in on the Keycloak page with the username/password you signed up with.\n  3. Keycloak redirects to http://localhost:8081/auth/callback?code=...&state=...\n     Copy the `code` and `state` query params from that final URL.\n  4. Paste them into the collection variables `auth_code` and `auth_state`      (or directly into request #3's query params) and run request #3.\n\nThis request is included here mainly so you can watch the 302 Location header in Postman (disable 'Automatically follow redirects' in Settings to see it)."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Callback (exchange code for tokens)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.accessToken) pm.collectionVariables.set(\"access_token\", body.accessToken);",
+                  "    if (body.refreshToken) pm.collectionVariables.set(\"refresh_token\", body.refreshToken);",
+                  "    if (body.customerId) pm.collectionVariables.set(\"customer_id\", body.customerId);",
+                  "    console.log(\"Saved access_token / refresh_token / customer_id to collection variables.\");",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "customer_service_url/auth/callback?code={{auth_code}}&state={{auth_state}}",
+              "host": [
+                "customer_service_url"
+              ],
+              "path": [
+                "auth",
+                "callback"
+              ],
+              "query": [
+                {
+                  "key": "code",
+                  "value": "{{auth_code}}",
+                  "description": "Authorization code copied from the browser redirect after step 2"
+                },
+                {
+                  "key": "state",
+                  "value": "{{auth_state}}",
+                  "description": "State value copied from the same redirect URL"
+                }
+              ]
+            },
+            "description": "Public endpoint. Looks up the code_verifier by `state`, exchanges the code with Keycloak's token endpoint, and returns an AuthResponse (accessToken, refreshToken, customerId, fullName, ...).\n\nOn success this script auto-saves accessToken/refreshToken/customerId into the collection variables used by every other authenticated request."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.accessToken) pm.collectionVariables.set(\"access_token\", body.accessToken);",
+                  "    if (body.refreshToken) pm.collectionVariables.set(\"refresh_token\", body.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "customer_service_url/auth/refresh?refreshToken={{refresh_token}}",
+              "host": [
+                "customer_service_url"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ],
+              "query": [
+                {
+                  "key": "refreshToken",
+                  "value": "{{refresh_token}}"
+                }
+              ]
+            },
+            "description": "Public endpoint. Exchanges a still-valid refresh token for a new access/refresh token pair."
+          },
+          "response": []
+        },
+        {
+          "name": "5. Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "customer_service_url/auth/logout?refreshToken={{refresh_token}}",
+              "host": [
+                "customer_service_url"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ],
+              "query": [
+                {
+                  "key": "refreshToken",
+                  "value": "{{refresh_token}}"
+                }
+              ]
+            },
+            "description": "Public endpoint. Revokes the refresh token at Keycloak. Returns 204 No Content."
+          },
+          "response": []
+        },
+        {
+          "name": "(Dev-only alt) Keycloak Direct Password Grant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.access_token) pm.collectionVariables.set(\"access_token\", body.access_token);",
+                  "    if (body.refresh_token) pm.collectionVariables.set(\"refresh_token\", body.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{username}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid profile email"
+                }
+              ]
+            },
+            "url": {
+              "raw": "keycloak_url/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "keycloak_url"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "NOT part of the app's real flow (the app only supports Authorization Code + PKCE), and it will 400 out of the box: the 'claimassist-customer-app' client in realm-export.json has directAccessGrantsEnabled=false.\n\nThis request is here purely as a learning/debugging shortcut. If you want to skip the browser dance in requests 2-3 while iterating locally, go into the Keycloak admin console -> Clients -> claimassist-customer-app -> Capability config -> enable 'Direct access grants', then run this request instead of #2/#3."
+          },
+          "response": []
+        },
+        {
+          "name": "(Service-to-service) Keycloak Client Credentials Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    if (body.access_token) pm.collectionVariables.set(\"service_access_token\", body.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{service_client_id}}"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{service_client_secret}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "keycloak_url/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "keycloak_url"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "Mints a token as the 'claimassist-admin-service' confidential client (serviceAccountsEnabled=true in realm-export.json). This is the same grant claims-service/agent-service use for their own outbound service-to-service Feign calls (see the 'internal-service' OAuth2 client registration in each service's config). Useful for calling the /internal/v1/** endpoints directly without a real customer login.\n\nclient_secret defaults to 'local-dev-admin-client-secret' for the local realm export - override {{service_client_secret}} to match your environment."
+          },
+          "response": []
+        },
+        {
+          "name": "2.5 Invalid Token - Missing Bearer Copy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Missing token returns 401 Unauthorized', function() {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{customerServiceUrl}}/policies",
+              "host": [
+                "{{customerServiceUrl}}"
+              ],
+              "path": [
+                "policies"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "customer-service's AuthController is the only OAuth2 client in this platform (claimassist-customer-app, public client, Authorization Code + PKCE, directAccessGrantsEnabled=false). Run 1 -> 2 -> 3 in order the first time; after that the collection's access_token/refresh_token variables are populated and every other folder will just work. Every request below inherits Bearer auth from the collection root ({{access_token}})."
+    },
+    {
+      "name": "02 - Customer Service",
+      "item": [
+        {
+          "name": "Get My Policies",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    if (Array.isArray(body) && body.length > 0) {",
+                  "        pm.collectionVariables.set(\"policy_id\", body[0].id);",
+                  "        console.log(\"Saved policy_id =\", body[0].id);",
+                  "    } else {",
+                  "        console.log(\"No policies returned for this customer yet - seed one, or set {{policy_id}} manually.\");",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "customer_service_url/policies",
+              "host": [
+                "customer_service_url"
+              ],
+              "path": [
+                "policies"
+              ]
+            },
+            "description": "Authenticated. Returns every policy owned by the customer identified by the JWT's subject (CurrentUserProvider). Needed to get a real policyId before you can submit a claim in the next folder."
+          },
+          "response": []
+        }
+      ],
+      "description": "PolicyController - deliberately simple, read-only resource (see the class Javadoc)."
+    },
+    {
+      "name": "03 - Claims Service (public API)",
+      "item": [
+        {
+          "name": "Submit Claim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set(\"claim_id\", body.id);",
+                  "    console.log(\"Saved claim_id =\", body.id, \"claimNumber =\", body.claimNumber);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "description": "Optional. Send the same key twice to prove the request is idempotent (see ClaimRequest/idempotency_records table)."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"policyId\": \"{{policy_id}}\",\n    \"incidentType\": \"COLLISION\",\n    \"incidentDate\": \"2026-08-01T10:00:00Z\",\n    \"estimatedAmountCents\": 250000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "claims_service_url/claims",
+              "host": [
+                "claims_service_url"
+              ],
+              "path": [
+                "claims"
+              ]
+            },
+            "description": "Authenticated. {{policy_id}} must belong to the logged-in customer (see 'Get My Policies' above). incidentDate cannot be in the future (@PastOrPresent). incidentType is a free-text string in the entity (e.g. COLLISION, THEFT, FIRE, WATER_DAMAGE, LIABILITY - pick anything descriptive).\n\nKicks off the submit-claim saga (see ClaimSagaOrchestrations). Response is 201 with a generated claimNumber and initial status SUBMITTED."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Claims",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    if (Array.isArray(body) && body.length > 0 && !pm.collectionVariables.get(\"claim_id\")) {",
+                  "        pm.collectionVariables.set(\"claim_id\", body[0].id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "claims_service_url/claims",
+              "host": [
+                "claims_service_url"
+              ],
+              "path": [
+                "claims"
+              ]
+            },
+            "description": "Authenticated. Returns every claim where the caller is a party (policyholder, adjuster, or auditor) - see ClaimQueryService.getMyClaims()."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Claim By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "claims_service_url/claims/{{claim_id}}",
+              "host": [
+                "claims_service_url"
+              ],
+              "path": [
+                "claims",
+                "{{claim_id}}"
+              ]
+            },
+            "description": "Authenticated. 404s (not 403) if the caller isn't a party to the claim - see InternalClaimsController.requireView's comment for the same pattern."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Claim Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"status\": \"UNDER_REVIEW\",\n    \"note\": \"Adjuster picked up the claim for initial review.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "claims_service_url/claims/{{claim_id}}/status",
+              "host": [
+                "claims_service_url"
+              ],
+              "path": [
+                "claims",
+                "{{claim_id}}",
+                "status"
+              ]
+            },
+            "description": "Authenticated + @PreAuthorize(\"@security.canUpdateStatus(#id)\") - the caller needs UPDATE_STATUS permission on this claim (ADJUSTER role only, see ClaimRole). A freshly-submitted claim starts at SUBMITTED, whose only legal next state is UNDER_REVIEW (see ClaimStatus.ALLOWED_TRANSITIONS) - anything else 4xxs with a clear 'illegal transition' error, which is itself a good thing to test.\n\nValid status values: SUBMITTED, UNDER_REVIEW, DOCS_REQUESTED, APPROVED, DENIED, PAID, CLOSED."
+          },
+          "response": []
+        }
+      ],
+      "description": "ClaimController - CQRS style: GETs -> ClaimQueryService, mutations -> ClaimCommandService. Run 'Submit Claim' first to populate {{claim_id}}."
+    },
+    {
+      "name": "04 - Internal APIs",
+      "item": [
+        {
+          "name": "Internal: Get Claim Status + History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "claims_service_url/internal/v1/claims/{{claim_id}}/status",
+              "host": [
+                "claims_service_url"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "claims",
+                "{{claim_id}}",
+                "status"
+              ]
+            },
+            "description": "Authenticated (same JWT resource-server rules as the public API - there's no separate internal API key anymore, see ClaimsSecurityConfig / the removed InternalApiKeyFilter). In production this is called service-to-service by agent-service using its client-credentials token; for debugging you can call it directly with your own bearer token as long as you're a party to the claim. Returns the full StatusHistoryEntry audit trail."
+          },
+          "response": []
+        },
+        {
+          "name": "Internal: Get Claim Documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "claims_service_url/internal/v1/claims/{{claim_id}}/documents",
+              "host": [
+                "claims_service_url"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "claims",
+                "{{claim_id}}",
+                "documents"
+              ]
+            },
+            "description": "Authenticated. Lists ClaimDocumentSummaryDto for every document uploaded to the claim, including OCR status and fraud signal score."
+          },
+          "response": []
+        },
+        {
+          "name": "Internal: Check Claim Permission",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "claims_service_url/internal/v1/claims/{{claim_id}}/permissions/check?permission=VIEW",
+              "host": [
+                "claims_service_url"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "claims",
+                "{{claim_id}}",
+                "permissions",
+                "check"
+              ],
+              "query": [
+                {
+                  "key": "permission",
+                  "value": "VIEW",
+                  "description": "One of: VIEW, SUBMIT_DOCUMENTS, UPDATE_STATUS, VIEW_PARTIES, MANAGE_PARTIES, VIEW_AUDIT_TRAIL"
+                }
+              ]
+            },
+            "description": "Authenticated. Returns a bare boolean - whether the caller has the given ClaimPermission on this claim, per their ClaimRole."
+          },
+          "response": []
+        },
+        {
+          "name": "Internal: Get Policy Coverage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "customer_service_url/internal/v1/policies/{{policy_id}}/coverage",
+              "host": [
+                "customer_service_url"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "policies",
+                "{{policy_id}}",
+                "coverage"
+              ]
+            },
+            "description": "Authenticated. Returns PolicyCoverageDto - deliberately narrow (no SSN, no payment method) because this is the exact shape an AI agent tool call is allowed to see about a policy, per the DTO's own Javadoc."
+          },
+          "response": []
+        }
+      ],
+      "description": "InternalClaimsController / InternalCustomerController - normally called service-to-service (e.g. by agent-service's tool calls), exposed here so you can debug them directly."
+    },
+    {
+      "name": "05 - Agent Service (AI Assistant)",
+      "item": [
+        {
+          "name": "Stream Chat (SSE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"What's the status of my claim and what documents do I still need to submit?\",\n    \"claimId\": \"{{claim_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "agent_service_url/agent/stream",
+              "host": [
+                "agent_service_url"
+              ],
+              "path": [
+                "agent",
+                "stream"
+              ]
+            },
+            "description": "Authenticated. Server-Sent Events endpoint (produces text/event-stream) - the AI assistant streams its answer token-by-token as StreamResponse{text} chunks, and internally may call the claims/policy tool endpoints above on your behalf.\n\nPostman note: Postman's standard request runner buffers SSE and shows it as one raw response body once the stream ends (it will NOT show incremental chunks). If you want to see it stream live, use Postman's dedicated 'WebSocket/SSE' request type (New -> SSE Request) pointed at the same URL and method instead, or watch it with curl -N."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversation History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "agent_service_url/agent/claims/{{claim_id}}",
+              "host": [
+                "agent_service_url"
+              ],
+              "path": [
+                "agent",
+                "claims",
+                "{{claim_id}}"
+              ]
+            },
+            "description": "Authenticated. Returns every AgentMessageResponse for this claim's conversation (both USER and ASSISTANT turns), including any tool-call AgentEvents attached to each message."
+          },
+          "response": []
+        }
+      ],
+      "description": "AgentController - Spring AI-backed chat assistant scoped to one claim at a time."
+    },
+    {
+      "name": "06 - API Gateway (routed) [see notes - known routing gaps]",
+      "item": [
+        {
+          "name": "Gateway: Get My Claims (via gateway)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "gateway_url/claims",
+              "host": [
+                "gateway_url"
+              ],
+              "path": [
+                "claims"
+              ]
+            },
+            "description": "Routes correctly today (predicate Path=/claims/** with no rewrite matches claims-service's own /claims mapping) IF the lb:// service id resolves - see folder note."
+          },
+          "response": []
+        },
+        {
+          "name": "Gateway: Get My Policies (via gateway)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "gateway_url/policies",
+              "host": [
+                "gateway_url"
+              ],
+              "path": [
+                "policies"
+              ]
+            },
+            "description": "Routes correctly today (predicate Path=/policies/** with no rewrite matches customer-service's own /policies mapping) IF the lb:// service id resolves - see folder note."
+          },
+          "response": []
+        },
+        {
+          "name": "Gateway: Signup (via gateway) - expected to fail today",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"{{username}}\",\n    \"fullName\": \"{{full_name}}\",\n    \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "gateway_url/customer/auth/signup",
+              "host": [
+                "gateway_url"
+              ],
+              "path": [
+                "customer",
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Included to demonstrate the /customer/** prefix mismatch described in the folder note - expect a 404 from customer-service since its AuthController is mounted at /auth, not /customer/auth."
+          },
+          "response": []
+        }
+      ],
+      "description": "The gateway's routes (local-config-repo/api-gateway.yml) forward by path prefix with NO path-rewrite: /customer/** -> lb://CUSTOMER-SERVICE, /claims/** -> lb://CLAIM-SERVICE, /policies/** -> lb://POLICY-SERVICE, /notifications/** -> lb://NOTIFICATION-SERVICE.\n\nTwo things worth knowing while debugging through the gateway:\n1. The Eureka service IDs registered are CLAIMS-SERVICE / CUSTOMER-SERVICE (from each    service's spring.application.name), which don't exactly match the lb:// names above    (CLAIM-SERVICE / POLICY-SERVICE) - so those two routes will 503 until that's fixed.\n2. Because there's no StripPrefix filter, and customer-service's own controllers are    mounted at /auth and /policies (not /customer/auth or /customer/policies), routing    customer-service traffic through /customer/** won't reach those controllers either.\n\nFor reliable end-to-end debugging, folders 01-05 above talk to each service directly on its own port. This folder is included so you can see/reproduce the routing behavior itself, which is useful if you're the one fixing the gateway config."
+    },
+    {
+      "name": "6. OBSERVABILITY & METRICS Copy",
+      "item": [
+        {
+          "name": "6.1 Prometheus Metrics - API Gateway",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Prometheus metrics endpoint is accessible', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiGatewayUrl}}/actuator/prometheus",
+              "host": [
+                "{{apiGatewayUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "prometheus"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6.2 Health Detailed - Claims Service",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Detailed health endpoint is accessible', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{claimsServiceUrl}}/actuator/health/db",
+              "host": [
+                "{{claimsServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "db"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Health checks, metrics, and distributed tracing"
+    },
+    {
+      "name": "7. ERROR HANDLING Copy",
+      "item": [
+        {
+          "name": "7.1 404 Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Invalid endpoint returns 404 Not Found', function() {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiGatewayUrl}}/invalid/endpoint/path",
+              "host": [
+                "{{apiGatewayUrl}}"
+              ],
+              "path": [
+                "invalid",
+                "endpoint",
+                "path"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7.2 400 Bad Request - Missing Parameter",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Missing required parameter returns 400 Bad Request', function() {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{apiGatewayUrl}}/claims",
+              "host": [
+                "{{apiGatewayUrl}}"
+              ],
+              "path": [
+                "claims"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7.3 405 Method Not Allowed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Wrong HTTP method returns 405 Method Not Allowed', function() {",
+                  "    pm.response.to.have.status(405);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{customerServiceUrl}}/policies",
+              "host": [
+                "{{customerServiceUrl}}"
+              ],
+              "path": [
+                "policies"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Error scenario testing and validation"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "gateway_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "discovery_service_url",
+      "value": "http://localhost:8761"
+    },
+    {
+      "key": "config_service_url",
+      "value": "http://localhost:8888"
+    },
+    {
+      "key": "customer_service_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "claims_service_url",
+      "value": "http://localhost:8082"
+    },
+    {
+      "key": "agent_service_url",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "keycloak_url",
+      "value": "http://localhost:8180"
+    },
+    {
+      "key": "realm",
+      "value": "claimassist"
+    },
+    {
+      "key": "client_id",
+      "value": "claimassist-customer-app"
+    },
+    {
+      "key": "service_client_id",
+      "value": "claimassist-admin-service"
+    },
+    {
+      "key": "service_client_secret",
+      "value": "local-dev-admin-client-secret"
+    },
+    {
+      "key": "username",
+      "value": "jane.doe@example.com"
+    },
+    {
+      "key": "full_name",
+      "value": "Jane Doe"
+    },
+    {
+      "key": "password",
+      "value": "SuperSecret123"
+    },
+    {
+      "key": "auth_code",
+      "value": ""
+    },
+    {
+      "key": "auth_state",
+      "value": ""
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "key": "service_access_token",
+      "value": ""
+    },
+    {
+      "key": "customer_id",
+      "value": ""
+    },
+    {
+      "key": "policy_id",
+      "value": ""
+    },
+    {
+      "key": "claim_id",
+      "value": ""
+    },
+    {
+      "key": "idempotency_key",
+      "value": "{{$guid}}"
+    }
+  ]
+}

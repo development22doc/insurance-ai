@@ -4,6 +4,7 @@ import com.claimassist.platform.api_gateway.properties.SecurityProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -16,6 +17,8 @@ import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
@@ -38,6 +41,9 @@ public class GatewaySecurityConfig {
 
     private final SecurityProperties securityProperties;
     private final ObjectMapper objectMapper;
+
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}")
+    private String jwkSetUri;
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
@@ -85,9 +91,24 @@ public class GatewaySecurityConfig {
     }
 
     @Bean
+    public ReactiveJwtDecoder reactiveJwtDecoder() {
+        log.info("Creating ReactiveJwtDecoder with JWK Set URI: {}", jwkSetUri);
+        return NimbusReactiveJwtDecoder.withJwkSetUri(jwkSetUri).build();
+    }
+
+    @Bean
     public SecurityWebFilterChain securityWebFilterChain (ServerHttpSecurity http) {
 
-        String[] publicRoutes = securityProperties.publicRoutes ().toArray (String[] :: new);
+        List<String> publicRoutesList = securityProperties.publicRoutes();
+        if (publicRoutesList == null || publicRoutesList.isEmpty()) {
+            // Provide safe defaults when no public routes are configured to avoid
+            // Spring Security "matchers cannot be empty" error. These are safe
+            // development defaults and include basic health endpoints and root.
+            publicRoutesList = java.util.List.of("/actuator/health", "/actuator/info", "/");
+            log.warn("No public routes configured (app.security.publicRoutes). Using safe defaults: {}", publicRoutesList);
+        }
+
+        String[] publicRoutes = publicRoutesList.toArray(String[]::new);
 
         http
                 .csrf (ServerHttpSecurity.CsrfSpec :: disable)

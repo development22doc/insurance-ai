@@ -39,7 +39,7 @@ management:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/claims_db
+    url: jdbc:postgresql://localhost:5432/claimassist_claims_local
     username: claimassist
     password: claimassist
 
@@ -55,12 +55,13 @@ spring:
           max-idle: 16
           min-idle: 4
   kafka:
+    # Default to the host Kafka listener. When running services from the host
+    # (IntelliJ / java -jar) use the broker at `localhost:9092`. When running
+    # services inside Docker compose override KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    # in the container environment.
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       observation-enabled: ${KAFKA_PRODUCER_OBSERVATION_ENABLED:true}
-    listener:
-      observation-enabled: ${KAFKA_LISTENER_OBSERVATION_ENABLED:true}
-    producer:
       acks: ${KAFKA_PRODUCER_ACKS:all}
       retries: ${KAFKA_PRODUCER_RETRIES:2147483647}
       batch-size: ${KAFKA_PRODUCER_BATCH_SIZE:16384}
@@ -70,6 +71,8 @@ spring:
         delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:120000}
         request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
         retry.backoff.ms: ${KAFKA_RETRY_BACKOFF_MS:1000}
+    listener:
+      observation-enabled: ${KAFKA_LISTENER_OBSERVATION_ENABLED:true}
   security:
     oauth2:
       client:
@@ -85,9 +88,11 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
-security:
-  service-client:
-    registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+
+service-client:
+  registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+
 outbox:
   publisher:
     poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:2000}
@@ -132,63 +137,62 @@ cqrs:
      invalidation-enabled: ${CQRS_INVALIDATION_ENABLED:true}
 
 resilience4j:
-   retry:
-     configs:
-       default:
-         max-attempts: 3
-         wait-duration: 1000
-         retry-exceptions:
-           - org.springframework.web.client.HttpServerErrorException
-           - java.io.IOException
-           - java.net.ConnectException
-           - feign.FeignException.ServiceUnavailable
-           - feign.FeignException.GatewayTimeout
-         ignore-exceptions:
-           - feign.FeignException.BadRequest
-           - feign.FeignException.NotFound
-           - feign.FeignException.Unauthorized
-           - org.springframework.security.authentication.CredentialsExpiredException
-     instances:
-       customerService:
-         base-config: default
-   circuitbreaker:
-     configs:
-       default:
-         failure-rate-threshold: 50
-         slow-call-rate-threshold: 50
-         slow-call-duration-threshold: 5000
-         sliding-window-size: 10
-         sliding-window-type: COUNT_BASED
-         minimum-number-of-calls: 5
-         permitted-number-of-calls-in-half-open-state: 3
-         automatic-transition-enabled: true
-         wait-duration-in-open-state: 10000
-     instances:
-       customerService:
-         base-config: default
-    timeout:
-      configs:
-        default:
-          timeout-duration: 5000
-          cancel-running-future: true
-      instances:
-        customerService:
-          base-config: default
-    bulkhead:
-      configs:
-        default:
-          max-concurrent-calls: 10
-          max-wait-duration: 5000
-      instances:
-        customerService:
-          base-config: default
-    ratelimiter:
-      configs:
-        default:
-          limit-refresh-period: 1m
-          limit-for-period: 100
-          timeout-duration: 5000
-      instances:
-        customerService:
-          base-config: default
-
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 1000
+        retry-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - java.io.IOException
+          - java.net.ConnectException
+          - feign.FeignException.ServiceUnavailable
+          - feign.FeignException.GatewayTimeout
+        ignore-exceptions:
+          - feign.FeignException.BadRequest
+          - feign.FeignException.NotFound
+          - feign.FeignException.Unauthorized
+          - org.springframework.security.authentication.CredentialsExpiredException
+    instances:
+      customerService:
+        base-config: default
+  circuitbreaker:
+    configs:
+      default:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 5000
+        sliding-window-size: 10
+        sliding-window-type: COUNT_BASED
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-enabled: true
+        wait-duration-in-open-state: 10000
+    instances:
+      customerService:
+        base-config: default
+  timeout:
+    configs:
+      default:
+        timeout-duration: 5000
+        cancel-running-future: true
+    instances:
+      customerService:
+        base-config: default
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 10
+        max-wait-duration: 5000
+    instances:
+      customerService:
+        base-config: default
+  ratelimiter:
+    configs:
+      default:
+        limit-refresh-period: 1m
+        limit-for-period: 100
+        timeout-duration: 5000
+    instances:
+      customerService:
+        base-config: default

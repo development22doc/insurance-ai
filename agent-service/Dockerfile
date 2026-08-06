@@ -20,7 +20,7 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /workspace/target/agent-service-1.0.0.jar app.jar
 
 # Allow runtime JVM options and service port override
-ENV JAVA_OPTS=""
+ENV JAVA_OPTS="-Dapp.name=agent-service"
 ENV SERVICE_PORT=8083
 
 EXPOSE 8083
@@ -32,4 +32,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Run as non-root user
 USER app
 
-ENTRYPOINT ["sh","-c","exec java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["sh","-c","exec java -Dapp.name=agent-service $JAVA_OPTS -jar /app/app.jar"]

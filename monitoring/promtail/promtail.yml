@@ -1,0 +1,183 @@
+﻿server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: info
+positions:
+  filename: /tmp/positions.yaml
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+scrape_configs:
+  - job_name: discovery-service
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: discovery-service
+          service: discovery-service
+          application: claimassist
+          environment: local
+          __path__: /var/log/discovery-service/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            logger: logger
+            message: message
+            traceId: traceId
+            spanId: spanId
+            correlationId: correlationId
+      - labels:
+          level: level
+          logger: logger
+          traceId: traceId
+          spanId: spanId
+          correlationId: correlationId
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+  - job_name: config-service
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: config-service
+          service: config-service
+          application: claimassist
+          environment: local
+          __path__: /var/log/config-service/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            logger: logger
+            message: message
+            traceId: traceId
+            spanId: spanId
+            correlationId: correlationId
+      - labels:
+          level: level
+          logger: logger
+          traceId: traceId
+          spanId: spanId
+          correlationId: correlationId
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+  - job_name: api-gateway
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: api-gateway
+          service: api-gateway
+          application: claimassist
+          environment: local
+          __path__: /var/log/api-gateway/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            logger: logger
+            message: message
+            traceId: traceId
+            spanId: spanId
+            correlationId: correlationId
+      - labels:
+          level: level
+          logger: logger
+          traceId: traceId
+          spanId: spanId
+          correlationId: correlationId
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+  - job_name: customer-service
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: customer-service
+          service: customer-service
+          application: claimassist
+          environment: local
+          __path__: /var/log/customer-service/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            logger: logger
+            message: message
+            traceId: traceId
+            spanId: spanId
+            correlationId: correlationId
+      - labels:
+          level: level
+          logger: logger
+          traceId: traceId
+          spanId: spanId
+          correlationId: correlationId
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+  - job_name: claims-service
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: claims-service
+          service: claims-service
+          application: claimassist
+          environment: local
+          __path__: /var/log/claims-service/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            logger: logger
+            message: message
+            traceId: traceId
+            spanId: spanId
+            correlationId: correlationId
+      - labels:
+          level: level
+          logger: logger
+          traceId: traceId
+          spanId: spanId
+          correlationId: correlationId
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+  - job_name: agent-service
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: agent-service
+          service: agent-service
+          application: claimassist
+          environment: local
+          __path__: /var/log/agent-service/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            logger: logger
+            message: message
+            traceId: traceId
+            spanId: spanId
+            correlationId: correlationId
+      - labels:
+          level: level
+          logger: logger
+          traceId: traceId
+          spanId: spanId
+          correlationId: correlationId
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano

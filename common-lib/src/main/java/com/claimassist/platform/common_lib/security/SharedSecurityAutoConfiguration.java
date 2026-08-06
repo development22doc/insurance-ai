@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -26,6 +28,10 @@ import org.springframework.context.annotation.Primary;
 @Slf4j
 
 @AutoConfiguration
+// Only load this auto-configuration for servlet (non-reactive) web applications
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+// Also ensure servlet API is present before attempting to register servlet-based beans
+@ConditionalOnClass(name = "jakarta.servlet.Filter")
 @RequiredArgsConstructor
 public class SharedSecurityAutoConfiguration {
 
