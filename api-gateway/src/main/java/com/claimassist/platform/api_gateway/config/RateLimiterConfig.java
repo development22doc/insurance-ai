@@ -1,6 +1,8 @@
 package com.claimassist.platform.api_gateway.config;
 
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
 import org.springframework.cloud.gateway.filter.ratelimit.RedisRateLimiter;
 import org.springframework.context.annotation.Bean;
@@ -10,6 +12,8 @@ import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
+
+import java.util.Map;
 
 /**
  * Redis-backed so the limit holds across however many api-gateway replicas
@@ -33,10 +37,7 @@ import reactor.core.publisher.Mono;
 public class RateLimiterConfig {
 
     @Bean
-    public KeyResolver userKeyResolver() {
-
-        log.info("Initializing Gateway RateLimiter KeyResolver.");
-
+    public KeyResolver userKeyResolver(EventLogger eventLogger) {
         return exchange -> ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .map(Authentication::getPrincipal)
@@ -44,7 +45,6 @@ public class RateLimiterConfig {
                     if (principal instanceof Jwt jwt) {
                         Object userId = jwt.getClaim("userId");
                         if (userId != null) {
-                            log.debug("Rate limiter using UserId={}", userId);
                             return Mono.just("user:" + userId);
                         }
                     }
@@ -54,15 +54,12 @@ public class RateLimiterConfig {
                     String remoteAddress = exchange.getRequest().getRemoteAddress() != null
                             ? exchange.getRequest().getRemoteAddress().getAddress().getHostAddress()
                             : "unknown";
-                    log.debug("No authenticated Jwt in context. Rate limiter using Client IP={}", remoteAddress);
                     return "ip:" + remoteAddress;
                 }));
     }
 
     @Bean
     public RedisRateLimiter redisRateLimiter() {
-
-        log.info("Initializing Redis RateLimiter. replenishRate=20 burstCapacity=40 requestedTokens=1");
 
         return new RedisRateLimiter(20, 40, 1);
     }

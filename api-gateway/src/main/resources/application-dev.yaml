@@ -43,3 +43,15 @@ logging:
     org.springframework.cloud.gateway: INFO
     org.springframework.security: WARN
 
+# Performance logging thresholds (ms) - api-gateway uses REQUEST category
+commonlib:
+  performance:
+    info-threshold-ms: 100
+    warn-threshold-ms: 500
+    error-threshold-ms: 2000
+    categories:
+      REQUEST:
+        info: 100
+        warn: 500
+        error: 2000
+

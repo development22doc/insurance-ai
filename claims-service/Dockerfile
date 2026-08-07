@@ -19,7 +19,7 @@ WORKDIR /app
 # copy the fat jar and set ownership to non-root user
 COPY --from=builder --chown=app:app /workspace/target/claims-service-1.0.0.jar app.jar
 
-ENV JAVA_OPTS="-Dapp.name=claims-service"
+ENV JAVA_OPTS="-Dapp.name=claims-service -Duser.timezone=Asia/Kolkata"
 ENV SERVICE_PORT=8082
 
 EXPOSE 8082

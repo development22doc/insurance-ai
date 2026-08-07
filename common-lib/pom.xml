@@ -71,12 +71,26 @@
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
         <!-- JSON logging for structured logs (used by logback-spring.xml) -->
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash.encoder.version}</version>
         </dependency>
+
+						<!-- Micrometer Tracing APIs - Bridge implementations (e.g., brave) should be provided by the application runtime -->
+						<dependency>
+							<groupId>io.micrometer</groupId>
+							<artifactId>micrometer-tracing</artifactId>
+						</dependency>
+						<dependency>
+							<groupId>io.micrometer</groupId>
+							<artifactId>micrometer-tracing-bridge-brave</artifactId>
+						</dependency>
 	</dependencies>
 
 	<dependencyManagement>

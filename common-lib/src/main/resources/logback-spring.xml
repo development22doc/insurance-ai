@@ -2,10 +2,9 @@
     <!-- Console appender that emits structured JSON using logstash-logback-encoder -->
     <include resource="org/springframework/boot/logging/logback/defaults.xml" />
 
-    <!-- Property for application name from system property, environment variable, or fallback -->
-    <!-- Use -Dapp.name=<service-name> at JVM startup, then APP_NAME env var, then spring.application.name, then default to claimassist -->
-    <property name="LOG_FILE" value="${LOG_FILE:-${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}/spring.log}}" />
-    <property name="APP_NAME" value="${app.name:-${APP_NAME:-${spring.application.name:-claimassist}}}" />
+    <!-- Use Spring Boot's property resolution for spring.application.name -->
+    <!-- This allows Logback to access Spring properties during initialization -->
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="application" />
 
     <!-- Console appender with JSON structured logging -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
@@ -45,8 +44,10 @@
     </appender>
 
     <!-- Rolling file appender for centralized logging collection -->
+    <!-- Directories are created automatically by Logback -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/${APP_NAME}/${APP_NAME}.log</file>
+        <mkdirs>true</mkdirs>
         <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
             <providers>
                 <timestamp>

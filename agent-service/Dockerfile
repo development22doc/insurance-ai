@@ -20,7 +20,7 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /workspace/target/agent-service-1.0.0.jar app.jar
 
 # Allow runtime JVM options and service port override
-ENV JAVA_OPTS="-Dapp.name=agent-service"
+ENV JAVA_OPTS="-Dapp.name=agent-service -Duser.timezone=Asia/Kolkata"
 ENV SERVICE_PORT=8083
 
 EXPOSE 8083

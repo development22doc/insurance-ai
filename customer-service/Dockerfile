@@ -19,7 +19,7 @@ WORKDIR /app
 # copy the fat jar and set ownership to non-root user
 COPY --from=builder --chown=app:app /workspace/target/customer-service-1.0.0.jar app.jar
 
-ENV JAVA_OPTS="-Dapp.name=customer-service"
+ENV JAVA_OPTS="-Dapp.name=customer-service -Duser.timezone=Asia/Kolkata"
 ENV SERVICE_PORT=8081
 
 EXPOSE 8081
