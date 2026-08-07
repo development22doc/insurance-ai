@@ -34,6 +34,16 @@
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-config</artifactId>
 		</dependency>
+		<!-- Required for spring-cloud-starter-config retry mechanism (fail-fast, retry.max-attempts, etc.) -->
+		<dependency>
+			<groupId>org.springframework.retry</groupId>
+			<artifactId>spring-retry</artifactId>
+		</dependency>
+		<!-- Required for retry annotations and AOP support in Config Client -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-aop</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-redis-reactive</artifactId>
@@ -91,6 +101,13 @@
 					<artifactId>spring-boot-starter-web</artifactId>
 				</exclusion>
 			</exclusions>
+		</dependency>
+		<!-- Jakarta Servlet API - needed for introspecting common-lib classes that reference
+		     jakarta.servlet, even though the gateway is reactive. Prevents ClassNotFoundException
+		     during @ConditionalOnBean evaluation. -->
+		<dependency>
+			<groupId>jakarta.servlet</groupId>
+			<artifactId>jakarta.servlet-api</artifactId>
 		</dependency>
 	</dependencies>
 

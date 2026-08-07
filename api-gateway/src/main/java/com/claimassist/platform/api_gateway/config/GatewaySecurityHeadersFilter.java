@@ -20,7 +20,15 @@ public class GatewaySecurityHeadersFilter {
     @Bean
     public WebFilter securityHeadersWebFilter() {
         return (exchange, chain) -> chain.filter(exchange)
-                .then(Mono.fromRunnable(() -> addSecurityHeaders(exchange.getResponse())));
+                .then(Mono.fromRunnable(() -> {
+                    // Only add security headers if the response is still mutable.
+                    // This avoids attempting to modify headers after the response
+                    // has been committed (which causes "ServerHttpResponse already committed").
+                    org.springframework.http.server.reactive.ServerHttpResponse response = exchange.getResponse();
+                    if (!response.isCommitted()) {
+                        addSecurityHeaders(response);
+                    }
+                }));
     }
 
     private void addSecurityHeaders(org.springframework.http.server.reactive.ServerHttpResponse response) {

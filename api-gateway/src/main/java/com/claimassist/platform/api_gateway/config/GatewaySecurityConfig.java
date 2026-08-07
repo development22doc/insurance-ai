@@ -86,13 +86,13 @@ public class GatewaySecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
 
-        log.info("API Gateway CORS configuration initialized with allowed origins: {}", allowedOrigins);
+        log.debug("API Gateway CORS configuration initialized with allowed origins: {}", allowedOrigins);
         return source;
     }
 
     @Bean
     public ReactiveJwtDecoder reactiveJwtDecoder() {
-        log.info("Creating ReactiveJwtDecoder with JWK Set URI: {}", jwkSetUri);
+        log.debug("Creating ReactiveJwtDecoder with JWK Set URI: {}", jwkSetUri);
         return NimbusReactiveJwtDecoder.withJwkSetUri(jwkSetUri).build();
     }
 
@@ -149,16 +149,7 @@ public class GatewaySecurityConfig {
                                         "Access denied"))
                 );
 
-        log.info ("API Gateway OAuth2 Resource Server enabled.");
-        log.info ("JWT validation through JWKS enabled.");
-        log.info ("Comprehensive Security Headers enabled:");
-        log.info ("  - HSTS with preload");
-        log.info ("  - X-Frame-Options: DENY");
-        log.info ("  - X-Content-Type-Options: nosniff");
-        log.info ("  - Referrer-Policy: strict-origin-when-cross-origin");
-        log.info ("  - Content-Security-Policy");
-        log.info ("  - Permissions-Policy");
-        log.info ("Authorization Code + PKCE enabled.");
+        log.debug("API Gateway security configuration: OAuth2 Resource Server + JWT validation via JWKS + comprehensive security headers");
 
         return http.build ();
     }

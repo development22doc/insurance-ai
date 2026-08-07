@@ -20,17 +20,6 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
 
-  # Local gateway routes so the gateway can operate without a Config Server during
-  # development. The same routes are available from the config repo, but when the
-  # config server is unavailable the gateway needs local fallbacks to forward
-  # /customer/** to the customer service.
-  cloud:
-    gateway:
-      routes:
-        - id: customer-service
-          uri: lb://CUSTOMER-SERVICE
-          predicates:
-            - Path=/customer/**
 
 # Public routes that should be accessible without a bearer JWT. These are
 # normally supplied by the centralized config repository (config-repo),
@@ -60,5 +49,17 @@ eureka:
 logging:
   level:
     com.claimassist: DEBUG
-    org.springframework.cloud.gateway: DEBUG
-    org.springframework.security: DEBUG
+    org.springframework.cloud.gateway: INFO
+    org.springframework.security: INFO
+
+# Performance logging thresholds (ms) - api-gateway uses REQUEST category
+commonlib:
+  performance:
+    info-threshold-ms: 100
+    warn-threshold-ms: 500
+    error-threshold-ms: 2000
+    categories:
+      REQUEST:
+        info: 100
+        warn: 500
+        error: 2000

@@ -4,7 +4,6 @@ import com.claimassist.platform.customer_service.config.KeycloakProperties;
 import com.claimassist.platform.customer_service.dto.auth.AuthResponse;
 import com.claimassist.platform.customer_service.entity.Customer;
 import com.claimassist.platform.customer_service.repository.CustomerRepository;
-import com.claimassist.platform.customer_service.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -174,12 +173,13 @@ public class OAuth2TokenService {
 
             return preferred;
         } catch (JwtException e) {
-            log.error("JWT signature validation failed for ID token: {}", e.getMessage());
+            log.warn("JWT signature validation failed for ID token");
             return null;
         } catch (Exception e) {
-            log.error("Unexpected error decoding ID token: {}", e.getMessage());
+            log.warn("Unexpected error decoding ID token");
             return null;
         }
     }
+
 
 }

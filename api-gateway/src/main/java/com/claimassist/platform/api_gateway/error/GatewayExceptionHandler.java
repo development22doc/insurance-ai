@@ -1,8 +1,12 @@
 package com.claimassist.platform.api_gateway.error;
 
+import com.claimassist.platform.common_lib.observability.ExceptionLoggingUtil;
+import com.claimassist.platform.common_lib.observability.LoggingConstants;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.web.WebProperties;
 import org.springframework.boot.autoconfigure.web.reactive.error.AbstractErrorWebExceptionHandler;
 import org.springframework.boot.web.reactive.error.ErrorAttributes;
@@ -27,6 +31,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
+import java.util.Optional;
 
 @Component
 @Order(-2)
@@ -34,60 +39,49 @@ import java.util.concurrent.TimeoutException;
 public class GatewayExceptionHandler extends AbstractErrorWebExceptionHandler {
 
     private final ObjectMapper objectMapper;
+    private final EventLogger eventLogger;
 
     public GatewayExceptionHandler(
             ErrorAttributes errorAttributes,
             WebProperties webProperties,
             ApplicationContext applicationContext,
             ServerCodecConfigurer codecConfigurer,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            EventLogger eventLogger) {
 
         super(errorAttributes, webProperties.getResources(), applicationContext);
 
         this.objectMapper = objectMapper;
+        this.eventLogger = eventLogger;
 
         setMessageReaders(codecConfigurer.getReaders());
         setMessageWriters(codecConfigurer.getWriters());
-
-        log.info("GatewayExceptionHandler initialized.");
     }
 
     @Override
     protected RouterFunction<ServerResponse> getRoutingFunction(ErrorAttributes errorAttributes) {
-
-        log.debug("Registering Gateway global exception handler.");
-
         return RouterFunctions.route(RequestPredicates.all(), this::renderError);
     }
 
     private Mono<ServerResponse> renderError(ServerRequest request) {
 
         Throwable error = getError(request);
-
-        log.error("Gateway exception intercepted. ExceptionType={}, Message={}",
-                error.getClass().getSimpleName(),
-                error.getMessage());
-
         HttpStatus status = resolveStatus(error);
         String message = resolveMessage(error, status);
-        String correlationId = request.headers().firstHeader("X-Correlation-Id");
+        String correlationId = Optional.ofNullable(request.headers().firstHeader(LoggingConstants.CORRELATION_ID_HEADER))
+                .orElseGet(() -> MDC.get(LoggingConstants.MDC_CORRELATION_ID));
 
-        log.info("Resolved HTTP Status : {}", status);
-        log.info("Resolved Client Message : {}", message);
+        // Emit structured exception event via common-lib's EventLogger
+        Map<String, Object> exceptionDetails = Map.of(
+                "method", request.methodName(),
+                "path", request.path(),
+                "status", status.value(),
+                "exceptionType", error.getClass().getSimpleName(),
+                "message", message
+        );
+        eventLogger.logExceptionEvent("api-gateway", "api-gateway", exceptionDetails);
 
-        if (status.is5xxServerError()) {
-            log.error("Gateway error [{}] on {} {}",
-                    status,
-                    request.methodName(),
-                    request.path(),
-                    error);
-        } else {
-            log.warn("Gateway rejected [{}] on {} {}",
-                    status,
-                    request.methodName(),
-                    request.path());
-        }
-
+        // Build response body
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", status.name());
         body.put("message", message);
@@ -95,10 +89,7 @@ public class GatewayExceptionHandler extends AbstractErrorWebExceptionHandler {
 
         if (correlationId != null && !correlationId.isBlank()) {
             body.put("correlationId", correlationId);
-            log.debug("CorrelationId={}", correlationId);
         }
-
-        log.debug("Sending standardized error response to client.");
 
         return ServerResponse.status(status)
                 .contentType(MediaType.APPLICATION_JSON)

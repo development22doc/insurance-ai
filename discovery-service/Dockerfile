@@ -18,7 +18,7 @@ WORKDIR /app
 # copy the fat jar and set ownership to non-root user
 COPY --from=builder --chown=app:app /workspace/target/discovery-service-1.0.0.jar app.jar
 
-ENV JAVA_OPTS="-Dapp.name=discovery-service"
+ENV JAVA_OPTS="-Dapp.name=discovery-service -Duser.timezone=Asia/Kolkata"
 ENV SERVICE_PORT=8761
 
 EXPOSE 8761

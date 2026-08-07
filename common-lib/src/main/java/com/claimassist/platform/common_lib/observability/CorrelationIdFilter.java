@@ -1,16 +1,15 @@
 package com.claimassist.platform.common_lib.observability;
 
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.slf4j.MDC;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Enumeration;
 import java.util.UUID;
 
 /**
@@ -22,28 +21,40 @@ import java.util.UUID;
  */
 public class CorrelationIdFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(CorrelationIdFilter.class);
-    public static final String CORRELATION_ID_HEADER = "X-Correlation-Id";
-    public static final String MDC_KEY = "correlationId";
-    public static final String REQUEST_ID_HEADER = "X-Request-Id";
-    public static final String REQUEST_ID_MDC_KEY = "requestId";
+    // Compatibility constants: some other classes reference these static fields.
+    public static final String CORRELATION_ID_HEADER = LoggingConstants.CORRELATION_ID_HEADER;
+    public static final String MDC_KEY = LoggingConstants.MDC_CORRELATION_ID;
+    public static final String REQUEST_ID_HEADER = LoggingConstants.REQUEST_ID_HEADER;
+    public static final String REQUEST_ID_MDC_KEY = LoggingConstants.MDC_REQUEST_ID;
+
+    // CorrelationIdFilter intentionally avoids a hard compile-time dependency on
+    // micrometer Tracer. Many tracing implementations automatically populate
+    // MDC with traceId/spanId; this filter focuses on correlation/request ids.
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        String correlationId = request.getHeader(CORRELATION_ID_HEADER);
+        String correlationId = request.getHeader(LoggingConstants.CORRELATION_ID_HEADER);
         if (correlationId == null || correlationId.isBlank()) {
             correlationId = UUID.randomUUID().toString();
         }
-        String requestId = request.getHeader(REQUEST_ID_HEADER);
+        String requestId = request.getHeader(LoggingConstants.REQUEST_ID_HEADER);
         if (requestId == null || requestId.isBlank()) {
             requestId = UUID.randomUUID().toString();
         }
 
-        MDC.put(MDC_KEY, correlationId);
-        MDC.put(REQUEST_ID_MDC_KEY, requestId);
-        response.setHeader(CORRELATION_ID_HEADER, correlationId);
-        response.setHeader(REQUEST_ID_HEADER, requestId);
+        MDCUtility.putCorrelationId(correlationId);
+        MDCUtility.putRequestId(requestId);
+        response.setHeader(LoggingConstants.CORRELATION_ID_HEADER, correlationId);
+        response.setHeader(LoggingConstants.REQUEST_ID_HEADER, requestId);
+
+        // Ensure any trace/span present in MDC (populated by tracing instrumentation)
+        // are echoed back in response headers so callers can reference them.
+        String traceId = org.slf4j.MDC.get(LoggingConstants.MDC_TRACE_ID);
+        String spanId = org.slf4j.MDC.get(LoggingConstants.MDC_SPAN_ID);
+        if (traceId != null) response.setHeader(LoggingConstants.TRACE_ID_HEADER, traceId);
+        if (spanId != null) response.setHeader(LoggingConstants.SPAN_ID_HEADER, spanId);
 
         long startNanos = System.nanoTime();
 
@@ -52,8 +63,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         } finally {
             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
             log.info(buildStructuredLog(request, response, correlationId, requestId, elapsedMs));
-            MDC.remove(MDC_KEY);
-            MDC.remove(REQUEST_ID_MDC_KEY);
+            MDCUtility.clearAll();
         }
     }
 
@@ -62,8 +72,8 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
                                       String correlationId,
                                       String requestId,
                                       long elapsedMs) {
-        String traceId = valueOrDash(MDC.get("traceId"));
-        String spanId = valueOrDash(MDC.get("spanId"));
+        String traceId = valueOrDash(MDCUtilityRead("traceId"));
+        String spanId = valueOrDash(MDCUtilityRead("spanId"));
         String method = valueOrDash(request.getMethod());
         String path = valueOrDash(request.getRequestURI());
         String query = request.getQueryString() != null ? request.getQueryString() : "";
@@ -138,5 +148,18 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
     private String escape(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    // helper to read MDC values using the existing utility without exposing MDC
+    private String MDCUtilityRead(String key) {
+        // try the known constants
+        switch (key) {
+            case "traceId":
+                return org.slf4j.MDC.get(LoggingConstants.MDC_TRACE_ID);
+            case "spanId":
+                return org.slf4j.MDC.get(LoggingConstants.MDC_SPAN_ID);
+            default:
+                return org.slf4j.MDC.get(key);
+        }
     }
 }

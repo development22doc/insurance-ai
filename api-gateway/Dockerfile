@@ -18,7 +18,7 @@ WORKDIR /app
 # copy the fat jar and set ownership to non-root user
 COPY --from=builder --chown=app:app /workspace/target/api-gateway-1.0.0.jar app.jar
 
-ENV JAVA_OPTS="-Dapp.name=api-gateway"
+ENV JAVA_OPTS="-Dapp.name=api-gateway -Duser.timezone=Asia/Kolkata"
 ENV SERVICE_PORT=8080
 
 EXPOSE 8080

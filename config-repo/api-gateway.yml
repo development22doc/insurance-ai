@@ -31,11 +31,22 @@ spring:
               uri: lb://CUSTOMER-SERVICE
               predicates:
                 - Path=/customer/**
+              filters:
+                - StripPrefix=1
 
-            - id: claim-service
-              uri: lb://CLAIM-SERVICE
+            - id: claims-service
+              uri: lb://CLAIMS-SERVICE
               predicates:
                 - Path=/claims/**
+              filters:
+                - StripPrefix=1
+
+            - id: agent-service
+              uri: lb://AGENT-SERVICE
+              predicates:
+                - Path=/agent/**
+              filters:
+                - StripPrefix=1
 
             - id: policy-service
               uri: lb://POLICY-SERVICE

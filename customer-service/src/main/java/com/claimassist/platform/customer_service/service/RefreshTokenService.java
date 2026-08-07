@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 
@@ -75,6 +74,7 @@ public class RefreshTokenService {
 
         return saved;
     }
+
 
     private String generateToken() {
         byte[] bytes = new byte[64];
