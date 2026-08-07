@@ -30,7 +30,7 @@ public class OutboxKafkaConfig {
     private static final String CLAIM_UPDATE_REQUEST_DLT = CLAIM_UPDATE_REQUEST_TOPIC + ".DLT";
     private static final String CLAIM_UPDATE_RESPONSE_DLT = CLAIM_UPDATE_RESPONSE_TOPIC + ".DLT";
 
-    @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
+    @Value("${spring.kafka.bootstrap-servers:localhost:29092}")
     private String bootstrapServers;
 
     @Value("${spring.application.name:agent-service}")

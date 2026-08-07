@@ -22,7 +22,7 @@ spring:
           fetch_size: 50
 
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
     producer:
       acks: all
       retries: 2147483647
@@ -35,7 +35,7 @@ spring:
         request.timeout.ms: 30000
         retry.backoff.ms: 1000
     consumer:
-      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
       group-id: claims-service-dev
       max-poll-records: 100
       session-timeout-ms: 30000

@@ -51,7 +51,7 @@ public class OutboxKafkaConfig {
     private static final String CLAIM_SAGA_STEP_RESULT_DLT = CLAIM_SAGA_STEP_RESULT_TOPIC + ".DLT";
     private static final String CLAIM_SAGA_ORCHESTRATION_RESULT_DLT = CLAIM_SAGA_ORCHESTRATION_RESULT_TOPIC + ".DLT";
 
-    @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
+    @Value("${spring.kafka.bootstrap-servers:localhost:29092}")
     private String bootstrapServers;
 
     @Value("${spring.application.name:claims-service}")

@@ -3,7 +3,9 @@ spring:
     config:
       server:
         native:
-          search-locations: file:D:/Mayur/claimsassist/insurance-ai-platform/config-repo
+          # Use project-local config-repo by default. Allow override via
+          # CONFIG_NATIVE_SEARCH_LOCATIONS environment variable.
+          search-locations: ${CONFIG_NATIVE_SEARCH_LOCATIONS:file:./config-repo}
 
 server:
   port: 8888
