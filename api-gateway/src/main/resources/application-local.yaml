@@ -24,7 +24,7 @@ spring:
     gateway:
       routes:
         - id: actuator
-          uri: forward:/
+          uri: forward:/actuator
           predicates:
             - Path=/actuator/**
 
