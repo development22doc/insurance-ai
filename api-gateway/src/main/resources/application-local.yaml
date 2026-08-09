@@ -20,8 +20,22 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
 
+  cloud:
+    gateway:
+      routes:
+        - id: actuator
+          uri: forward:/
+          predicates:
+            - Path=/actuator/**
 
-# Public routes that should be accessible without a bearer JWT. These are
+        - id: customer-service
+          uri: lb://CUSTOMER-SERVICE
+          predicates:
+            - Path=/customer/**
+          filters:
+            - StripPrefix=1
+
+# Public routes that should be accessible without a bearer JWT.
 # normally supplied by the centralized config repository (config-repo),
 # but we provide local defaults so the gateway allows the OAuth authorization
 # endpoints to be reached while developing without the config server.
