@@ -3,6 +3,7 @@ package com.claimassist.platform.customer_service.controller;
 import com.claimassist.platform.common_lib.error.BadRequestException;
 import com.claimassist.platform.common_lib.observability.LogCategories;
 import com.claimassist.platform.common_lib.observability.LoggingConstants;
+import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.claimassist.platform.customer_service.dto.auth.AuthResponse;
 import com.claimassist.platform.customer_service.dto.auth.SignupRequest;
@@ -39,6 +40,7 @@ public class AuthController {
     private final OAuth2TokenService tokenService;
     private final OAuth2LogoutService logoutService;
     private final EventLogger eventLogger;
+    private final PerformanceLogger performanceLogger;
 
     @PostMapping ("/signup")
     public ResponseEntity<Void> signup (@RequestBody @Valid SignupRequest request) {
@@ -46,33 +48,27 @@ public class AuthController {
         long startTime = System.currentTimeMillis();
         String username = request.username();
 
-        // Emit SIGNUP_STARTED
         Map<String, Object> signupStartedDetails = new HashMap<>();
         signupStartedDetails.put("username", username);
         signupStartedDetails.put("event", "SIGNUP_STARTED");
         eventLogger.logBusinessEvent("customer-service", "customer-service", signupStartedDetails);
 
         try {
-            // Check if customer already exists
+            // Validate customer uniqueness
+            long validationStart = System.currentTimeMillis();
             Optional<Customer> existingCustomer = customerLookupService.findByUsername(username);
 
             if (existingCustomer.isPresent()) {
+                long validationDuration = System.currentTimeMillis() - validationStart;
                 Map<String, Object> dupeDetails = new HashMap<>();
                 dupeDetails.put("username", username);
                 dupeDetails.put("event", "CUSTOMER_ALREADY_EXISTS");
-                dupeDetails.put("executionTimeMs", System.currentTimeMillis() - startTime);
+                dupeDetails.put("executionTimeMs", validationDuration);
                 eventLogger.logSecurityEvent("customer-service", "customer-service", dupeDetails);
 
                 throw new BadRequestException(
                         "A customer already exists with username: " + username);
             }
-
-            // Emit VALIDATION_COMPLETED
-            Map<String, Object> validationDetails = new HashMap<>();
-            validationDetails.put("username", username);
-            validationDetails.put("event", "SIGNUP_VALIDATION_COMPLETED");
-            validationDetails.put("result", "valid");
-            eventLogger.logBusinessEvent("customer-service", "customer-service", validationDetails);
 
             // Create customer in database
             long dbStartTime = System.currentTimeMillis();
@@ -90,12 +86,14 @@ public class AuthController {
 
             long customerId = customer.getId();
             long dbDuration = System.currentTimeMillis() - dbStartTime;
-            Map<String, Object> customerSavedDetails = new HashMap<>();
-            customerSavedDetails.put("customerId", customerId);
-            customerSavedDetails.put("username", username);
-            customerSavedDetails.put("event", "CUSTOMER_SAVED");
-            customerSavedDetails.put("executionTimeMs", dbDuration);
-            eventLogger.logDatabaseEvent("customer-service", "customer-service", dbDuration, customerSavedDetails);
+            Map<String, Object> customerCreatedDetails = new HashMap<>();
+            customerCreatedDetails.put("customerId", customerId);
+            customerCreatedDetails.put("username", username);
+            customerCreatedDetails.put("event", "CUSTOMER_SAVED");
+            customerCreatedDetails.put("executionTimeMs", dbDuration);
+            eventLogger.logDatabaseEvent("customer-service", "customer-service", dbDuration, customerCreatedDetails);
+            performanceLogger.log("REPOSITORY", "repository.customer.save", dbDuration,
+                    Map.of("username", username, "customerId", customerId));
 
             // Create Keycloak user
             long keycloakStartTime = System.currentTimeMillis();
@@ -119,16 +117,24 @@ public class AuthController {
             keycloakCreatedDetails.put("event", "KEYCLOAK_USER_CREATED");
             keycloakCreatedDetails.put("executionTimeMs", keycloakDuration);
             eventLogger.logBusinessEvent("customer-service", "customer-service", keycloakCreatedDetails);
+            performanceLogger.log("BUSINESS", "keycloak.create_user", keycloakDuration,
+                    Map.of("username", username, "customerId", customerId));
 
             customer.setKeycloakId (keycloakUserId);
+            long updateStartTime = System.currentTimeMillis();
             customerRepository.save (customer);
+            long updateDuration = System.currentTimeMillis() - updateStartTime;
+            Map<String, Object> updateDetails = new HashMap<>();
+            updateDetails.put("customerId", customerId);
+            updateDetails.put("keycloakUserId", keycloakUserId);
+            updateDetails.put("event", "CUSTOMER_SAVED");
+            updateDetails.put("executionTimeMs", updateDuration);
+            eventLogger.logDatabaseEvent("customer-service", "customer-service", updateDuration, updateDetails);
+            performanceLogger.log("REPOSITORY", "repository.customer.save", updateDuration,
+                    Map.of("username", username, "customerId", customerId));
 
             // Evict cache
             customerLookupService.evictByUsername (username);
-            Map<String, Object> cacheEvictDetails = new HashMap<>();
-            cacheEvictDetails.put("cacheKey", "customer:" + username);
-            cacheEvictDetails.put("event", "CACHE_EVICT");
-            eventLogger.logBusinessEvent("customer-service", "customer-service", cacheEvictDetails);
 
             // Emit SIGNUP_COMPLETED
             long totalDuration = System.currentTimeMillis() - startTime;
@@ -140,33 +146,17 @@ public class AuthController {
             completedDetails.put("executionTimeMs", totalDuration);
             completedDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
             eventLogger.logBusinessEvent("customer-service", "customer-service", completedDetails);
+            performanceLogger.log("BUSINESS", "signup.total", totalDuration,
+                    Map.of("username", username, "customerId", customerId));
 
             return ResponseEntity.status (HttpStatus.CREATED).build ();
 
-        } catch (BadRequestException e) {
-            long duration = System.currentTimeMillis() - startTime;
-            Map<String, Object> failureDetails = new HashMap<>();
-            failureDetails.put("username", username);
-            failureDetails.put("event", "SIGNUP_FAILED");
-            failureDetails.put("reason", e.getMessage());
-            failureDetails.put("executionTimeMs", duration);
-            failureDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logSecurityEvent("customer-service", "customer-service", failureDetails);
-            throw e;
-        } catch (Exception e) {
-            long duration = System.currentTimeMillis() - startTime;
-            Map<String, Object> errorDetails = new HashMap<>();
-            errorDetails.put("username", username);
-            errorDetails.put("event", "SIGNUP_FAILED");
-            errorDetails.put("reason", e.getClass().getSimpleName());
-            errorDetails.put("executionTimeMs", duration);
-            errorDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logSecurityEvent("customer-service", "customer-service", errorDetails);
-            throw e;
-        }
-    }
+         } catch (Exception e) {
+             throw e;
+         }
+     }
 
-    @GetMapping ("/authorize")
+     @GetMapping ("/authorize")
     public ResponseEntity<Void> authorize () {
 
         long startTime = System.currentTimeMillis();
@@ -175,19 +165,24 @@ public class AuthController {
         authStartDetails.put("event", "AUTHORIZATION_STARTED");
         eventLogger.logBusinessEvent("customer-service", "customer-service", authStartDetails);
 
-        OAuth2AuthorizationService.AuthorizationRequest request =
-                authorizationService.createAuthorizationRequest ();
+        try {
+            OAuth2AuthorizationService.AuthorizationRequest request =
+                    authorizationService.createAuthorizationRequest ();
 
-        long duration = System.currentTimeMillis() - startTime;
-        Map<String, Object> authCompleteDetails = new HashMap<>();
-        authCompleteDetails.put("state", request.state());
-        authCompleteDetails.put("event", "AUTHORIZATION_COMPLETED");
-        authCompleteDetails.put("executionTimeMs", duration);
-        eventLogger.logBusinessEvent("customer-service", "customer-service", authCompleteDetails);
+            long duration = System.currentTimeMillis() - startTime;
+            Map<String, Object> authCompleteDetails = new HashMap<>();
+            authCompleteDetails.put("state", request.state());
+            authCompleteDetails.put("event", "AUTHORIZATION_COMPLETED");
+            authCompleteDetails.put("executionTimeMs", duration);
+            eventLogger.logBusinessEvent("customer-service", "customer-service", authCompleteDetails);
 
-        return ResponseEntity.status (HttpStatus.FOUND)
-                .location (URI.create (request.authorizationUrl ()))
-                .build ();
+            return ResponseEntity.status (HttpStatus.FOUND)
+                    .location (URI.create (request.authorizationUrl ()))
+                    .build ();
+        } catch (Exception e) {
+            log.error("Error in authorize endpoint", e);
+            throw e;
+        }
     }
 
     @GetMapping ("/callback")
@@ -206,12 +201,6 @@ public class AuthController {
             String codeVerifier = authorizationService.consumeCodeVerifier (state);
 
             if (codeVerifier == null) {
-                Map<String, Object> failDetails = new HashMap<>();
-                failDetails.put("event", "CALLBACK_FAILED");
-                failDetails.put("reason", "Invalid or expired state");
-                failDetails.put("executionTimeMs", System.currentTimeMillis() - startTime);
-                eventLogger.logSecurityEvent("customer-service", "customer-service", failDetails);
-
                 throw new BadRequestException ("Invalid or expired state parameter");
             }
 
@@ -228,6 +217,8 @@ public class AuthController {
             tokenExchangeCompleteDetails.put("customerId", response.customerId());
             tokenExchangeCompleteDetails.put("executionTimeMs", tokenDuration);
             eventLogger.logBusinessEvent("customer-service", "customer-service", tokenExchangeCompleteDetails);
+            performanceLogger.log("BUSINESS", "keycloak.token.exchange", tokenDuration,
+                    Map.of("customerId", response.customerId()));
 
             long totalDuration = System.currentTimeMillis() - startTime;
             Map<String, Object> callbackCompleteDetails = new HashMap<>();
@@ -235,17 +226,12 @@ public class AuthController {
             callbackCompleteDetails.put("customerId", response.customerId());
             callbackCompleteDetails.put("executionTimeMs", totalDuration);
             eventLogger.logBusinessEvent("customer-service", "customer-service", callbackCompleteDetails);
+            performanceLogger.log("BUSINESS", "oauth.callback.total", totalDuration,
+                    Map.of("customerId", response.customerId()));
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            long duration = System.currentTimeMillis() - startTime;
-            Map<String, Object> errorDetails = new HashMap<>();
-            errorDetails.put("event", "CALLBACK_FAILED");
-            errorDetails.put("reason", e.getClass().getSimpleName());
-            errorDetails.put("executionTimeMs", duration);
-            errorDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logSecurityEvent("customer-service", "customer-service", errorDetails);
             throw e;
         }
     }
@@ -263,58 +249,44 @@ public class AuthController {
         try {
             AuthResponse response = tokenService.refreshToken (refreshToken);
 
-            long duration = System.currentTimeMillis() - startTime;
+            long totalDuration = System.currentTimeMillis() - startTime;
             Map<String, Object> refreshCompleteDetails = new HashMap<>();
             refreshCompleteDetails.put("event", "TOKEN_REFRESH_COMPLETED");
             refreshCompleteDetails.put("customerId", response.customerId());
-            refreshCompleteDetails.put("executionTimeMs", duration);
+            refreshCompleteDetails.put("executionTimeMs", totalDuration);
             eventLogger.logBusinessEvent("customer-service", "customer-service", refreshCompleteDetails);
+            performanceLogger.log("BUSINESS", "refresh.token.total", totalDuration,
+                    Map.of("customerId", response.customerId()));
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            long duration = System.currentTimeMillis() - startTime;
-            Map<String, Object> errorDetails = new HashMap<>();
-            errorDetails.put("event", "TOKEN_REFRESH_FAILED");
-            errorDetails.put("reason", e.getClass().getSimpleName());
-            errorDetails.put("executionTimeMs", duration);
-            errorDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logSecurityEvent("customer-service", "customer-service", errorDetails);
             throw e;
         }
     }
 
-    @PostMapping ("/logout")
-    public ResponseEntity<Void> logout (
-            @RequestParam String refreshToken) {
+     @PostMapping ("/logout")
+     public ResponseEntity<Void> logout (
+             @RequestParam String refreshToken) {
 
-        long startTime = System.currentTimeMillis();
+         long startTime = System.currentTimeMillis();
 
-        Map<String, Object> logoutStartDetails = new HashMap<>();
-        logoutStartDetails.put("event", "LOGOUT_STARTED");
-        eventLogger.logBusinessEvent("customer-service", "customer-service", logoutStartDetails);
+         Map<String, Object> logoutStartDetails = new HashMap<>();
+         logoutStartDetails.put("event", "LOGOUT_STARTED");
+         logoutStartDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
+         eventLogger.logBusinessEvent("customer-service", "customer-service", logoutStartDetails);
 
-        try {
-            logoutService.logout (refreshToken);
+        logoutService.logout (refreshToken);
 
-            long duration = System.currentTimeMillis() - startTime;
-            Map<String, Object> logoutCompleteDetails = new HashMap<>();
-            logoutCompleteDetails.put("event", "LOGOUT_COMPLETED");
-            logoutCompleteDetails.put("executionTimeMs", duration);
-            logoutCompleteDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logBusinessEvent("customer-service", "customer-service", logoutCompleteDetails);
+        long totalDuration = System.currentTimeMillis() - startTime;
+        Map<String, Object> logoutCompleteDetails = new HashMap<>();
+        logoutCompleteDetails.put("event", "LOGOUT_COMPLETED");
+        logoutCompleteDetails.put("executionTimeMs", totalDuration);
+        logoutCompleteDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
+        eventLogger.logBusinessEvent("customer-service", "customer-service", logoutCompleteDetails);
+        performanceLogger.log("BUSINESS", "logout.total", totalDuration,
+                Map.of());
 
-            return ResponseEntity.noContent ().build ();
-
-        } catch (Exception e) {
-            long duration = System.currentTimeMillis() - startTime;
-            Map<String, Object> errorDetails = new HashMap<>();
-            errorDetails.put("event", "LOGOUT_FAILED");
-            errorDetails.put("reason", e.getClass().getSimpleName());
-            errorDetails.put("executionTimeMs", duration);
-            errorDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logSecurityEvent("customer-service", "customer-service", errorDetails);
-            throw e;
-        }
+        return ResponseEntity.noContent ().build ();
     }
 }

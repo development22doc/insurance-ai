@@ -31,9 +31,8 @@ import java.util.Map;
  * - Never logs JWT, authorization headers, passwords, refresh tokens, or PII
  * - Returns standardized error responses
  *
- * Note: The common-lib GlobalExceptionHandler is still auto-configured and will
- * handle exceptions not explicitly caught here. This handler adds event logging
- * and enhanced structured observability for customer-service specifically.
+ * Note: SharedExceptionAutoConfiguration from common-lib is excluded in this service
+ * since customer-service provides its own enhanced exception handler with event logging.
  */
 @RestControllerAdvice
 @RequiredArgsConstructor

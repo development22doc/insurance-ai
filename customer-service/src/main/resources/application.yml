@@ -1,0 +1,30 @@
+# Minimal, self-contained defaults to allow the customer-service to run
+# and perform the Authorization Code + PKCE redirect flow when the
+# platform's config-server is not present. These values reflect the
+# defaults used in config-repo/customer-service.yml and application-keycloak.yml.
+
+server:
+  port: 8081
+
+spring:
+  # Resource server JWT issuer used to configure JwtDecoder automatically
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+
+keycloak:
+  # Keycloak server + realm used by the local OAuth2 helpers
+  server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8180}
+  realm: ${KEYCLOAK_REALM:claimassist}
+  client-id: ${KEYCLOAK_CLIENT_ID:claimassist-customer-app}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+  # IMPORTANT: redirect-uri must match the external browser-facing URL through the API Gateway
+  # Browser always uses http://localhost:8080/customer/... (gateway), NOT direct service port 8081
+  redirect-uri: ${KEYCLOAK_REDIRECT_URI:http://localhost:8080/customer/auth/callback}
+
+logging:
+  level:
+    org.springframework.security: INFO
+

@@ -3,6 +3,7 @@ package com.claimassist.platform.customer_service.service;
 import com.claimassist.platform.customer_service.config.KeycloakProperties;
 import com.claimassist.platform.common_lib.error.ServiceUnavailableException;
 import com.claimassist.platform.common_lib.observability.LoggingConstants;
+import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ public class KeycloakUserProvisioningService {
     private final KeycloakProperties keycloakProperties;
     private final RestClient restClient = RestClient.create();
     private final EventLogger eventLogger;
+    private final PerformanceLogger performanceLogger;
 
     /**
      * @return the Keycloak user id (UUID) of the newly created user.
@@ -98,8 +100,9 @@ public class KeycloakUserProvisioningService {
                 failDetails.put("username", username);
                 failDetails.put("reason", "No Location header in response");
                 failDetails.put("executionTimeMs", apiDuration);
-                failDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-                eventLogger.logSecurityEvent("customer-service", "customer-service", failDetails);
+                eventLogger.logBusinessEvent("customer-service", "customer-service", failDetails);
+
+                performanceLogger.log("BUSINESS", "keycloak.create_user", apiDuration, Map.of("operation","create_user","username",username));
 
                 throw new ServiceUnavailableException("Keycloak did not confirm user creation (no Location header)");
             }
@@ -114,6 +117,8 @@ public class KeycloakUserProvisioningService {
             apiCompleteDetails.put("executionTimeMs", apiDuration);
             eventLogger.logBusinessEvent("customer-service", "customer-service", apiCompleteDetails);
 
+            performanceLogger.log("BUSINESS", "keycloak.create_user", apiDuration, Map.of("operation","create_user","username",username,"keycloakUserId",keycloakUserId));
+
             long totalDuration = System.currentTimeMillis() - startTime;
             Map<String, Object> userCreatedDetails = new HashMap<>();
             userCreatedDetails.put("event", "KEYCLOAK_USER_CREATED");
@@ -122,6 +127,8 @@ public class KeycloakUserProvisioningService {
             userCreatedDetails.put("customerId", legacyUserId);
             userCreatedDetails.put("executionTimeMs", totalDuration);
             eventLogger.logBusinessEvent("customer-service", "customer-service", userCreatedDetails);
+
+            performanceLogger.log("BUSINESS", "keycloak.total_create_user", totalDuration, Map.of("username",username,"customerId",legacyUserId));
 
             return keycloakUserId;
 
@@ -134,8 +141,9 @@ public class KeycloakUserProvisioningService {
             failDetails.put("customerId", legacyUserId);
             failDetails.put("reason", e.getClass().getSimpleName());
             failDetails.put("executionTimeMs", duration);
-            failDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logSecurityEvent("customer-service", "customer-service", failDetails);
+            eventLogger.logBusinessEvent("customer-service", "customer-service", failDetails);
+
+            performanceLogger.log("BUSINESS", "keycloak.create_user", duration, Map.of("operation","create_user","username",username));
 
             throw new ServiceUnavailableException("Unable to provision identity provider account. Please try again later.");
         }
@@ -164,8 +172,9 @@ public class KeycloakUserProvisioningService {
                 failDetails.put("operation", "fetch_admin_token");
                 failDetails.put("reason", "No access_token in response");
                 failDetails.put("executionTimeMs", duration);
-                failDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-                eventLogger.logSecurityEvent("customer-service", "customer-service", failDetails);
+                eventLogger.logBusinessEvent("customer-service", "customer-service", failDetails);
+
+                performanceLogger.log("BUSINESS", "keycloak.fetch_admin_token", duration, Map.of("operation","fetch_admin_token"));
 
                 throw new ServiceUnavailableException("Keycloak did not return an admin access token");
             }
@@ -177,17 +186,21 @@ public class KeycloakUserProvisioningService {
             completeDetails.put("executionTimeMs", duration);
             eventLogger.logBusinessEvent("customer-service", "customer-service", completeDetails);
 
+            performanceLogger.log("BUSINESS", "keycloak.fetch_admin_token", duration, Map.of("operation","fetch_admin_token"));
+
             return (String) response.get("access_token");
 
-        } catch (RestClientException e) {
-            long duration = System.currentTimeMillis() - startTime;
-            Map<String, Object> failDetails = new HashMap<>();
-            failDetails.put("event", "KEYCLOAK_REQUEST_FAILED");
-            failDetails.put("operation", "fetch_admin_token");
-            failDetails.put("reason", e.getClass().getSimpleName());
-            failDetails.put("executionTimeMs", duration);
-            failDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logSecurityEvent("customer-service", "customer-service", failDetails);
+         } catch (RestClientException e) {
+             long duration = System.currentTimeMillis() - startTime;
+             Map<String, Object> failDetails = new HashMap<>();
+             failDetails.put("event", "KEYCLOAK_REQUEST_FAILED");
+             failDetails.put("operation", "fetch_admin_token");
+             failDetails.put("reason", e.getClass().getSimpleName());
+             failDetails.put("executionTimeMs", duration);
+             failDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
+             eventLogger.logBusinessEvent("customer-service", "customer-service", failDetails);
+
+            performanceLogger.log("BUSINESS", "keycloak.fetch_admin_token", duration, Map.of("operation","fetch_admin_token"));
 
             throw new ServiceUnavailableException("Unable to reach identity provider. Please try again later.");
         }
