@@ -21,10 +21,10 @@ spring:
           min-idle: 4
   kafka:
     # Default to the host Kafka listener. When running services from the host
-    # (IntelliJ / java -jar) use the broker at `localhost:9092`. When running
+    # (IntelliJ / java -jar) use the broker at `localhost:29092`. When running
     # services inside Docker compose override KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     # in the container environment.
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
     producer:
       observation-enabled: ${KAFKA_PRODUCER_OBSERVATION_ENABLED:true}
       acks: ${KAFKA_PRODUCER_ACKS:all}
