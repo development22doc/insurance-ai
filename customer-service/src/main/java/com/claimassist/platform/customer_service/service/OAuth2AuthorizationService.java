@@ -2,6 +2,7 @@ package com.claimassist.platform.customer_service.service;
 
 import com.claimassist.platform.customer_service.config.KeycloakProperties;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -10,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OAuth2AuthorizationService {
 
     private final PkceService pkceService;
@@ -24,18 +26,38 @@ public class OAuth2AuthorizationService {
 
     public AuthorizationRequest createAuthorizationRequest () {
 
+        log.info("Starting createAuthorizationRequest");
+        log.debug("KeycloakProperties: {}", keycloakProperties);
+
+        if (keycloakProperties == null) {
+            log.error("KeycloakProperties is null!");
+            throw new IllegalStateException("KeycloakProperties is not configured");
+        }
+
         String state = pkceService.generateState ();
+        log.debug("Generated state: {}", state);
 
         String codeVerifier = pkceService.generateCodeVerifier ();
+        log.debug("Generated codeVerifier length: {}", codeVerifier.length());
 
         String codeChallenge =
                 pkceService.generateCodeChallenge (codeVerifier);
+        log.debug("Generated codeChallenge: {}", codeChallenge);
 
         codeVerifierStore.put (state, codeVerifier);
 
+        String authorizationUri = keycloakProperties.authorizationUri();
+        log.debug("Authorization URI: {}", authorizationUri);
+
+        if (authorizationUri == null || authorizationUri.isEmpty()) {
+            log.error("Authorization URI is null or empty!");
+            log.debug("serverUrl: {}, realm: {}", keycloakProperties.serverUrl(), keycloakProperties.realm());
+            throw new IllegalStateException("Authorization URI could not be constructed");
+        }
+
         String authorizationUrl =
                 UriComponentsBuilder
-                        .fromHttpUrl (keycloakProperties.authorizationUri ())
+                        .fromHttpUrl (authorizationUri)
                         .queryParam ("client_id", keycloakProperties.clientId ())
                         .queryParam ("response_type", "code")
                         .queryParam ("scope", "openid profile email")
@@ -45,6 +67,8 @@ public class OAuth2AuthorizationService {
                         .queryParam ("state", state)
                         .build ()
                         .toUriString ();
+
+        log.info("Authorization URL constructed successfully: {}", authorizationUrl);
 
         return new AuthorizationRequest (
                 authorizationUrl,

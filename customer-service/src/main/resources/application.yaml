@@ -2,17 +2,91 @@ logging:
   pattern:
     level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"
 
+
 spring:
   application:
     name: customer-service
+  autoconfigure:
+    exclude:
+      - com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration
   config:
     import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_customer_local
+    username: ${POSTGRES_USER:claimassist}
+    password: ${POSTGRES_PASSWORD:claimassist}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+
+      client:
+        registration:
+          internal-service:
+            provider: keycloak
+            client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+            client-secret: ${SERVICE_CLIENT_SECRET:local-dev-admin-client-secret}
+            authorization-grant-type: client_credentials
+
+        provider:
+          keycloak:
+            token-uri: ${SERVICE_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
+
   flyway:
     enabled: true
     baseline-on-migrate: true
     baseline-version: "0"
   lifecycle:
     timeout-per-shutdown-phase: 20s
+
+keycloak:
+  server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8180}
+  realm: ${KEYCLOAK_REALM:claimassist}
+  client-id: ${KEYCLOAK_CLIENT_ID:claimassist-customer-app}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+  redirect-uri: ${KEYCLOAK_REDIRECT_URI:http://localhost:8080/customer/auth/callback}
+  admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:claimassist-admin-service}
+  admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:}
+
+security:
+  service-client:
+    registration-id: internal-service
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:claimassist-admin-service}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:}
+    token-uri: ${SERVICE_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
 
 server:
   port: 8081

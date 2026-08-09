@@ -32,8 +32,11 @@ import java.util.concurrent.TimeoutException;
  * consistent. NOTE: this only covers Servlet/MVC apps. api-gateway is
  * WebFlux-based and is NOT on the classpath for this class - see
  * GatewayExceptionHandler in api-gateway for its reactive equivalent.
+ *
+ * @RestControllerAdvice annotation removed - registration happens via
+ * SharedExceptionAutoConfiguration.globalExceptionHandler() @Bean method
+ * to prevent duplicate bean definitions in services that override it.
  */
-@RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
 
