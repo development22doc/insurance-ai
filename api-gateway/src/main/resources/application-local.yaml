@@ -53,6 +53,12 @@ app:
       - /swagger-ui/**
       - /swagger-ui.html
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+
 eureka:
   client:
     service-url:
