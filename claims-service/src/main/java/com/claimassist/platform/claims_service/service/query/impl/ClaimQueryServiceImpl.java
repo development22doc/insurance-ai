@@ -13,6 +13,7 @@ import com.claimassist.platform.common_lib.enums.ClaimPermission;
 import com.claimassist.platform.common_lib.error.BadRequestException;
 import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
+import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -31,27 +32,40 @@ public class ClaimQueryServiceImpl implements ClaimQueryService {
     private final ClaimMapper claimMapper;
     private final CurrentUserProvider currentUserProvider;
     private final SecurityExpressions securityExpressions;
+    private final PerformanceLogger performanceLogger;
 
     @Override
     public List<ClaimSummaryResponse> getMyClaims() {
-        Long userId = currentUserProvider.getCurrentUserId();
-        return claimRepository.findAllAccessibleByUser(userId).stream()
-                .map(p -> claimMapper.toClaimSummaryResponse(p.getClaim(), p.getRole()))
-                .toList();
+        long start = System.nanoTime();
+        try {
+            Long userId = currentUserProvider.getCurrentUserId();
+            return claimRepository.findAllAccessibleByUser(userId).stream()
+                    .map(p -> claimMapper.toClaimSummaryResponse(p.getClaim(), p.getRole()))
+                    .toList();
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            performanceLogger.log("BUSINESS", "claims.getMyClaims", elapsedMs, java.util.Map.of());
+        }
     }
 
     @Override
     @PreAuthorize("@security.canView(#claimId)")
     public ClaimSummaryResponse getClaimById(Long claimId) {
-        Claim claim = claimRepository.findById(claimId)
-                .orElseThrow(() -> new ResourceNotFoundException("Claim", claimId.toString()));
-        Long userId = currentUserProvider.getCurrentUserId();
-        var role = claimRepository.findAllAccessibleByUser(userId).stream()
-                .filter(p -> p.getClaim().getId().equals(claimId))
-                .findFirst()
-                .map(com.claimassist.platform.claims_service.repository.ClaimRepository.ClaimWithRoleProjection::getRole)
-                .orElseThrow(() -> new BadRequestException("Not a party to this claim"));
-        return claimMapper.toClaimSummaryResponse(claim, role);
+        long start = System.nanoTime();
+        try {
+            Claim claim = claimRepository.findById(claimId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Claim", claimId.toString()));
+            Long userId = currentUserProvider.getCurrentUserId();
+            var role = claimRepository.findAllAccessibleByUser(userId).stream()
+                    .filter(p -> p.getClaim().getId().equals(claimId))
+                    .findFirst()
+                    .map(com.claimassist.platform.claims_service.repository.ClaimRepository.ClaimWithRoleProjection::getRole)
+                    .orElseThrow(() -> new BadRequestException("Not a party to this claim"));
+            return claimMapper.toClaimSummaryResponse(claim, role);
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            performanceLogger.log("BUSINESS", "claims.getClaimById", elapsedMs, java.util.Map.of("claimId", claimId));
+        }
     }
 
     @Override
@@ -59,10 +73,12 @@ public class ClaimQueryServiceImpl implements ClaimQueryService {
             cacheNames = com.claimassist.platform.claims_service.config.RedisCacheConfig.CLAIM_STATUS_CACHE,
             key = "#claimId")
     public ClaimStatusDto getClaimStatusWithHistory(Long claimId) {
-        Claim claim = claimRepository.findById(claimId)
-                .orElseThrow(() -> new ResourceNotFoundException("Claim", claimId.toString()));
+        long start = System.nanoTime();
+        try {
+            Claim claim = claimRepository.findById(claimId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Claim", claimId.toString()));
 
-        List<ClaimStatusHistory> history = claimStatusHistoryRepository.findByClaimIdOrderByChangedAtAsc(claimId);
+            List<ClaimStatusHistory> history = claimStatusHistoryRepository.findByClaimIdOrderByChangedAtAsc(claimId);
         DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
 
         List<ClaimStatusDto.StatusHistoryEntry> entries = history.stream()
@@ -70,10 +86,14 @@ public class ClaimQueryServiceImpl implements ClaimQueryService {
                         h.getFromStatus(), h.getToStatus(), h.getChangedBy(), formatter.format(h.getChangedAt())))
                 .toList();
 
-        return new ClaimStatusDto(
-                claim.getId(), claim.getPolicyId(), claim.getClaimNumber(), claim.getStatus().name(), claim.getIncidentType(),
-                claim.getEstimatedAmountCents(), claim.getApprovedAmountCents(), entries
-        );
+            return new ClaimStatusDto(
+                    claim.getId(), claim.getPolicyId(), claim.getClaimNumber(), claim.getStatus().name(), claim.getIncidentType(),
+                    claim.getEstimatedAmountCents(), claim.getApprovedAmountCents(), entries
+            );
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            performanceLogger.log("BUSINESS", "claims.getClaimStatusWithHistory", elapsedMs, java.util.Map.of("claimId", claimId));
+        }
     }
 
     @Override

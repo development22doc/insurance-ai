@@ -12,10 +12,17 @@ import com.claimassist.platform.common_lib.enums.OutboxStatus;
 import com.claimassist.platform.common_lib.error.ClaimStateTransitionException;
 import com.claimassist.platform.common_lib.event.ClaimUpdateRequestEvent;
 import com.claimassist.platform.common_lib.event.ClaimUpdateResponseEvent;
+import com.claimassist.platform.common_lib.observability.LoggingConstants;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.claimassist.platform.common_lib.observability.MDCUtility;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,49 +63,86 @@ public class ClaimUpdateConsumer {
     private final ProcessedEventRepository processedEventRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final EventLogger eventLogger;
 
     @Transactional
     @KafkaListener(
             topics = "claim-update-request-event",
             groupId = "claims-group",
             containerFactory = "stringKafkaListenerContainerFactory")
-    public void consumeClaimUpdateRequest(String rawMessage) throws Exception {
-
+    public void consumeClaimUpdateRequest(
+            @Payload String rawMessage,
+            @Header(name = LoggingConstants.CORRELATION_ID_HEADER, required = false) String correlationId,
+            @Header(name = LoggingConstants.TRACE_ID_HEADER, required = false) String traceId,
+            @Header(name = LoggingConstants.SPAN_ID_HEADER, required = false) String spanId,
+            Acknowledgment ack) throws Exception {
         ClaimUpdateRequestEvent request = objectMapper.readValue(rawMessage, ClaimUpdateRequestEvent.class);
 
-        if (processedEventRepository.existsById(request.sagaId())) {
-            log.info("Duplicate claim-update saga {} - re-queuing previous ACK.", request.sagaId());
-            enqueueResponse(request, true, null);
-            return;
+        // Populate MDC with the sagaId so downstream logs/events carry the
+        // correlation identifier. Clear MDC in a finally block to avoid leakage.
+        // Prefer correlation headers from Kafka message, fallback to sagaId
+        if (correlationId != null) {
+            MDCUtility.putCorrelationId(correlationId);
+        } else {
+            MDCUtility.putCorrelationId(request.sagaId());
+        }
+        if (traceId != null) {
+            MDCUtility.putTraceId(traceId);
+        }
+        if (spanId != null) {
+            MDCUtility.putSpanId(spanId);
         }
 
+        long startNanos = System.nanoTime();
         try {
-            boolean authorized = securityExpressions.hasPermissionForUser(
-                    request.claimId(), request.proposedByUserId(), ClaimPermission.UPDATE_STATUS);
+            // Emit a lightweight Kafka receive event for observability.
+            try {
+                eventLogger.logKafkaEvent(null, null, java.util.Map.of(
+                        "event", "claim.update.request.received",
+                        "sagaId", request.sagaId(),
+                        "claimId", request.claimId(),
+                        "proposedByUserId", request.proposedByUserId()
+                ));
+            } catch (Exception ignored) {}
 
-            if (!authorized) {
-                log.warn("Saga {} rejected: user {} lacks UPDATE_STATUS on claim {}",
-                        request.sagaId(), request.proposedByUserId(), request.claimId());
-                processedEventRepository.save(new ProcessedEvent(request.sagaId(), LocalDateTime.now()));
-                enqueueResponse(request, false, "You do not have permission to update this claim");
+            if (processedEventRepository.existsById(request.sagaId())) {
+                log.info("Duplicate claim-update saga {} - re-queuing previous ACK.", request.sagaId());
+                enqueueResponse(request, true, null);
                 return;
             }
 
-            claimCommandService.applyStatusChange(new UpdateClaimStatusCommand(
-                    request.claimId(),
-                    request.proposedStatus(),
-                    request.note(),
-                    "AGENT:" + request.sagaId() // audit trail shows this was AI-agent-originated, distinct from a human userId
-            ));
+            try {
+                boolean authorized = securityExpressions.hasPermissionForUser(
+                        request.claimId(), request.proposedByUserId(), ClaimPermission.UPDATE_STATUS);
 
-            processedEventRepository.save(new ProcessedEvent(request.sagaId(), LocalDateTime.now()));
-            enqueueResponse(request, true, null);
+                if (!authorized) {
+                    log.warn("Saga {} rejected: user {} lacks UPDATE_STATUS on claim {}",
+                            request.sagaId(), request.proposedByUserId(), request.claimId());
+                    processedEventRepository.save(new ProcessedEvent(request.sagaId(), LocalDateTime.now()));
+                    enqueueResponse(request, false, "You do not have permission to update this claim");
+                    return;
+                }
 
-        } catch (ClaimStateTransitionException e) {
-            log.info("Saga {} rejected by state machine: {}", request.sagaId(), e.getMessage());
-            processedEventRepository.save(new ProcessedEvent(request.sagaId(), LocalDateTime.now()));
-            enqueueResponse(request, false, e.getMessage());
-        }
+                claimCommandService.applyStatusChange(new UpdateClaimStatusCommand(
+                        request.claimId(),
+                        request.proposedStatus(),
+                        request.note(),
+                        "AGENT:" + request.sagaId() // audit trail shows this was AI-agent-originated, distinct from a human userId
+                ));
+
+                processedEventRepository.save(new ProcessedEvent(request.sagaId(), LocalDateTime.now()));
+                enqueueResponse(request, true, null);
+
+             } catch (ClaimStateTransitionException e) {
+                 log.info("Saga {} rejected by state machine: {}", request.sagaId(), e.getMessage());
+                 processedEventRepository.save(new ProcessedEvent(request.sagaId(), LocalDateTime.now()));
+                 enqueueResponse(request, false, e.getMessage());
+             }
+         } finally {
+             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
+             ack.acknowledge();
+             MDCUtility.clearAll();
+         }
     }
 
     private void enqueueResponse(ClaimUpdateRequestEvent req, boolean success, String error) throws Exception {

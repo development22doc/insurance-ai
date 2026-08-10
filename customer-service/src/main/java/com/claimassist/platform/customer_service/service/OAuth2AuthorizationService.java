@@ -27,7 +27,6 @@ public class OAuth2AuthorizationService {
     public AuthorizationRequest createAuthorizationRequest () {
 
         log.info("Starting createAuthorizationRequest");
-        log.debug("KeycloakProperties: {}", keycloakProperties);
 
         if (keycloakProperties == null) {
             log.error("KeycloakProperties is null!");
@@ -35,23 +34,18 @@ public class OAuth2AuthorizationService {
         }
 
         String state = pkceService.generateState ();
-        log.debug("Generated state: {}", state);
 
         String codeVerifier = pkceService.generateCodeVerifier ();
-        log.debug("Generated codeVerifier length: {}", codeVerifier.length());
 
         String codeChallenge =
                 pkceService.generateCodeChallenge (codeVerifier);
-        log.debug("Generated codeChallenge: {}", codeChallenge);
 
         codeVerifierStore.put (state, codeVerifier);
 
         String authorizationUri = keycloakProperties.authorizationUri();
-        log.debug("Authorization URI: {}", authorizationUri);
 
         if (authorizationUri == null || authorizationUri.isEmpty()) {
             log.error("Authorization URI is null or empty!");
-            log.debug("serverUrl: {}, realm: {}", keycloakProperties.serverUrl(), keycloakProperties.realm());
             throw new IllegalStateException("Authorization URI could not be constructed");
         }
 

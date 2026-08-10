@@ -6,6 +6,9 @@ import com.claimassist.platform.common_lib.event.ClaimUpdateResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.claimassist.platform.common_lib.observability.LoggingConstants;
+import com.claimassist.platform.common_lib.observability.MDCUtility;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.kafka.support.KafkaHeaders;
@@ -33,6 +36,7 @@ public class AgentSagaResponseHandler {
 
     private final AgentEventRepository agentEventRepository;
     private final ObjectMapper objectMapper;
+    private final EventLogger eventLogger;
 
     @Transactional
     @KafkaListener(
@@ -44,10 +48,36 @@ public class AgentSagaResponseHandler {
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
             @Header(name = "kafka_receivedPartitionId", required = false) Integer partition,
             @Header(name = "kafka_offset", required = false) Long offset,
+            @Header(name = LoggingConstants.CORRELATION_ID_HEADER, required = false) String correlationId,
+            @Header(name = LoggingConstants.TRACE_ID_HEADER, required = false) String traceId,
+            @Header(name = LoggingConstants.SPAN_ID_HEADER, required = false) String spanId,
             Acknowledgment ack) throws Exception {
 
         try {
             ClaimUpdateResponseEvent response = objectMapper.readValue(rawMessage, ClaimUpdateResponseEvent.class);
+
+            // Populate MDC so emitted events/logs are correlated with the saga
+            // Prefer correlation headers from Kafka message, fallback to sagaId
+            if (correlationId != null) {
+                MDCUtility.putCorrelationId(correlationId);
+            } else {
+                MDCUtility.putCorrelationId(response.sagaId());
+            }
+            if (traceId != null) {
+                MDCUtility.putTraceId(traceId);
+            }
+            if (spanId != null) {
+                MDCUtility.putSpanId(spanId);
+            }
+
+            try {
+                eventLogger.logKafkaEvent(null, null, java.util.Map.of(
+                        "event", "claim.update.response.received",
+                        "sagaId", response.sagaId(),
+                        "claimId", response.claimId(),
+                        "success", response.success()
+                ));
+            } catch (Exception ignored) {}
 
             agentEventRepository.findBySagaId(response.sagaId()).ifPresentOrElse(event -> {
 
@@ -58,13 +88,26 @@ public class AgentSagaResponseHandler {
 
                 if (response.success()) {
                     event.setStatus(AgentEventStatus.CONFIRMED);
+                    try { eventLogger.logBusinessEvent(null, null, java.util.Map.of(
+                            "event", "agent.saga.confirmed",
+                            "sagaId", response.sagaId(),
+                            "claimId", response.claimId()
+                    )); } catch (Exception ignored) {}
                     log.info("Claim-update saga {} CONFIRMED", response.sagaId());
                 } else {
                     event.setStatus(AgentEventStatus.FAILED);
                     event.setContent(event.getContent() + " | REJECTED: " + response.errorMessage());
+                    try { eventLogger.logBusinessEvent(null, null, java.util.Map.of(
+                            "event", "agent.saga.failed",
+                            "sagaId", response.sagaId(),
+                            "claimId", response.claimId(),
+                            "error", response.errorMessage()
+                    )); } catch (Exception ignored) {}
                     log.warn("Claim-update saga {} FAILED: {}", response.sagaId(), response.errorMessage());
                 }
             }, () -> log.warn("Received claim-update response for unknown sagaId {} - no matching AgentEvent found", response.sagaId()));
+
+            MDCUtility.clearAll();
 
             // Manual acknowledgement after successful processing
             ack.acknowledge();

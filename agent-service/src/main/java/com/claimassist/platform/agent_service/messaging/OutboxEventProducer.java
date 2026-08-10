@@ -5,6 +5,7 @@ import com.claimassist.platform.agent_service.repository.OutboxEventRepository;
 import com.claimassist.platform.common_lib.enums.OutboxStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 public class OutboxEventProducer {
 
     private final OutboxEventRepository outboxEventRepository;
+    private final EventLogger eventLogger;
 
     /**
      * Enqueues an outbox event for publication to Kafka.
@@ -40,6 +42,14 @@ public class OutboxEventProducer {
                 .build();
 
         OutboxEvent saved = outboxEventRepository.save(event);
+        try {
+            eventLogger.logKafkaEvent(null, null, java.util.Map.of(
+                    "event", "outbox.event.enqueued",
+                    "aggregateId", aggregateId,
+                    "eventType", eventType,
+                    "topic", topic
+            ));
+        } catch (Exception ignored) {}
         log.debug("Outbox event enqueued: aggregateId={}, eventType={}, topic={}",
                   aggregateId, eventType, topic);
         return saved;

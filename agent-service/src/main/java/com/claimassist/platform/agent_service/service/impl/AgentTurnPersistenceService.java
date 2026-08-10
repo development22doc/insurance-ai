@@ -16,6 +16,9 @@ import com.claimassist.platform.common_lib.event.ClaimUpdateRequestEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
+import com.claimassist.platform.common_lib.observability.MDCUtility;
+import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 // Usage metadata from spring-ai is optional; avoid compile-time dependency
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +50,8 @@ public class AgentTurnPersistenceService {
     private final AgentEventRepository agentEventRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final EventLogger eventLogger;
+    private final PerformanceLogger performanceLogger;
 
     @Transactional
     public void finalizeTurn(String userMessage, AgentSession session, String fullText, long durationSeconds,
@@ -68,14 +73,16 @@ public class AgentTurnPersistenceService {
             }
         }
 
-        agentMessageRepository.save(AgentMessage.builder()
+        long start = System.nanoTime();
+        try {
+            agentMessageRepository.save(AgentMessage.builder()
                 .agentSession(session)
                 .role(MessageRole.USER)
                 .content(userMessage)
                 .tokensUsed(promptTokens)
                 .build());
 
-        AgentMessage assistantMessage = agentMessageRepository.save(AgentMessage.builder()
+            AgentMessage assistantMessage = agentMessageRepository.save(AgentMessage.builder()
                 .agentSession(session)
                 .role(MessageRole.ASSISTANT)
                 .content(fullText)
@@ -117,7 +124,21 @@ public class AgentTurnPersistenceService {
             enqueueClaimUpdateRequest(session.getId().getClaimId(), sagaId, update, userId);
         }
 
-        agentEventRepository.saveAll(events);
+            agentEventRepository.saveAll(events);
+
+            // Emit business event that a turn was persisted (minimal details)
+            try {
+                eventLogger.logBusinessEvent(null, null, java.util.Map.of(
+                        "event", "agent.turn.persisted",
+                        "sessionClaimId", session.getId().getClaimId(),
+                        "sessionUserId", session.getId().getUserId(),
+                        "assistantMessageId", assistantMessage.getId()
+                ));
+            } catch (Exception ignored) {}
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            try { performanceLogger.log("BUSINESS", "agent.turn.finalize", elapsedMs, java.util.Map.of("claimId", session.getId().getClaimId())); } catch (Exception ignored) {}
+        }
     }
 
     private void enqueueClaimUpdateRequest(Long claimId, String sagaId, ProposedUpdate update, Long userId) {
@@ -140,6 +161,20 @@ public class AgentTurnPersistenceService {
                     .build();
 
             outboxEventRepository.save(outboxEvent);
+            // Emit a Kafka event for the enqueued outbox request and populate MDC with sagaId
+            MDCUtility.putCorrelationId(sagaId);
+            try {
+                eventLogger.logKafkaEvent(null, null, java.util.Map.of(
+                        "event", "outbox.claim-update.request.queued",
+                        "sagaId", sagaId,
+                        "claimId", claimId,
+                        "proposedStatus", update.proposedStatus(),
+                        "userId", userId
+                ));
+            } catch (Exception ignored) {}
+            finally {
+                MDCUtility.clearAll();
+            }
             log.info("Outbox: queued claim-update request for saga {} (claim {} -> {})", sagaId, claimId, update.proposedStatus());
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize ClaimUpdateRequestEvent for saga " + sagaId, e);

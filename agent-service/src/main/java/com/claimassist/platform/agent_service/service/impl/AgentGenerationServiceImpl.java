@@ -11,6 +11,9 @@ import com.claimassist.platform.agent_service.service.AgentGenerationService;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
 import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
+import com.claimassist.platform.common_lib.observability.PerformanceLogger;
+import com.claimassist.platform.common_lib.observability.MDCUtility;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 // spring-ai ChatClient and Usage are optional; avoid compile-time dependency so service can start locally
@@ -42,17 +45,17 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
     private final AgentTurnPersistenceService agentTurnPersistenceService;
     private final ClaimsServiceGateway claimsServiceGateway;
     private final CustomerServiceGateway customerServiceGateway;
+    private final EventLogger eventLogger;
+    private final PerformanceLogger performanceLogger;
 
     @Override
     @PreAuthorize("@security.canAccessClaim(#claimId)")
     public Flux<StreamResponse> streamResponse(String userMessage, Long claimId) {
-
+        long start = System.nanoTime();
         Long userId = currentUserProvider.getCurrentUserId();
         AgentSession session = createSessionIfNotExists(claimId, userId);
 
-        // Resolve the policy behind this claim ONCE per turn, so the
-        // get_policy_coverage tool doesn't need to make an extra round-trip to
-        // claims-service just to find out which policy it's even asking about.
+        // Resolve the policy behind this claim ONCE per turn
         Long policyId = claimsServiceGateway.getClaimStatus(claimId).policyId();
 
         List<ProposedUpdate> proposedUpdates = new CopyOnWriteArrayList<>();
@@ -60,18 +63,27 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
         InsuranceAgentTools tools = new InsuranceAgentTools(
                 claimId, policyId, claimsServiceGateway, customerServiceGateway, proposedUpdates::add);
 
-        StringBuilder fullResponseBuffer = new StringBuilder();
-        AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
-        AtomicReference<Long> endTime = new AtomicReference<>(0L);
-        AtomicReference<Object> usageRef = new AtomicReference<>();
-
         // If an OptionalChatClient adapter is available, use it to invoke the model.
         if (chatClient != null) {
             try {
+                // Populate MDC for this turn using a synthetic correlation (claimId:userId)
+                String correlation = "claim:" + claimId + ":user:" + userId;
+                MDCUtility.putCorrelationId(correlation);
                 String result = chatClient.invokeSimple(userMessage, tools);
                 return Flux.just(new StreamResponse(result == null ? "LLM invoked." : result));
             } catch (Exception e) {
+                // Emit a lightweight business event indicating LLM invocation failure
+                try {
+                    eventLogger.logBusinessEvent(null, null, java.util.Map.of(
+                            "event", "agent.llm.invoke.failed",
+                            "claimId", claimId,
+                            "userId", userId,
+                            "error", e.getMessage()
+                    ));
+                } catch (Exception ignored) {}
                 log.warn("Failed to invoke OptionalChatClient, falling back to local stub: {}", e.toString());
+            } finally {
+                MDCUtility.clearAll();
             }
         }
 
@@ -81,7 +93,14 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
                         userMessage, session, "LLM disabled locally.", 0L,
                         null, userId, List.copyOf(proposedUpdates)));
 
-        return Flux.just(new StreamResponse("LLM disabled locally."));
+        try {
+            return Flux.just(new StreamResponse("LLM disabled locally."));
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            try {
+                performanceLogger.log("BUSINESS", "agent.streamResponse", elapsedMs, java.util.Map.of("claimId", claimId, "userId", userId));
+            } catch (Exception ignored) {}
+        }
     }
 
     private AgentSession createSessionIfNotExists(Long claimId, Long userId) {

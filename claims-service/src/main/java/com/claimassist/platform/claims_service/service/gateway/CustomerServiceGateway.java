@@ -10,6 +10,7 @@ import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,6 +32,7 @@ public class CustomerServiceGateway {
     private static final String INSTANCE = "customerService";
 
     private final CustomerClient customerClient;
+    private final EventLogger eventLogger;
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "policyFallback")
     @Retry(name = INSTANCE)
@@ -44,6 +46,13 @@ public class CustomerServiceGateway {
     @SuppressWarnings("unused")
     private PolicyCoverageDto policyFallback(Long policyId, Throwable t) {
         log.error("customer-service unavailable while verifying policy {}: {}", policyId, t.getMessage());
+        try {
+            eventLogger.logBusinessEvent(null, null, java.util.Map.of(
+                    "event", "customer.service.unavailable",
+                    "policyId", policyId,
+                    "error", t.getMessage()
+            ));
+        } catch (Exception ignored) {}
         throw new ServiceUnavailableException("Unable to verify your policy right now. Please try again shortly.");
     }
 }
