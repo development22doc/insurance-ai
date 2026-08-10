@@ -20,8 +20,30 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
 
+  cloud:
+    gateway:
+      routes:
+        - id: actuator
+          uri: forward:/actuator
+          predicates:
+            - Path=/actuator/**
 
-# Public routes that should be accessible without a bearer JWT. These are
+        - id: customer-service
+          uri: lb://CUSTOMER-SERVICE
+          predicates:
+            - Path=/customer/**
+          filters:
+            - StripPrefix=1
+
+      # (removed explicit webflux-namespaced actuator-webflux route) - the
+      # gateway's own actuator endpoints are served by the application context
+      # and do not require an explicit business route. Previously a WebFlux
+      # namespaced `actuator-webflux` route was added to work around a
+      # runtime property mapping issue; investigation showed the actuator
+      # endpoint is registered and reachable without this route. We remove the
+      # synthetic route to avoid confusion and unintended routing behavior.
+
+# Public routes that should be accessible without a bearer JWT.
 # normally supplied by the centralized config repository (config-repo),
 # but we provide local defaults so the gateway allows the OAuth authorization
 # endpoints to be reached while developing without the config server.
@@ -38,6 +60,12 @@ app:
       - /v3/api-docs/**
       - /swagger-ui/**
       - /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
 
 eureka:
   client:
@@ -63,3 +91,6 @@ commonlib:
         info: 100
         warn: 500
         error: 2000
+
+
+

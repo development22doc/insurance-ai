@@ -1,5 +1,0 @@
-04:06:10,037 |-WARN in ch.qos.logback.core.model.processor.ImplicitModelHandler - Ignoring unknown property [mkdirs] in [ch.qos.logback.core.rolling.RollingFileAppender]
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (jar:nested:/D:/Mayur/claimsassist/insurance-ai-platform/customer-service/target/customer-service-1.0.0.jar/!BOOT-INF/lib/netty-common-4.1.127.Final.jar!/)
-WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
-WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release

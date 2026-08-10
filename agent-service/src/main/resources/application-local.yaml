@@ -91,7 +91,8 @@ outbox:
 logging:
   level:
     com.claimassist: DEBUG
-    org.springframework.security: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.springframework.kafka: DEBUG
-    org.springframework.ai: DEBUG
+    # Keep framework internals at WARN for local by default to avoid noisy logs
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.springframework.kafka: WARN
+    org.springframework.ai: WARN

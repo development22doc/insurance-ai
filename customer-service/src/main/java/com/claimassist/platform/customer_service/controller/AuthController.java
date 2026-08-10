@@ -187,7 +187,9 @@ public class AuthController {
 
     @GetMapping ("/callback")
     public ResponseEntity<AuthResponse> callback (
-            @RequestParam String code,
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String error,
+            @RequestParam(required = false) String error_description,
             @RequestParam String state) {
 
         long startTime = System.currentTimeMillis();
@@ -198,6 +200,24 @@ public class AuthController {
         eventLogger.logBusinessEvent("customer-service", "customer-service", callbackStartDetails);
 
         try {
+            // Handle OAuth error response from Keycloak
+            if (error != null && !error.isEmpty()) {
+                Map<String, Object> errorDetails = new HashMap<>();
+                errorDetails.put("event", "CALLBACK_ERROR");
+                errorDetails.put("error", error);
+                errorDetails.put("error_description", error_description != null ? error_description : "Unknown error");
+                errorDetails.put("state", state);
+                eventLogger.logBusinessEvent("customer-service", "customer-service", errorDetails);
+
+                throw new BadRequestException (
+                        "Authorization failed: " + error + " - " + (error_description != null ? error_description : "Unknown error"));
+            }
+
+            // Handle success response
+            if (code == null || code.isEmpty()) {
+                throw new BadRequestException ("Missing authorization code");
+            }
+
             String codeVerifier = authorizationService.consumeCodeVerifier (state);
 
             if (codeVerifier == null) {
@@ -212,22 +232,32 @@ public class AuthController {
             AuthResponse response = tokenService.exchangeAuthorizationCode (code, codeVerifier);
 
             long tokenDuration = System.currentTimeMillis() - tokenStartTime;
-            Map<String, Object> tokenExchangeCompleteDetails = new HashMap<>();
-            tokenExchangeCompleteDetails.put("event", "TOKEN_EXCHANGE_COMPLETED");
-            tokenExchangeCompleteDetails.put("customerId", response.customerId());
-            tokenExchangeCompleteDetails.put("executionTimeMs", tokenDuration);
-            eventLogger.logBusinessEvent("customer-service", "customer-service", tokenExchangeCompleteDetails);
-            performanceLogger.log("BUSINESS", "keycloak.token.exchange", tokenDuration,
-                    Map.of("customerId", response.customerId()));
+             Map<String, Object> tokenExchangeCompleteDetails = new HashMap<>();
+             tokenExchangeCompleteDetails.put("event", "TOKEN_EXCHANGE_COMPLETED");
+             tokenExchangeCompleteDetails.put("customerId", response.customerId());
+             tokenExchangeCompleteDetails.put("executionTimeMs", tokenDuration);
+             eventLogger.logBusinessEvent("customer-service", "customer-service", tokenExchangeCompleteDetails);
 
-            long totalDuration = System.currentTimeMillis() - startTime;
-            Map<String, Object> callbackCompleteDetails = new HashMap<>();
-            callbackCompleteDetails.put("event", "CALLBACK_COMPLETED");
-            callbackCompleteDetails.put("customerId", response.customerId());
-            callbackCompleteDetails.put("executionTimeMs", totalDuration);
-            eventLogger.logBusinessEvent("customer-service", "customer-service", callbackCompleteDetails);
-            performanceLogger.log("BUSINESS", "oauth.callback.total", totalDuration,
-                    Map.of("customerId", response.customerId()));
+             Map<String, Object> tokenExchangePerfDetails = new HashMap<>();
+             tokenExchangePerfDetails.put("status", "token_exchange_completed");
+             if (response.customerId() != null) {
+                 tokenExchangePerfDetails.put("customerId", response.customerId());
+             }
+             performanceLogger.log("BUSINESS", "keycloak.token.exchange", tokenDuration, tokenExchangePerfDetails);
+
+             long totalDuration = System.currentTimeMillis() - startTime;
+             Map<String, Object> callbackCompleteDetails = new HashMap<>();
+             callbackCompleteDetails.put("event", "CALLBACK_COMPLETED");
+             callbackCompleteDetails.put("customerId", response.customerId());
+             callbackCompleteDetails.put("executionTimeMs", totalDuration);
+             eventLogger.logBusinessEvent("customer-service", "customer-service", callbackCompleteDetails);
+
+             Map<String, Object> callbackPerfDetails = new HashMap<>();
+             callbackPerfDetails.put("status", "callback_completed");
+             if (response.customerId() != null) {
+                 callbackPerfDetails.put("customerId", response.customerId());
+             }
+             performanceLogger.log("BUSINESS", "oauth.callback.total", totalDuration, callbackPerfDetails);
 
             return ResponseEntity.ok(response);
 
@@ -246,19 +276,24 @@ public class AuthController {
         refreshStartDetails.put("event", "TOKEN_REFRESH_STARTED");
         eventLogger.logBusinessEvent("customer-service", "customer-service", refreshStartDetails);
 
-        try {
-            AuthResponse response = tokenService.refreshToken (refreshToken);
+         try {
+             AuthResponse response = tokenService.refreshToken (refreshToken);
 
-            long totalDuration = System.currentTimeMillis() - startTime;
-            Map<String, Object> refreshCompleteDetails = new HashMap<>();
-            refreshCompleteDetails.put("event", "TOKEN_REFRESH_COMPLETED");
-            refreshCompleteDetails.put("customerId", response.customerId());
-            refreshCompleteDetails.put("executionTimeMs", totalDuration);
-            eventLogger.logBusinessEvent("customer-service", "customer-service", refreshCompleteDetails);
-            performanceLogger.log("BUSINESS", "refresh.token.total", totalDuration,
-                    Map.of("customerId", response.customerId()));
+             long totalDuration = System.currentTimeMillis() - startTime;
+             Map<String, Object> refreshCompleteDetails = new HashMap<>();
+             refreshCompleteDetails.put("event", "TOKEN_REFRESH_COMPLETED");
+             refreshCompleteDetails.put("customerId", response.customerId());
+             refreshCompleteDetails.put("executionTimeMs", totalDuration);
+             eventLogger.logBusinessEvent("customer-service", "customer-service", refreshCompleteDetails);
 
-            return ResponseEntity.ok(response);
+             Map<String, Object> refreshPerfDetails = new HashMap<>();
+             refreshPerfDetails.put("status", "refresh_completed");
+             if (response.customerId() != null) {
+                 refreshPerfDetails.put("customerId", response.customerId());
+             }
+             performanceLogger.log("BUSINESS", "refresh.token.total", totalDuration, refreshPerfDetails);
+
+             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             throw e;

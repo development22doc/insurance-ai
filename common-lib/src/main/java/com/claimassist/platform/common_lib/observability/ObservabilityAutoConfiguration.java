@@ -4,6 +4,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.client.RestTemplateCustomizer;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -80,7 +81,14 @@ public class ObservabilityAutoConfiguration {
     }
 
     @Bean
-    public FeignClientTimingBeanPostProcessor feignClientTimingBeanPostProcessor(PerformanceLogger perfLogger) {
+    public static FeignClientTimingBeanPostProcessor feignClientTimingBeanPostProcessor(ObjectProvider<PerformanceLogger> perfLoggerProvider) {
+        // Use ObjectProvider for lazy injection to allow this static factory method to be called early
+        // during bean post processor registration without forcing instantiation of the configuration class
+        PerformanceLogger perfLogger = perfLoggerProvider.getIfAvailable();
+        if (perfLogger == null) {
+            // If PerformanceLogger is not available, create a no-op processor
+            perfLogger = new PerformanceLogger(new PerformanceLoggingProperties(), null);
+        }
         return new FeignClientTimingBeanPostProcessor(perfLogger);
     }
 }

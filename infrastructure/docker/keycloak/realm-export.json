@@ -44,6 +44,51 @@
   },
   "clientScopes": [
     {
+      "name": "openid",
+      "description": "OpenID Connect",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "true"
+      }
+    },
+    {
+      "name": "profile",
+      "description": "OpenID Connect profile scope",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      }
+    },
+    {
+      "name": "email",
+      "description": "OpenID Connect email scope",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      }
+    },
+    {
+      "name": "address",
+      "description": "OpenID Connect address scope",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      }
+    },
+    {
+      "name": "phone",
+      "description": "OpenID Connect phone scope",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      }
+    },
+    {
       "name": "userId-claim",
       "description": "Adds legacy_user_id as userId claim",
       "protocol": "openid-connect",
@@ -81,12 +126,16 @@
       "directAccessGrantsEnabled": false,
       "redirectUris": [
         "http://localhost:3000/*",
-        "http://localhost:8081/auth/callback"
+        "http://localhost:8081/auth/callback",
+        "http://localhost:8080/customer/auth/callback"
       ],
       "webOrigins": [
         "http://localhost:3000"
       ],
       "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
         "userId-claim"
       ],
       "attributes": {

@@ -12,6 +12,7 @@ import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
@@ -28,13 +29,13 @@ public class RedisCacheConfig {
 
     @Bean
     public RedisTemplate<String, Object> redisTemplate(
-            RedisConnectionFactory connectionFactory) {
+        RedisConnectionFactory connectionFactory) {
 
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
         GenericJackson2JsonRedisSerializer serializer =
-                new GenericJackson2JsonRedisSerializer();
+            new GenericJackson2JsonRedisSerializer();
 
         template.setKeySerializer(new StringRedisSerializer());
         template.setHashKeySerializer(new StringRedisSerializer());
@@ -48,13 +49,29 @@ public class RedisCacheConfig {
 
     @Bean
     public RedisCacheManagerBuilderCustomizer cacheManagerCustomizer() {
-        return builder -> builder.withCacheConfiguration(POLICY_COVERAGE_CACHE,
-                RedisCacheConfiguration.defaultCacheConfig().entryTtl(Duration.ofMinutes(10)));
-    }
 
+        GenericJackson2JsonRedisSerializer serializer =
+            new GenericJackson2JsonRedisSerializer();
+
+        RedisCacheConfiguration defaultConfig =
+            RedisCacheConfiguration.defaultCacheConfig()
+                .serializeKeysWith(
+                    RedisSerializationContext.SerializationPair
+                        .fromSerializer(new StringRedisSerializer()))
+                .serializeValuesWith(
+                    RedisSerializationContext.SerializationPair
+                        .fromSerializer(serializer));
+
+        return builder -> builder
+            .cacheDefaults(defaultConfig)
+            .withCacheConfiguration(
+                POLICY_COVERAGE_CACHE,
+                defaultConfig.entryTtl(Duration.ofMinutes(10))
+            );
+    }
 
     @Bean
     public CacheErrorHandler cacheErrorHandler() {
-        return new SimpleCacheErrorHandler ();
+        return new SimpleCacheErrorHandler();
     }
 }
