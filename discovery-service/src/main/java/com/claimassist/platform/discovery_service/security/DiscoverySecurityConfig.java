@@ -18,10 +18,15 @@ public class DiscoverySecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(authorize -> authorize
-                // Allow Eureka client registration and discovery operations
+                // Eureka dashboard
+                .requestMatchers("/").permitAll()
+
+                // Eureka client registration/discovery
                 .requestMatchers("/eureka/**").permitAll()
-                // Allow actuator endpoints used by health checks
+
+                // Actuator
                 .requestMatchers("/actuator/**").permitAll()
+
                 .anyRequest().authenticated()
             )
             .httpBasic(httpBasic -> httpBasic.disable())

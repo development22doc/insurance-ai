@@ -22,18 +22,20 @@ spring:
 
   cloud:
     gateway:
-      routes:
-        - id: actuator
-          uri: forward:/actuator
-          predicates:
-            - Path=/actuator/**
+      server:
+        webflux:
+          routes:
+          - id: actuator
+            uri: forward:/actuator
+            predicates:
+              - Path=/actuator/**
 
-        - id: customer-service
-          uri: lb://CUSTOMER-SERVICE
-          predicates:
-            - Path=/customer/**
-          filters:
-            - StripPrefix=1
+          - id: customer-service
+            uri: lb://CUSTOMER-SERVICE
+            predicates:
+              - Path=/customer/**
+            filters:
+              - StripPrefix=1
 
       # (removed explicit webflux-namespaced actuator-webflux route) - the
       # gateway's own actuator endpoints are served by the application context
