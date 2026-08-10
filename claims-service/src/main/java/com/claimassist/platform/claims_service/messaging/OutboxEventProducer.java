@@ -3,8 +3,10 @@ package com.claimassist.platform.claims_service.messaging;
 import com.claimassist.platform.claims_service.entity.OutboxEvent;
 import com.claimassist.platform.claims_service.repository.OutboxEventRepository;
 import com.claimassist.platform.common_lib.enums.OutboxStatus;
+import com.claimassist.platform.common_lib.observability.LoggingConstants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -23,6 +25,8 @@ public class OutboxEventProducer {
     /**
      * Enqueues an outbox event for publication to Kafka.
      * This is the primary method for all event publishing in the claims-service.
+     * Captures correlation context from MDC at event creation time so it can be
+     * propagated to Kafka message headers when publishing.
      *
      * @param aggregateId The aggregate root ID (claim ID, saga ID, etc.)
      * @param eventType   The type of event (used for idempotency and replay)
@@ -39,11 +43,15 @@ public class OutboxEventProducer {
                 .partitionKey(partitionKey)
                 .payload(payload)
                 .status(OutboxStatus.PENDING)
+                // Capture correlation context from MDC at event creation time
+                .correlationId(MDC.get(LoggingConstants.MDC_CORRELATION_ID))
+                .traceId(MDC.get(LoggingConstants.MDC_TRACE_ID))
+                .spanId(MDC.get(LoggingConstants.MDC_SPAN_ID))
                 .build();
 
         OutboxEvent saved = outboxEventRepository.save(event);
-        log.debug("Outbox event enqueued: aggregateId={}, eventType={}, topic={}",
-                  aggregateId, eventType, topic);
+        log.debug("Outbox event enqueued: aggregateId={}, eventType={}, topic={}, correlationId={}",
+                  aggregateId, eventType, topic, event.getCorrelationId());
         return saved;
     }
 

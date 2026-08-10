@@ -24,6 +24,7 @@ spring:
       max-lifetime: 1200000
 
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: none
     properties:

@@ -38,25 +38,20 @@ spring:
               uri: lb://CLAIMS-SERVICE
               predicates:
                 - Path=/claims/**
-              filters:
-                - StripPrefix=1
+              filters: []
 
             - id: agent-service
               uri: lb://AGENT-SERVICE
               predicates:
                 - Path=/agent/**
-              filters:
-                - StripPrefix=1
+              filters: []
 
             - id: policy-service
-              uri: lb://POLICY-SERVICE
+              uri: lb://CUSTOMER-SERVICE
               predicates:
                 - Path=/policies/**
+              filters: []
 
-            - id: notification-service
-              uri: lb://NOTIFICATION-SERVICE
-              predicates:
-                - Path=/notifications/**
 
   lifecycle:
     timeout-per-shutdown-phase: 15s

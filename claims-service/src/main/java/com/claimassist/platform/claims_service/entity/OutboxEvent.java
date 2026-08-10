@@ -64,6 +64,15 @@ public class OutboxEvent {
 
     String lastError;
 
+    // Trace correlation context - stored at event creation time so they can be
+    // propagated to Kafka headers when publishing (OutboxEventPublisher runs in
+    // a different thread and cannot access the original request's MDC)
+    String correlationId;
+
+    String traceId;
+
+    String spanId;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) {

@@ -77,18 +77,16 @@ public class OutboxEventPublisher {
                         event.getPartitionKey(),
                         event.getPayload());
 
-                // Add correlation/trace/span headers from MDC so downstream consumers can correlate
-                String correlationId = MDC.get(LoggingConstants.MDC_CORRELATION_ID);
-                if (correlationId != null) {
-                    record.headers().add(LoggingConstants.CORRELATION_ID_HEADER, correlationId.getBytes());
+                // Add stored correlation/trace/span headers from the OutboxEvent
+                // (these were captured at event creation time when the original MDC was available)
+                if (event.getCorrelationId() != null) {
+                    record.headers().add(LoggingConstants.CORRELATION_ID_HEADER, event.getCorrelationId().getBytes());
                 }
-                String traceId = MDC.get(LoggingConstants.MDC_TRACE_ID);
-                if (traceId != null) {
-                    record.headers().add(LoggingConstants.TRACE_ID_HEADER, traceId.getBytes());
+                if (event.getTraceId() != null) {
+                    record.headers().add(LoggingConstants.TRACE_ID_HEADER, event.getTraceId().getBytes());
                 }
-                String spanId = MDC.get(LoggingConstants.MDC_SPAN_ID);
-                if (spanId != null) {
-                    record.headers().add(LoggingConstants.SPAN_ID_HEADER, spanId.getBytes());
+                if (event.getSpanId() != null) {
+                    record.headers().add(LoggingConstants.SPAN_ID_HEADER, event.getSpanId().getBytes());
                 }
 
                 outboxKafkaTemplate.send(record).get();
