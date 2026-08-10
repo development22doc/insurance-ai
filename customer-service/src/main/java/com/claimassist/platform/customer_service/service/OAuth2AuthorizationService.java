@@ -66,6 +66,7 @@ public class OAuth2AuthorizationService {
                         .queryParam ("code_challenge_method", "S256")
                         .queryParam ("state", state)
                         .build ()
+                        .encode ()
                         .toUriString ();
 
         log.info("Authorization URL constructed successfully: {}", authorizationUrl);

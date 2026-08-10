@@ -11,4 +11,4 @@ eureka:
 logging:
   level:
     com.claimassist: DEBUG
-    org.springframework.cloud.config: DEBUG
+    org.springframework.cloud.config: WARN

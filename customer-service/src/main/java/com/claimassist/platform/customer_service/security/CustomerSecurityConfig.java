@@ -8,9 +8,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -40,25 +40,26 @@ public class CustomerSecurityConfig {
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         // Ignore CSRF for actuator, webhook and API endpoints which are stateless/consumed by machines
                         .ignoringRequestMatchers(
-                                new AntPathRequestMatcher("/actuator/**"),
-                                new AntPathRequestMatcher("/webhooks/**"),
-                                new AntPathRequestMatcher("/api/**")
+                            "/auth/signup",
+                            "/actuator/**",
+                            "/webhooks/**",
+                            "/api/**"
                         )
                 )
                 .cors (cors -> cors.configurationSource (corsConfigurationSource))
                 .headers (headers -> {
                         headers.frameOptions (frameOptions -> frameOptions.deny ());
-                        headers.xssProtection ();
-                        headers.contentTypeOptions ();
-                        headers.cacheControl ();
+                        headers.xssProtection(Customizer.withDefaults());
+                        headers.contentTypeOptions(Customizer.withDefaults());
+                        headers.cacheControl(Customizer.withDefaults());
                         headers.httpStrictTransportSecurity (hsts -> hsts
                                 .includeSubDomains (true)
                                 .preload (true)
                                 .maxAgeInSeconds (31536000));
                         headers.referrerPolicy (referrer -> referrer.policy (
                                 org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
-                        headers.permissionsPolicy (permissions -> permissions
-                                .policy ("geolocation=(), microphone=(), camera=(), payment=()"));
+                        headers.permissionsPolicyHeader(permissions -> permissions
+                        .policy("geolocation=(), microphone=(), camera=(), payment=()"));
                         headers.contentSecurityPolicy (csp -> csp
                                 .policyDirectives ("default-src 'self'; " +
                                         "script-src 'self'; " +

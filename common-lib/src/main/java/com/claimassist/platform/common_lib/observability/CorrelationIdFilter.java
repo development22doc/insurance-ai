@@ -8,6 +8,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -72,8 +74,13 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
                                       String correlationId,
                                       String requestId,
                                       long elapsedMs) {
-        String traceId = valueOrDash(MDCUtilityRead("traceId"));
-        String spanId = valueOrDash(MDCUtilityRead("spanId"));
+        // Prefer MDC values; if those are blank, attempt to obtain trace/span from
+        // Micrometer Tracer (if available) by doing a runtime reflection lookup
+        // against the Spring WebApplicationContext. This avoids a hard compile-time
+        // dependency on micrometer while allowing CorrelationIdFilter to report
+        // tracing identifiers when they exist.
+        String traceId = valueOrDash(resolveTraceId(request));
+        String spanId = valueOrDash(resolveSpanId(request));
         String method = valueOrDash(request.getMethod());
         String path = valueOrDash(request.getRequestURI());
         String query = request.getQueryString() != null ? request.getQueryString() : "";
@@ -160,6 +167,75 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
                 return org.slf4j.MDC.get(LoggingConstants.MDC_SPAN_ID);
             default:
                 return org.slf4j.MDC.get(key);
+        }
+    }
+
+    // Attempt to resolve traceId using available tracer when MDC is blank.
+    private String resolveTraceId(HttpServletRequest request) {
+        String fromMdc = org.slf4j.MDC.get(LoggingConstants.MDC_TRACE_ID);
+        if (fromMdc != null && !fromMdc.isBlank()) return fromMdc;
+
+        try {
+            WebApplicationContext ctx = WebApplicationContextUtils.getWebApplicationContext(request.getServletContext());
+            if (ctx == null) return null;
+
+            // Lookup tracer bean by type using reflection to avoid compile-time dependency
+            Class<?> tracerClass = Class.forName("io.micrometer.tracing.Tracer");
+            Object tracer = null;
+            try {
+                tracer = ctx.getBean(tracerClass);
+            } catch (Exception ignored) {
+                // no tracer bean available
+                return null;
+            }
+
+            if (tracer == null) return null;
+
+            Object currentSpan = tracer.getClass().getMethod("currentSpan").invoke(tracer);
+            if (currentSpan == null) return null;
+            Object spanContext = currentSpan.getClass().getMethod("context").invoke(currentSpan);
+            if (spanContext == null) return null;
+            Object traceId = spanContext.getClass().getMethod("traceId").invoke(spanContext);
+            return traceId == null ? null : traceId.toString();
+        } catch (ClassNotFoundException cnfe) {
+            // Micrometer tracing not on classpath
+            return null;
+        } catch (Throwable t) {
+            // Any reflection or bean lookup issue - do not fail the request flow
+            log.debug("Unable to resolve traceId from tracer: {}", t.toString());
+            return null;
+        }
+    }
+
+    private String resolveSpanId(HttpServletRequest request) {
+        String fromMdc = org.slf4j.MDC.get(LoggingConstants.MDC_SPAN_ID);
+        if (fromMdc != null && !fromMdc.isBlank()) return fromMdc;
+
+        try {
+            WebApplicationContext ctx = WebApplicationContextUtils.getWebApplicationContext(request.getServletContext());
+            if (ctx == null) return null;
+
+            Class<?> tracerClass = Class.forName("io.micrometer.tracing.Tracer");
+            Object tracer = null;
+            try {
+                tracer = ctx.getBean(tracerClass);
+            } catch (Exception ignored) {
+                return null;
+            }
+
+            if (tracer == null) return null;
+
+            Object currentSpan = tracer.getClass().getMethod("currentSpan").invoke(tracer);
+            if (currentSpan == null) return null;
+            Object spanContext = currentSpan.getClass().getMethod("context").invoke(currentSpan);
+            if (spanContext == null) return null;
+            Object spanId = spanContext.getClass().getMethod("spanId").invoke(spanContext);
+            return spanId == null ? null : spanId.toString();
+        } catch (ClassNotFoundException cnfe) {
+            return null;
+        } catch (Throwable t) {
+            log.debug("Unable to resolve spanId from tracer: {}", t.toString());
+            return null;
         }
     }
 }

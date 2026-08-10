@@ -13,5 +13,6 @@ eureka:
 
 logging:
   level:
-    com.netflix.eureka: DEBUG
-    com.netflix.discovery: DEBUG
+    # Reduce discovery/eureka framework logging noise by default
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN

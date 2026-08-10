@@ -35,6 +35,14 @@ spring:
           filters:
             - StripPrefix=1
 
+      # (removed explicit webflux-namespaced actuator-webflux route) - the
+      # gateway's own actuator endpoints are served by the application context
+      # and do not require an explicit business route. Previously a WebFlux
+      # namespaced `actuator-webflux` route was added to work around a
+      # runtime property mapping issue; investigation showed the actuator
+      # endpoint is registered and reachable without this route. We remove the
+      # synthetic route to avoid confusion and unintended routing behavior.
+
 # Public routes that should be accessible without a bearer JWT.
 # normally supplied by the centralized config repository (config-repo),
 # but we provide local defaults so the gateway allows the OAuth authorization
@@ -83,3 +91,6 @@ commonlib:
         info: 100
         warn: 500
         error: 2000
+
+
+

@@ -90,7 +90,8 @@ outbox:
 logging:
   level:
     com.claimassist: DEBUG
-    org.springframework.security: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-    org.springframework.kafka: DEBUG
+    # Keep framework internals at WARN to reduce noise
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.springframework.kafka: WARN
