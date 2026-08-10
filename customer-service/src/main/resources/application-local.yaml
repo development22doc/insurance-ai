@@ -76,8 +76,10 @@ eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
-    register-with-eureka: true
-    fetch-registry: true
+    # When running locally without a Eureka server available, avoid blocking
+    # application startup by disabling registration and registry fetch.
+    register-with-eureka: false
+    fetch-registry: false
 
 logging:
   level:

@@ -4,9 +4,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.client.RestTemplateCustomizer;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Role;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 import feign.RequestInterceptor;
 
@@ -17,7 +21,7 @@ import feign.RequestInterceptor;
  * these beans automatically. Servlet-specific beans are registered separately
  * in ServletObservabilityAutoConfiguration.
  */
-@Configuration
+@Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(PerformanceLoggingProperties.class)
 public class ObservabilityAutoConfiguration {
 
@@ -46,8 +50,11 @@ public class ObservabilityAutoConfiguration {
     }
 
     @Bean
-    public ExecutionTimeAspect executionTimeAspect(PerformanceLogger perfLogger) {
-        return new ExecutionTimeAspect(perfLogger);
+    public ExecutionTimeAspect executionTimeAspect(BeanFactory beanFactory) {
+        // Use BeanFactory to avoid forcing PerformanceLogger creation during
+        // configuration time. ExecutionTimeAspect will lazily resolve
+        // PerformanceLogger when first needed.
+        return new ExecutionTimeAspect(beanFactory);
     }
 
     @Bean
@@ -56,6 +63,7 @@ public class ObservabilityAutoConfiguration {
     }
 
     @Bean
+    @Lazy
     public com.claimassist.platform.common_lib.observability.event.EventLogger eventLogger() {
         // Application/service names can be overridden by downstream apps if desired
         String svc = System.getProperty("spring.application.name", System.getenv("SPRING_APPLICATION_NAME"));
@@ -66,30 +74,27 @@ public class ObservabilityAutoConfiguration {
     }
 
     @Bean
+    @Lazy
     public PerformanceLogger performanceLogger(com.claimassist.platform.common_lib.observability.event.EventLogger ev, PerformanceLoggingProperties props) {
         return new PerformanceLogger(props, ev);
     }
 
     @Bean
-    public DatabaseExecutionTimeAspect databaseExecutionTimeAspect(PerformanceLogger perfLogger) {
-        return new DatabaseExecutionTimeAspect(perfLogger);
+    public DatabaseExecutionTimeAspect databaseExecutionTimeAspect(BeanFactory beanFactory) {
+        return new DatabaseExecutionTimeAspect(beanFactory);
     }
 
     @Bean
-    public KafkaExecutionTimeAspect kafkaExecutionTimeAspect(PerformanceLogger perfLogger) {
-        return new KafkaExecutionTimeAspect(perfLogger);
+    public KafkaExecutionTimeAspect kafkaExecutionTimeAspect(BeanFactory beanFactory) {
+        return new KafkaExecutionTimeAspect(beanFactory);
     }
 
     @Bean
-    public static FeignClientTimingBeanPostProcessor feignClientTimingBeanPostProcessor(ObjectProvider<PerformanceLogger> perfLoggerProvider) {
-        // Use ObjectProvider for lazy injection to allow this static factory method to be called early
-        // during bean post processor registration without forcing instantiation of the configuration class
-        PerformanceLogger perfLogger = perfLoggerProvider.getIfAvailable();
-        if (perfLogger == null) {
-            // If PerformanceLogger is not available, create a no-op processor
-            perfLogger = new PerformanceLogger(new PerformanceLoggingProperties(), null);
-        }
-        return new FeignClientTimingBeanPostProcessor(perfLogger);
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public static FeignClientTimingBeanPostProcessor feignClientTimingBeanPostProcessor(BeanFactory beanFactory) {
+        // Pass BeanFactory for lazy lookup at processing time
+        // This avoids injecting PerformanceLogger as a dependency, preventing early
+        // instantiation during BeanPostProcessor registration phase
+        return new FeignClientTimingBeanPostProcessor(beanFactory);
     }
 }
-
