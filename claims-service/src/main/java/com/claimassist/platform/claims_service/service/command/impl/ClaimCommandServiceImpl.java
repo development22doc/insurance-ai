@@ -15,6 +15,9 @@ import com.claimassist.platform.claims_service.service.command.ClaimCommands.Upd
 import com.claimassist.platform.claims_service.service.gateway.CustomerServiceGateway;
 import com.claimassist.platform.claims_service.support.IdempotencyService;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
+import com.claimassist.platform.common_lib.observability.PerformanceLogger;
+import com.claimassist.platform.common_lib.observability.MDCUtility;
 import com.claimassist.platform.common_lib.enums.ClaimRole;
 import com.claimassist.platform.common_lib.enums.ClaimStatus;
 import com.claimassist.platform.common_lib.error.BadRequestException;
@@ -52,16 +55,25 @@ public class ClaimCommandServiceImpl implements ClaimCommandService {
     private final ClaimMapper claimMapper;
     private final CustomerServiceGateway customerServiceGateway;
     private final IdempotencyService idempotencyService;
+    private final EventLogger eventLogger;
+    private final PerformanceLogger performanceLogger;
 
     @Override
     public ClaimResponse submitClaim(SubmitClaimCommand command) {
-        // Idempotent by design: a client retry (timeout, double-submit) with the
-        // same Idempotency-Key returns the ORIGINAL claim instead of opening a
-        // second claim for the same incident.
-        return idempotencyService.execute(
-                command.idempotencyKey(), SUBMIT_CLAIM_OPERATION, command.submittedByUserId(),
-                ClaimResponse.class, () -> doSubmitClaim(command)
-        );
+        // Idempotent by design: measure the overall business operation and emit
+        // a performance event via the shared PerformanceLogger.
+        long start = System.nanoTime();
+        try {
+            return idempotencyService.execute(
+                    command.idempotencyKey(), SUBMIT_CLAIM_OPERATION, command.submittedByUserId(),
+                    ClaimResponse.class, () -> doSubmitClaim(command)
+            );
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            performanceLogger.log("BUSINESS", SUBMIT_CLAIM_OPERATION, elapsedMs, java.util.Map.of(
+                    "policyId", command.policyId(), "submittedBy", command.submittedByUserId()
+            ));
+        }
     }
 
     private ClaimResponse doSubmitClaim(SubmitClaimCommand command) {
@@ -98,6 +110,21 @@ public class ClaimCommandServiceImpl implements ClaimCommandService {
                 .toStatus(ClaimStatus.SUBMITTED.name())
                 .changedBy(command.submittedByUserId().toString())
                 .build());
+
+        // Emit a structured business event for a newly submitted claim. Keep
+        // details minimal and avoid PII (do not include names or tokens).
+        try {
+            eventLogger.logBusinessEvent(null, null, java.util.Map.of(
+                    "event", "claim.submitted",
+                    "claimId", claim.getId(),
+                    "claimNumber", claim.getClaimNumber(),
+                    "policyId", claim.getPolicyId(),
+                    "submittedBy", command.submittedByUserId()
+            ));
+        } catch (Exception e) {
+            // Observability must not change business behavior - swallow errors here
+            log.warn("Failed to emit claim.submitted event: {}", e.getMessage());
+        }
 
         return claimMapper.toClaimResponse(claim);
     }
@@ -143,7 +170,23 @@ public class ClaimCommandServiceImpl implements ClaimCommandService {
                 .note(command.note())
                 .build());
 
-        log.info("Claim {} transitioned {} -> {} (by {})", claim.getClaimNumber(), from, to, command.changedBy());
+        // Emit a structured business event for the status transition and keep
+        // the human-readable log at DEBUG to avoid duplicating INFO-level
+        // observability that should be consumed from the event stream.
+        try {
+            eventLogger.logBusinessEvent(null, null, java.util.Map.of(
+                    "event", "claim.status.changed",
+                    "claimId", claim.getId(),
+                    "claimNumber", claim.getClaimNumber(),
+                    "from", from.name(),
+                    "to", to.name(),
+                    "changedBy", command.changedBy()
+            ));
+        } catch (Exception e) {
+            log.debug("Failed to emit claim.status.changed event: {}", e.getMessage());
+        }
+
+        log.debug("Claim {} transitioned {} -> {} (by {})", claim.getClaimNumber(), from, to, command.changedBy());
 
         return claim;
     }

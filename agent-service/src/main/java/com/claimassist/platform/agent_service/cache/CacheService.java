@@ -3,6 +3,7 @@ package com.claimassist.platform.agent_service.cache;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,8 @@ public class CacheService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private RedisTemplate<String, Object> redisTemplate;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PerformanceLogger performanceLogger;
 
     // Cache TTLs (in seconds)
     public static final long SESSION_CACHE_TTL = 1800;     // 30 minutes
@@ -39,6 +42,7 @@ public class CacheService {
      * @return The cached value or null
      */
     public <T> T get(String key, Class<T> type) {
+        long start = System.nanoTime();
         try {
             Object value = redisTemplate.opsForValue().get(key);
             if (value != null) {
@@ -53,6 +57,9 @@ public class CacheService {
         } catch (Exception e) {
             log.error("Error retrieving from cache: {}", key, e);
             return null;
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            try { performanceLogger.log("CACHE", "cache.get", elapsedMs, java.util.Map.of("key", key)); } catch (Exception ignored) {}
         }
     }
 
@@ -64,6 +71,7 @@ public class CacheService {
      * @param ttlSeconds Time to live in seconds
      */
     public void set(String key, Object value, long ttlSeconds) {
+        long start = System.nanoTime();
         try {
             if (value == null) {
                 log.warn("Attempted to cache null value: {}", key);
@@ -73,6 +81,9 @@ public class CacheService {
             log.debug("Cache SET: key={}, ttl={}s", key, ttlSeconds);
         } catch (Exception e) {
             log.error("Error setting cache: {}", key, e);
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            try { performanceLogger.log("CACHE", "cache.set", elapsedMs, java.util.Map.of("key", key)); } catch (Exception ignored) {}
         }
     }
 
@@ -82,11 +93,15 @@ public class CacheService {
      * @param key The cache key
      */
     public void delete(String key) {
+        long start = System.nanoTime();
         try {
             redisTemplate.delete(key);
             log.debug("Cache DELETE: {}", key);
         } catch (Exception e) {
             log.error("Error deleting from cache: {}", key, e);
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            try { performanceLogger.log("CACHE", "cache.delete", elapsedMs, java.util.Map.of("key", key)); } catch (Exception ignored) {}
         }
     }
 
@@ -96,6 +111,7 @@ public class CacheService {
      * @param pattern The key pattern (e.g., "agent:session:user:123:*")
      */
     public void deleteByPattern(String pattern) {
+        long start = System.nanoTime();
         try {
             var keys = redisTemplate.keys(pattern);
             if (keys != null && !keys.isEmpty()) {
@@ -104,6 +120,9 @@ public class CacheService {
             }
         } catch (Exception e) {
             log.error("Error evicting cache by pattern: {}", pattern, e);
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            try { performanceLogger.log("CACHE", "cache.evict.pattern", elapsedMs, java.util.Map.of("pattern", pattern)); } catch (Exception ignored) {}
         }
     }
 
@@ -164,11 +183,15 @@ public class CacheService {
      * Clear entire cache (use sparingly).
      */
     public void clearAll() {
+        long start = System.nanoTime();
         try {
             redisTemplate.getConnectionFactory().getConnection().flushAll();
             log.warn("Cleared entire Redis cache");
         } catch (Exception e) {
             log.error("Error clearing cache", e);
+        } finally {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            try { performanceLogger.log("CACHE", "cache.clearAll", elapsedMs, java.util.Map.of()); } catch (Exception ignored) {}
         }
     }
 }
