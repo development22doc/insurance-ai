@@ -39,12 +39,13 @@ Remaining:
 
 ## COMPLETED STEPS (CURRENT SESSION)
 - Step 1: Verified existing infrastructure still running (all components healthy)
+- Step 2: Started Customer Service successfully on port 8081, registered with Eureka
 
 ## CURRENT STEP
-Step 2 — Start Customer Service
+Step 3 — Start Claims Service
 
 ## CURRENT ACTION
-Infrastructure verified running. Starting Customer Service on port 8081
+Customer Service started successfully on port 8081 and registered with Eureka. Starting Claims Service on port 8082
 
 ## FILES MODIFIED (PREVIOUS SESSION)
 - config-service/src/main/resources/application-native.yaml (fixed search-locations path)
