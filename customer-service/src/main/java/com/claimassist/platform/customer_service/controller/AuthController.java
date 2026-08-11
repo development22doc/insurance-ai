@@ -7,10 +7,7 @@ import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.claimassist.platform.customer_service.dto.auth.AuthResponse;
 import com.claimassist.platform.customer_service.dto.auth.SignupRequest;
-import com.claimassist.platform.customer_service.entity.Customer;
-import com.claimassist.platform.customer_service.repository.CustomerRepository;
-import com.claimassist.platform.customer_service.service.CustomerLookupService;
-import com.claimassist.platform.customer_service.service.KeycloakUserProvisioningService;
+import com.claimassist.platform.customer_service.service.CustomerSignupService;
 import com.claimassist.platform.customer_service.service.OAuth2AuthorizationService;
 import com.claimassist.platform.customer_service.service.OAuth2LogoutService;
 import com.claimassist.platform.customer_service.service.OAuth2TokenService;
@@ -33,9 +30,7 @@ import java.util.Optional;
 @Slf4j
 public class AuthController {
 
-    private final CustomerRepository customerRepository;
-    private final CustomerLookupService customerLookupService;
-    private final KeycloakUserProvisioningService keycloakUserProvisioningService;
+    private final CustomerSignupService customerSignupService;
     private final OAuth2AuthorizationService authorizationService;
     private final OAuth2TokenService tokenService;
     private final OAuth2LogoutService logoutService;
@@ -44,116 +39,8 @@ public class AuthController {
 
     @PostMapping ("/signup")
     public ResponseEntity<Void> signup (@RequestBody @Valid SignupRequest request) {
-
-        long startTime = System.currentTimeMillis();
-        String username = request.username();
-
-        Map<String, Object> signupStartedDetails = new HashMap<>();
-        signupStartedDetails.put("username", username);
-        signupStartedDetails.put("event", "SIGNUP_STARTED");
-        eventLogger.logBusinessEvent("customer-service", "customer-service", signupStartedDetails);
-
-        try {
-            // Validate customer uniqueness
-            long validationStart = System.currentTimeMillis();
-            Optional<Customer> existingCustomer = customerLookupService.findByUsername(username);
-
-            if (existingCustomer.isPresent()) {
-                long validationDuration = System.currentTimeMillis() - validationStart;
-                Map<String, Object> dupeDetails = new HashMap<>();
-                dupeDetails.put("username", username);
-                dupeDetails.put("event", "CUSTOMER_ALREADY_EXISTS");
-                dupeDetails.put("executionTimeMs", validationDuration);
-                eventLogger.logSecurityEvent("customer-service", "customer-service", dupeDetails);
-
-                throw new BadRequestException(
-                        "A customer already exists with username: " + username);
-            }
-
-            // Create customer in database
-            long dbStartTime = System.currentTimeMillis();
-            Map<String, Object> customerCreationStartedDetails = new HashMap<>();
-            customerCreationStartedDetails.put("username", username);
-            customerCreationStartedDetails.put("event", "CUSTOMER_CREATION_STARTED");
-            eventLogger.logBusinessEvent("customer-service", "customer-service", customerCreationStartedDetails);
-
-            Customer customer = Customer.builder ()
-                    .username (username)
-                    .fullName (request.fullName ())
-                    .build ();
-
-            customer = customerRepository.save (customer);
-
-            long customerId = customer.getId();
-            long dbDuration = System.currentTimeMillis() - dbStartTime;
-            Map<String, Object> customerCreatedDetails = new HashMap<>();
-            customerCreatedDetails.put("customerId", customerId);
-            customerCreatedDetails.put("username", username);
-            customerCreatedDetails.put("event", "CUSTOMER_SAVED");
-            customerCreatedDetails.put("executionTimeMs", dbDuration);
-            eventLogger.logDatabaseEvent("customer-service", "customer-service", dbDuration, customerCreatedDetails);
-            performanceLogger.log("REPOSITORY", "repository.customer.save", dbDuration,
-                    Map.of("username", username, "customerId", customerId));
-
-            // Create Keycloak user
-            long keycloakStartTime = System.currentTimeMillis();
-            Map<String, Object> keycloakStartDetails = new HashMap<>();
-            keycloakStartDetails.put("customerId", customerId);
-            keycloakStartDetails.put("username", username);
-            keycloakStartDetails.put("event", "KEYCLOAK_USER_CREATION_STARTED");
-            eventLogger.logBusinessEvent("customer-service", "customer-service", keycloakStartDetails);
-
-            String keycloakUserId = keycloakUserProvisioningService.createUser (
-                    username,
-                    request.fullName (),
-                    request.password (),
-                    customerId);
-
-            long keycloakDuration = System.currentTimeMillis() - keycloakStartTime;
-            Map<String, Object> keycloakCreatedDetails = new HashMap<>();
-            keycloakCreatedDetails.put("customerId", customerId);
-            keycloakCreatedDetails.put("keycloakUserId", keycloakUserId);
-            keycloakCreatedDetails.put("username", username);
-            keycloakCreatedDetails.put("event", "KEYCLOAK_USER_CREATED");
-            keycloakCreatedDetails.put("executionTimeMs", keycloakDuration);
-            eventLogger.logBusinessEvent("customer-service", "customer-service", keycloakCreatedDetails);
-            performanceLogger.log("BUSINESS", "keycloak.create_user", keycloakDuration,
-                    Map.of("username", username, "customerId", customerId));
-
-            customer.setKeycloakId (keycloakUserId);
-            long updateStartTime = System.currentTimeMillis();
-            customerRepository.save (customer);
-            long updateDuration = System.currentTimeMillis() - updateStartTime;
-            Map<String, Object> updateDetails = new HashMap<>();
-            updateDetails.put("customerId", customerId);
-            updateDetails.put("keycloakUserId", keycloakUserId);
-            updateDetails.put("event", "CUSTOMER_SAVED");
-            updateDetails.put("executionTimeMs", updateDuration);
-            eventLogger.logDatabaseEvent("customer-service", "customer-service", updateDuration, updateDetails);
-            performanceLogger.log("REPOSITORY", "repository.customer.save", updateDuration,
-                    Map.of("username", username, "customerId", customerId));
-
-            // Evict cache
-            customerLookupService.evictByUsername (username);
-
-            // Emit SIGNUP_COMPLETED
-            long totalDuration = System.currentTimeMillis() - startTime;
-            Map<String, Object> completedDetails = new HashMap<>();
-            completedDetails.put("customerId", customerId);
-            completedDetails.put("keycloakUserId", keycloakUserId);
-            completedDetails.put("username", username);
-            completedDetails.put("event", "SIGNUP_COMPLETED");
-            completedDetails.put("executionTimeMs", totalDuration);
-            completedDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-            eventLogger.logBusinessEvent("customer-service", "customer-service", completedDetails);
-            performanceLogger.log("BUSINESS", "signup.total", totalDuration,
-                    Map.of("username", username, "customerId", customerId));
-
-            return ResponseEntity.status (HttpStatus.CREATED).build ();
-
-         } catch (Exception e) {
-             throw e;
-         }
+        customerSignupService.signup(request);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
      }
 
      @GetMapping ("/authorize")
