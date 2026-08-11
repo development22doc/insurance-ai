@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -176,6 +177,25 @@ public class GlobalExceptionHandler {
 
         emitSecurityExceptionEvent(ex, HttpStatus.FORBIDDEN, "ACCESS_DENIED", startTime, username);
         log.warn("Access denied for user: {} - path: {}", username != null ? username : "anonymous", error.path());
+
+        return ResponseEntity.status(error.status()).body(error);
+    }
+
+    /**
+     * Handles requests made with an HTTP method that the matched endpoint does not support.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<EnhancedApiError> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ex) {
+        long startTime = System.currentTimeMillis();
+        EnhancedApiError error = buildEnhancedError(
+                HttpStatus.METHOD_NOT_ALLOWED,
+                "METHOD_NOT_ALLOWED",
+                "Request method is not supported for this endpoint"
+        );
+
+        emitExceptionEvent(ex, HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", startTime);
+        log.warn("Method not allowed - correlationId: {} - path: {} - method: {}",
+                error.correlationId(), error.path(), request.getMethod());
 
         return ResponseEntity.status(error.status()).body(error);
     }
@@ -360,4 +380,3 @@ public class GlobalExceptionHandler {
         return message != null ? message : cause.getClass().getSimpleName();
     }
 }
-

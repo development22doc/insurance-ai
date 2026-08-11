@@ -1,7 +1,10 @@
 package com.claimassist.platform.customer_service.config;
 
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
+@Validated
 @ConfigurationProperties (prefix = "keycloak")
 public record KeycloakProperties(
 
@@ -26,6 +29,7 @@ public record KeycloakProperties(
          */
         String adminClientId,
 
+        @NotBlank(message = "keycloak.admin-client-secret must be configured via KEYCLOAK_ADMIN_CLIENT_SECRET or SERVICE_CLIENT_SECRET")
         String adminClientSecret
 
 ) {

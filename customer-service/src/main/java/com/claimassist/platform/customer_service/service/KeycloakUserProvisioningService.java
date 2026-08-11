@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -151,10 +152,7 @@ public class KeycloakUserProvisioningService {
 
     private String fetchAdminToken() {
         long startTime = System.currentTimeMillis();
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("grant_type", "client_credentials");
-        form.add("client_id", keycloakProperties.adminClientId());
-        form.add("client_secret", keycloakProperties.adminClientSecret());
+        MultiValueMap<String, String> form = buildAdminTokenRequestForm();
 
         try {
             @SuppressWarnings("unchecked")
@@ -203,6 +201,41 @@ public class KeycloakUserProvisioningService {
             performanceLogger.log("BUSINESS", "keycloak.fetch_admin_token", duration, Map.of("operation","fetch_admin_token"));
 
             throw new ServiceUnavailableException("Unable to reach identity provider. Please try again later.");
+        }
+    }
+
+    MultiValueMap<String, String> buildAdminTokenRequestForm() {
+        // Package-private for focused unit tests.
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("grant_type", "client_credentials");
+        form.add("client_id", keycloakProperties.adminClientId());
+        form.add("client_secret", keycloakProperties.adminClientSecret());
+        return form;
+    }
+
+    public void deleteUser(String keycloakUserId) {
+        if (keycloakUserId == null || keycloakUserId.isBlank()) {
+            return;
+        }
+
+        String adminToken = fetchAdminToken();
+        String deleteUri = keycloakProperties.adminUsersUri() + "/" + keycloakUserId;
+
+        try {
+            restClient.delete()
+                    .uri(deleteUri)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException ex) {
+            // Idempotency: if user already absent, treat compensation as successful.
+            if (ex instanceof HttpClientErrorException clientError
+                    && clientError.getStatusCode() != null
+                    && clientError.getStatusCode().value() == 404) {
+                return;
+            }
+
+            throw new ServiceUnavailableException("Keycloak compensation failed. Please try again later.");
         }
     }
 }
