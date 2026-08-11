@@ -1,18 +1,6 @@
-logging:
-  level:
-    org.springframework.cloud.gateway: DEBUG
-    reactor.netty.http.client: DEBUG
-  pattern:
-    level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"
-
 spring:
   application:
     name: api-gateway
-
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
 
   cloud:
     gateway:
@@ -27,6 +15,10 @@ spring:
                 key-resolver: "#{@userKeyResolver}"
 
           routes:
+            # ===========================
+            # Customer Service
+            # ===========================
+
             - id: customer-service
               uri: lb://CUSTOMER-SERVICE
               predicates:
@@ -34,37 +26,32 @@ spring:
               filters:
                 - StripPrefix=1
 
+            # ===========================
+            # Claims Service
+            # ===========================
+
             - id: claims-service
               uri: lb://CLAIMS-SERVICE
               predicates:
                 - Path=/claims/**
-              filters: []
+
+            # ===========================
+            # Agent Service
+            # ===========================
 
             - id: agent-service
               uri: lb://AGENT-SERVICE
               predicates:
                 - Path=/agent/**
-              filters: []
+
+            # ===========================
+            # Policy APIs
+            # ===========================
 
             - id: policy-service
               uri: lb://CUSTOMER-SERVICE
               predicates:
                 - Path=/policies/**
-              filters: []
-
-
-  lifecycle:
-    timeout-per-shutdown-phase: 15s
-
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
-          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
-
-server:
-  shutdown: graceful
 
 app:
   security:
@@ -92,10 +79,12 @@ management:
       process: true
       logback: true
       redis: true
+
     distribution:
       percentiles-histogram:
         http.server.requests: true
         redis.command.duration: true
+
     tags:
       application: ${spring.application.name}
 
@@ -116,11 +105,31 @@ management:
     readinessstate:
       enabled: true
 
+tracing:
+  sampling:
+    probability: 1.0
+
+zipkin:
   tracing:
-    sampling:
-      probability: 1.0
+    endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
 
-  zipkin:
-    tracing:
-      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+logging:
+  level:
+    com.claimassist: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: INFO
+    reactor.netty.http.client: DEBUG
 
+  pattern:
+    level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"
+
+commonlib:
+  performance:
+    info-threshold-ms: 100
+    warn-threshold-ms: 500
+    error-threshold-ms: 2000
+    categories:
+      REQUEST:
+        info: 100
+        warn: 500
+        error: 2000

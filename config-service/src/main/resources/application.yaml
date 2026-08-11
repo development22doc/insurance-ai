@@ -2,18 +2,9 @@ spring:
   application:
     name: config-service
 
-  profiles:
-    active: native
-
   cloud:
     config:
       server:
-        git:
-          uri: ${CONFIG_GIT_URI:file:./config-repo}
-          default-label: ${CONFIG_GIT_LABEL:master}
-          clone-on-start: true
-          timeout: 10
-          search-paths: ""
         native:
           search-locations: ${CONFIG_NATIVE_SEARCH_LOCATIONS:file:./config-repo}
 
@@ -34,15 +25,18 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+
   health:
     config:
       enabled: false
+
+tracing:
+  sampling:
+    probability: 1.0
+
+zipkin:
   tracing:
-    sampling:
-      probability: 1.0
-  zipkin:
-    tracing:
-      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+    endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
 
 logging:
   level:
@@ -50,10 +44,12 @@ logging:
     org.springframework.cloud.config: DEBUG
 
 ---
+
 spring:
   config:
     activate:
       on-profile: k8s
+
   cloud:
     discovery:
       enabled: false

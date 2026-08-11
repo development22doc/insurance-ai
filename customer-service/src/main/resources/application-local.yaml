@@ -1,16 +1,18 @@
 spring:
-  flyway:
-    enabled: false
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_customer_local
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD:claimassist}
+
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
       connection-timeout: 20000
       idle-timeout: 300000
       max-lifetime: 1200000
+
+  flyway:
+    enabled: false
 
   jpa:
     properties:
@@ -36,6 +38,7 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+
     producer:
       acks: all
       retries: 2147483647
@@ -47,6 +50,7 @@ spring:
         linger.ms: 10
         request.timeout.ms: 30000
         retry.backoff.ms: 1000
+
     consumer:
       bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
       group-id: customer-service-local
@@ -70,21 +74,20 @@ spring:
           keycloak:
             token-uri: ${SERVICE_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
 
-
-
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
-    # When running locally without a Eureka server available, avoid blocking
-    # application startup by disabling registration and registry fetch.
-    register-with-eureka: false
-    fetch-registry: false
+
+    register-with-eureka: true
+    fetch-registry: true
+
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
 
 logging:
   level:
     com.claimassist: DEBUG
-    # Avoid excessive framework logging by default
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
