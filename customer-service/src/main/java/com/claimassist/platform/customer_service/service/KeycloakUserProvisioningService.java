@@ -238,4 +238,77 @@ public class KeycloakUserProvisioningService {
             throw new ServiceUnavailableException("Keycloak compensation failed. Please try again later.");
         }
     }
+
+    /**
+     * Updates a user's profile in Keycloak.
+     * Currently supports updating the full name (firstName/lastName).
+     */
+    public void updateUser(String keycloakUserId, String fullName, String username) {
+        if (keycloakUserId == null || keycloakUserId.isBlank()) {
+            return;
+        }
+
+        long startTime = System.currentTimeMillis();
+        String adminToken = fetchAdminToken();
+
+        String[] nameParts = fullName.trim().split("\\s+", 2);
+        String firstName = nameParts[0];
+        String lastName = nameParts.length > 1 ? nameParts[1] : "";
+
+        Map<String, Object> userPayload = new HashMap<>();
+        userPayload.put("firstName", firstName);
+        userPayload.put("lastName", lastName);
+        userPayload.put("email", username);
+
+        String updateUri = keycloakProperties.adminUsersUri() + "/" + keycloakUserId;
+
+        try {
+            long apiStartTime = System.currentTimeMillis();
+            Map<String, Object> apiStartDetails = new HashMap<>();
+            apiStartDetails.put("event", "KEYCLOAK_REQUEST_STARTED");
+            apiStartDetails.put("operation", "update_user");
+            apiStartDetails.put("keycloakUserId", keycloakUserId);
+            eventLogger.logBusinessEvent("customer-service", "customer-service", apiStartDetails);
+
+            restClient.put()
+                    .uri(updateUri)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                    .body(userPayload)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            long apiDuration = System.currentTimeMillis() - apiStartTime;
+            Map<String, Object> apiCompleteDetails = new HashMap<>();
+            apiCompleteDetails.put("event", "KEYCLOAK_REQUEST_COMPLETED");
+            apiCompleteDetails.put("operation", "update_user");
+            apiCompleteDetails.put("keycloakUserId", keycloakUserId);
+            apiCompleteDetails.put("executionTimeMs", apiDuration);
+            eventLogger.logBusinessEvent("customer-service", "customer-service", apiCompleteDetails);
+
+            performanceLogger.log("BUSINESS", "keycloak.update_user", apiDuration,
+                    Map.of("operation", "update_user", "keycloakUserId", keycloakUserId));
+
+            long totalDuration = System.currentTimeMillis() - startTime;
+            Map<String, Object> userUpdatedDetails = new HashMap<>();
+            userUpdatedDetails.put("event", "KEYCLOAK_USER_UPDATED");
+            userUpdatedDetails.put("keycloakUserId", keycloakUserId);
+            userUpdatedDetails.put("executionTimeMs", totalDuration);
+            eventLogger.logBusinessEvent("customer-service", "customer-service", userUpdatedDetails);
+
+        } catch (RestClientException e) {
+            long duration = System.currentTimeMillis() - startTime;
+            Map<String, Object> failDetails = new HashMap<>();
+            failDetails.put("event", "KEYCLOAK_REQUEST_FAILED");
+            failDetails.put("operation", "update_user");
+            failDetails.put("keycloakUserId", keycloakUserId);
+            failDetails.put("reason", e.getClass().getSimpleName());
+            failDetails.put("executionTimeMs", duration);
+            eventLogger.logBusinessEvent("customer-service", "customer-service", failDetails);
+
+            performanceLogger.log("BUSINESS", "keycloak.update_user", duration,
+                    Map.of("operation", "update_user", "keycloakUserId", keycloakUserId));
+
+            throw new ServiceUnavailableException("Unable to update profile in identity provider. Please try again later.");
+        }
+    }
 }

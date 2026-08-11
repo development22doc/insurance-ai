@@ -85,7 +85,6 @@ resilience4j:
     instances:
       customerService:
         max-attempts: 3
-        wait-duration: 300ms
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
         retry-exceptions:
