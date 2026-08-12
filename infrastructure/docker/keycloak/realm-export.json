@@ -1,183 +1,198 @@
 {
-  "realm": "claimassist",
-  "enabled": true,
-  "displayName": "ClaimAssist AI Platform",
-  "sslRequired": "external",
-  "registrationAllowed": false,
-  "loginWithEmailAllowed": true,
-  "duplicateEmailsAllowed": false,
-  "resetPasswordAllowed": true,
-  "editUsernameAllowed": false,
-  "bruteForceProtected": true,
-  "accessTokenLifespan": 6000,
-  "ssoSessionIdleTimeout": 36000,
-  "ssoSessionMaxLifespan": 36000,
-  "roles": {
-    "realm": [
-      {
-        "name": "CUSTOMER",
-        "description": "Default role for customers"
-      },
-      {
-        "name": "ADJUSTER",
-        "description": "Claims Adjuster"
-      },
-      {
-        "name": "AUDITOR",
-        "description": "Compliance Auditor"
-      },
-      {
-        "name": "default-roles-claimassist",
-        "description": "Default roles assigned to users",
-        "composite": true,
-        "composites": {
-          "realm": [
-            "CUSTOMER"
-          ]
-        }
-      }
-    ]
-  },
-  "defaultRole": {
-    "name": "default-roles-claimassist",
-    "composite": true
-  },
-  "clientScopes": [
-    {
-      "name": "openid",
-      "description": "OpenID Connect",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "false",
-        "display.on.consent.screen": "true"
-      }
-    },
-    {
-      "name": "profile",
-      "description": "OpenID Connect profile scope",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true"
-      }
-    },
-    {
-      "name": "email",
-      "description": "OpenID Connect email scope",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true"
-      }
-    },
-    {
-      "name": "address",
-      "description": "OpenID Connect address scope",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true"
-      }
-    },
-    {
-      "name": "phone",
-      "description": "OpenID Connect phone scope",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true"
-      }
-    },
-    {
-      "name": "userId-claim",
-      "description": "Adds legacy_user_id as userId claim",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "false"
-      },
-      "protocolMappers": [
-        {
-          "name": "userId",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-attribute-mapper",
-          "consentRequired": false,
-          "config": {
-            "userinfo.token.claim": "true",
-            "user.attribute": "legacy_user_id",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "claim.name": "userId",
-            "jsonType.label": "long",
-            "multivalued": "false"
-          }
-        }
-      ]
-    }
-  ],
-  "clients": [
-    {
-      "clientId": "claimassist-customer-app",
-      "name": "ClaimAssist Customer App",
-      "enabled": true,
-      "publicClient": true,
-      "protocol": "openid-connect",
-      "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": true,
-      "redirectUris": [
-        "http://localhost:3000/*",
-        "http://localhost:8081/auth/callback",
-        "http://localhost:8080/customer/auth/callback"
-      ],
-      "webOrigins": [
-        "http://localhost:3000"
-      ],
-      "defaultClientScopes": [
-        "openid",
-        "profile",
-        "email",
-        "userId-claim"
-      ],
-      "attributes": {
-        "pkce.code.challenge.method": "S256"
-      }
-    },
-    {
-      "clientId": "claimassist-admin-service",
-      "name": "ClaimAssist Admin Service",
-      "enabled": true,
-      "publicClient": false,
-      "protocol": "openid-connect",
-      "secret": "local-dev-admin-client-secret",
-      "standardFlowEnabled": false,
-      "directAccessGrantsEnabled": true,
-      "serviceAccountsEnabled": true
-    }
-  ],
-  "users": [
-    {
-      "username": "demo.customer",
-      "email": "demo.customer@example.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Demo",
-      "lastName": "Customer",
-      "attributes": {
-        "legacy_user_id": [
-          "1"
-        ]
-      },
-      "credentials": [
-        {
-          "type": "password",
-          "value": "Password123!",
-          "temporary": false
-        }
-      ],
-      "realmRoles": [
-        "default-roles-claimassist"
-      ]
-    }
-  ]
-}
+    "realm": "claimassist",
+    "enabled": true,
+    "displayName": "ClaimAssist AI Platform",
+    "sslRequired": "external",
+    "registrationAllowed": false,
+    "loginWithEmailAllowed": true,
+    "duplicateEmailsAllowed": false,
+    "resetPasswordAllowed": true,
+    "editUsernameAllowed": false,
+    "bruteForceProtected": true,
+    "accessTokenLifespan": 6000,
+    "ssoSessionIdleTimeout": 36000,
+    "ssoSessionMaxLifespan": 36000,
 
+    "roles": {
+        "realm": [
+            {
+                "name": "CUSTOMER",
+                "description": "Default role for customers"
+            },
+            {
+                "name": "ADJUSTER",
+                "description": "Claims Adjuster"
+            },
+            {
+                "name": "AUDITOR",
+                "description": "Compliance Auditor"
+            },
+            {
+                "name": "default-roles-claimassist",
+                "description": "Default roles assigned to users",
+                "composite": true,
+                "composites": {
+                    "realm": [
+                        "CUSTOMER"
+                    ]
+                }
+            }
+        ]
+    },
+
+    "defaultRole": {
+        "name": "default-roles-claimassist",
+        "composite": true
+    },
+
+    "clientScopes": [
+        {
+            "name": "openid",
+            "description": "OpenID Connect",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "false",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "name": "profile",
+            "description": "OpenID Connect profile scope",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "name": "email",
+            "description": "OpenID Connect email scope",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "name": "address",
+            "description": "OpenID Connect address scope",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "name": "phone",
+            "description": "OpenID Connect phone scope",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "name": "userId-claim",
+            "description": "Adds legacy_user_id as userId claim",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "false"
+            },
+            "protocolMappers": [
+                {
+                    "name": "userId",
+                    "protocol": "openid-connect",
+                    "protocolMapper": "oidc-usermodel-attribute-mapper",
+                    "consentRequired": false,
+                    "config": {
+                        "userinfo.token.claim": "true",
+                        "user.attribute": "legacy_user_id",
+                        "id.token.claim": "true",
+                        "access.token.claim": "true",
+                        "claim.name": "userId",
+                        "jsonType.label": "long",
+                        "multivalued": "false"
+                    }
+                }
+            ]
+        }
+    ],
+
+    "clients": [
+        {
+            "clientId": "claimassist-customer-app",
+            "name": "ClaimAssist Customer App",
+            "enabled": true,
+            "publicClient": true,
+            "protocol": "openid-connect",
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": true,
+            "redirectUris": [
+                "http://localhost:3000/*",
+                "http://localhost:8081/auth/callback",
+                "http://localhost:8080/customer/auth/callback"
+            ],
+            "webOrigins": [
+                "http://localhost:3000"
+            ],
+            "defaultClientScopes": [
+                "openid",
+                "profile",
+                "email",
+                "userId-claim"
+            ],
+            "attributes": {
+                "pkce.code.challenge.method": "S256"
+            }
+        },
+        {
+            "clientId": "claimassist-admin-service",
+            "name": "ClaimAssist Admin Service",
+            "enabled": true,
+            "publicClient": false,
+            "protocol": "openid-connect",
+            "secret": "local-dev-admin-client-secret",
+            "standardFlowEnabled": false,
+            "directAccessGrantsEnabled": true,
+            "serviceAccountsEnabled": true
+        }
+    ],
+
+    "users": [
+        {
+            "username": "demo.customer",
+            "email": "demo.customer@example.com",
+            "enabled": true,
+            "emailVerified": true,
+            "firstName": "Demo",
+            "lastName": "Customer",
+            "attributes": {
+                "legacy_user_id": [
+                    "1"
+                ]
+            },
+            "credentials": [
+                {
+                    "type": "password",
+                    "value": "Password123!",
+                    "temporary": false
+                }
+            ],
+            "realmRoles": [
+                "default-roles-claimassist"
+            ]
+        },
+        {
+            "username": "service-account-claimassist-admin-service",
+            "enabled": true,
+            "serviceAccountClientId": "claimassist-admin-service",
+            "clientRoles": {
+                "realm-management": [
+                    "manage-users",
+                    "view-users"
+                ]
+            }
+        }
+    ]
+}
