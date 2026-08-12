@@ -78,12 +78,12 @@ eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
-
     register-with-eureka: true
     fetch-registry: true
 
   instance:
     prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
+    hostname: ${EUREKA_HOSTNAME:localhost}
 
 logging:
   level:

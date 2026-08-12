@@ -123,7 +123,7 @@
       "publicClient": true,
       "protocol": "openid-connect",
       "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "redirectUris": [
         "http://localhost:3000/*",
         "http://localhost:8081/auth/callback",
@@ -150,7 +150,7 @@
       "protocol": "openid-connect",
       "secret": "local-dev-admin-client-secret",
       "standardFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true
     }
   ],

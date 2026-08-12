@@ -157,6 +157,7 @@ services:
       KC_HTTP_ENABLED: "true"
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_IMPORT_STRATEGY: OVERWRITE
     ports:
       - "8180:8080"
     volumes:
