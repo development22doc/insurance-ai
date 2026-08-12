@@ -281,6 +281,132 @@ This file tracks all changes made during the ClaimAssist local development envir
 
 ---
 
+## Phase 1.5 — Remove SecurityHeadersFilter
+
+**Status**: SUCCESS
+
+**Objective**: Remove SecurityHeadersFilter.java because Phase 1.4 confirmed it is never registered in any SecurityFilterChain and its functionality is already provided by Spring Security headers().
+
+**Session Date**: 2026-08-12
+
+**Completed Steps**:
+1. **File Deletion** - Deleted common-lib/src/main/java/com/claimassist/platform/common_lib/security/SecurityHeadersFilter.java
+2. **Import Cleanup** - Removed unused import from customer-service/src/main/java/com/claimassist/platform/customer_service/security/CustomerSecurityConfig.java
+3. **Reference Verification** - Searched for remaining references to SecurityHeadersFilter - only documentation references found, no Java code references
+4. **Build Verification** - Compiled common-lib successfully (BUILD SUCCESS, 9.415s, 53 source files)
+5. **Build Verification** - Compiled customer-service successfully (BUILD SUCCESS, 13.620s, 42 source files)
+
+**Key Findings**:
+- SecurityHeadersFilter was never registered in any SecurityFilterChain despite having @Component annotation
+- Only imported (but unused) in CustomerSecurityConfig.java
+- All services already use Spring Security's built-in headers() configuration for the same security headers
+- API Gateway has its own reactive GatewaySecurityHeadersFilter (different class, not affected)
+- Removing the filter has no security behavior impact - Spring Security headers() remains active
+- Both common-lib and customer-service compile successfully after deletion
+
+**Files Deleted (This Session)**:
+- `common-lib/src/main/java/com/claimassist/platform/common_lib/security/SecurityHeadersFilter.java` - Never registered in SecurityFilterChain, functionality redundant with Spring Security headers()
+
+**Files Modified (This Session)**:
+- `customer-service/src/main/java/com/claimassist/platform/customer_service/security/CustomerSecurityConfig.java` - Removed unused import of SecurityHeadersFilter
+- `phase1_task5_progress.md` - Created progress tracking file
+- `master_change_log.md` - Added this Phase 1.5 entry
+
+**Why It Was Safe**:
+- Phase 1.4 audit confirmed SecurityHeadersFilter was never added to any SecurityFilterChain
+- No FilterRegistrationBean found for SecurityHeadersFilter
+- No @Bean methods found that register SecurityHeadersFilter
+- All SecurityConfig files use Spring Security's headers() configuration for comprehensive security headers
+- CustomerSecurityConfig.java lines 50-73 implement HSTS, X-Frame-Options, X-XSS-Protection, X-Content-Type-Options, Cache Control, Referrer-Policy, Permissions-Policy, and Content-Security-Policy
+- GatewaySecurityHeadersFilter (reactive stack) is a different class and was not changed
+
+**Build Results**:
+- **common-lib**: BUILD SUCCESS - 9.415s, 53 source files compiled
+- **customer-service**: BUILD SUCCESS - 13.620s, 42 source files compiled (pre-existing deprecation and unchecked operation warnings only)
+
+**Security Headers Status**:
+- Spring Security headers() remains the active implementation in all services
+- No security behavior change
+- GatewaySecurityHeadersFilter (reactive stack) was not changed
+
+**Verification Results**:
+- **References**: No Java code references to SecurityHeadersFilter remain (only documentation references)
+- **Build**: Both common-lib and customer-service compile successfully
+- **Security**: No impact - Spring Security headers() configuration unchanged
+
+**Remaining Issues**: None
+
+**Final Status**: SUCCESS - SecurityHeadersFilter removed safely, no compilation errors, no security behavior change
+
+---
+
+## Phase 1.3 — Remove 6 Confirmed Unused Java Files
+
+**Status**: SUCCESS
+
+**Objective**: Remove ONLY the 6 HIGH-confidence unused Java files identified by Phase 1.2.
+
+**Session Date**: 2026-08-12
+
+**Completed Steps**:
+1. **File Location Verification** - Located exact paths for all 6 HIGH-confidence candidates from Phase 1.2
+2. **Final Reference Checks** - Performed comprehensive reference checks for each file to ensure no Java code uses them
+3. **Spring Configuration Verification** - Confirmed no indirect Spring bean registration or configuration references
+4. **File Deletion** - Deleted all 6 HIGH-confidence unused Java files
+5. **Post-Deletion Reference Search** - Verified no remaining references in Java code
+6. **Build Verification** - Successfully compiled affected modules (common-lib and customer-service)
+
+**Files Removed**:
+1. `common-lib/src/main/java/com/claimassist/platform/common_lib/security/CorsConfigurationHandler.java`
+2. `common-lib/src/main/java/com/claimassist/platform/common_lib/security/SecureCookieConfiguration.java`
+3. `common-lib/src/main/java/com/claimassist/platform/common_lib/observability/PerformanceLoggingUtil.java`
+4. `common-lib/src/main/java/com/claimassist/platform/common_lib/observability/RequestLoggingUtil.java`
+5. `common-lib/src/main/java/com/claimassist/platform/common_lib/observability/ResponseLoggingUtil.java`
+6. `customer-service/src/main/java/com/claimassist/platform/customer_service/config/RestClientConfig.java`
+
+**Key Findings**:
+- All 6 files were confirmed HIGH-confidence unused from Phase 1.2 analysis
+- No Java code references any of the deleted files
+- No Spring configuration or bean registration references
+- No test files needed modification (no test dependencies on these files)
+- All affected modules compiled successfully after deletions
+- SecurityHeadersFilter.java was NOT removed (MEDIUM confidence - will be investigated in Phase 1.4)
+- No comments/Javadocs directly related to deleted classes required cleanup
+
+**Files Modified (This Session)**:
+- `phase1_task3_progress.md` - Created progress tracking file
+- `master_change_log.md` - Added this Phase 1.3 entry
+
+**Files Deleted (This Session)**:
+- 6 HIGH-confidence unused Java files (see Files Removed section above)
+
+**Build Results**:
+- **common-lib**: BUILD SUCCESS (54 source files compiled)
+- **customer-service**: BUILD SUCCESS (42 source files compiled)
+- No compilation errors
+- No broken references
+
+**Reference Verification**:
+- **CorsConfigurationHandler**: Only referenced in progress tracking files, no Java code usage
+- **SecureCookieConfiguration**: Only referenced in progress tracking files, no Java code usage
+- **PerformanceLoggingUtil**: Only referenced in progress tracking files, no Java code usage
+- **RequestLoggingUtil**: Only referenced in progress tracking files, no Java code usage
+- **ResponseLoggingUtil**: Only referenced in progress tracking files, no Java code usage
+- **RestClientConfig**: Only referenced in progress tracking files, no Java code usage
+
+**Files Not Modified**:
+- No test files modified
+- No database changes
+- No deployment changes
+- No Redis, Kafka, Outbox, Saga, JPA, or Flyway changes
+- No unrelated Java code modifications
+
+**Remaining Issues**: None
+
+**Final Status**: SUCCESS - All 6 HIGH-confidence unused Java files removed without breaking the build
+
+---
+
 ## Task: Customer Service JWT userId Claim / Keycloak Authentication Issue
 
 **Status**: SUCCESS
