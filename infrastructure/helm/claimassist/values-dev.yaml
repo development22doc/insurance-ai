@@ -92,11 +92,12 @@ keycloak:
 ingress:
   enabled: true
   className: nginx
-  host: api-dev.<your-domain>          # DEPLOYMENT-TIME placeholder
+  host: ""
+  tlsEnabled: false
   tlsSecretName: claimassist-api-gateway-tls
 
 certManager:
-  enabled: true
+  enabled: false
   issuerName: claimassist-letsencrypt
   issuerSecretName: claimassist-letsencrypt-account
   email: "cert-manager@example.com"    # DEPLOYMENT-TIME placeholder

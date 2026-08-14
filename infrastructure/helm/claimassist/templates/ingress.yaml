@@ -1,13 +1,13 @@
 {{- if .Values.ingress.enabled }}
 {{- $gw := index .Values.services "api-gateway" }}
 ---
-# Task 6A-11: PUBLIC application edge. Internet -> OCI VM public IP -> NodePort ->
-# shared nginx ingress controller -> THIS Ingress -> claimassist-api-gateway:8080
-# -> internal K8s Services. ONLY the API Gateway is exposed here (it is the
-# application edge); every other microservice and all stateful resources remain
-# internal ClusterIP-only. TLS terminates at the ingress using a certificate
-# provisioned by cert-manager from the environment's ACME Issuer (staging for DEV,
-# production for STAGE/PROD) - see templates/issuer.yaml.
+# Task 6A-11: DEV public application edge.
+# Free OCI IP-based deployment:
+# Internet -> OCI public IP -> NGINX Ingress -> API Gateway.
+#
+# TLS and cert-manager are conditional. They remain disabled for the
+# current no-domain/free-tier deployment.
+
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -15,26 +15,36 @@ metadata:
   namespace: {{ include "claimassist.namespace" . | quote }}
   labels:
     {{- include "claimassist.labels" . | nindent 4 }}
+  {{- if .Values.ingress.tlsEnabled }}
   annotations:
-    # Force HTTP -> HTTPS so nothing transits the public edge in clear text.
-    # This annotation is from the F5 NGINX Ingress Controller (OSS), NOT the
-    # retired community ingress-nginx project. The two controllers are NOT
-    # annotation-compatible - nginx.org/* is the F5, current controller.
     nginx.org/redirect-to-https: "true"
-    # cert-manager issues/renews the certificate for ingress.host automatically
-    # after DNS points the host at the cluster. Namespace-scoped Issuer (per-env).
+    {{- if .Values.certManager.enabled }}
     cert-manager.io/issuer: {{ .Values.certManager.issuerName | quote }}
+    {{- end }}
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+  {{- else }}
+    {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+
 spec:
   ingressClassName: {{ .Values.ingress.className | default "nginx" | quote }}
+
+  {{- if .Values.ingress.tlsEnabled }}
   tls:
     - hosts:
         - {{ .Values.ingress.host | quote }}
       secretName: {{ .Values.ingress.tlsSecretName | quote }}
+  {{- end }}
+
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    - {{- if .Values.ingress.host }}
+      host: {{ .Values.ingress.host | quote }}
+      {{- end }}
       http:
         paths:
           - path: {{ .Values.ingress.path | default "/" | quote }}
