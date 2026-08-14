@@ -1,0 +1,721 @@
+# =============================================================================
+# ClaimAssist Helm Chart - values (default)
+# One K3s cluster, namespaces claimassist-dev/stage/prod. LOCAL = Docker Compose
+# (this chart is not used for LOCAL).
+#
+# Task 6A-6: LOCKED Kubernetes architecture - the four application workloads
+# (api-gateway, customer-service, claims-service, agent-service) only. Kubernetes
+# Service DNS for discovery; ConfigMap+Secret for config. NO discovery-service,
+# NO config-service, NO config-repo, NO Eureka, NO Config Server at runtime.
+# Task 6A-11: adds the PUBLIC application edge (nginx Ingress -> api-gateway only),
+# cert-manager automatic TLS (Issuer, staging/production per env), the zero-downtime
+# RollingUpdate strategy and per-replica PDBs.
+# Task 6A-14B-3: adds NetworkPolicy (default-deny + namespace isolation + DNS +
+# Prometheus + ingress-controller allows) and CPU-based HPA for the stateless
+# application services only (bounded min/max per env). Monitoring, OCI
+# provisioning and final deployment remain later tasks.
+#
+# Task 6A-14B-4B: FREE-TIER OCI OPTIMIZATION for a single Always-Free A1.Flex
+# node (2 OCPU / 12GB RAM). Operating model: ONLY ONE environment is ACTIVE at a
+# time. Normal state = DEV. During STAGE/PROD verification the previous env is
+# scaled down (runtime activation only; namespaces/configuration are NEVER
+# deleted). All three environments are single-replica and HPA is capped at 2.
+# This is NOT enterprise HA - one VM, one node, one of everything = a single
+# point of failure. See the 6A-14B-4A baseline log and this task's change log.
+# =============================================================================
+
+# Global application metadata - reused by the common label helpers.
+global:
+  app: claimassist
+  environment: dev          # overridden per environment in values-<env>.yaml
+  managedBy: helm
+  # -----------------------------------------------------------------------------
+  # Task 6A-12 - HIGH AVAILABILITY + FAULT TOLERANCE.
+  #
+  # The free-tier target is ONE K3s node. NODE-LEVEL HA is therefore IMPOSSIBLE:
+  # a single-node failure takes down the whole environment. Nothing here pretends
+  # otherwise. What IS provided is APPLICATION-LEVEL resilience for the stateless
+  # services (>= 2 replicas => pod-failure tolerance + zero-gap rolling rollout)
+  # and honest documentation that all stateful workloads are single-replica.
+  #
+  # `ha.scheduling.enabled` controls the SOFT (preferred/schedule-anyway) node
+  # spreading for the four stateless services. Soft rules are used deliberately:
+  #   - They never make the single current node unschedulable.
+  #   - When additional OCI nodes are later added, they automatically spread the
+  #     replicas across kubernetes.io/hostname and prefer anti-affinity.
+  # Required/forced anti-affinity is NOT used - it would strand the 2nd replica
+  # on the one-node cluster.
+  # -----------------------------------------------------------------------------
+  ha:
+    scheduling:
+      enabled: true
+
+# -----------------------------------------------------------------------------
+# Image - OCI Container Registry (locked decision). Placeholders only.
+# Task 6A-3 built images: claimassist/<service>:1.0.0 (locally verified).
+# Actual OCIR coordinates are configured at deploy time; never hardcoded here.
+# -----------------------------------------------------------------------------
+image:
+  registry: ""              # e.g. <namespace>.ocir.io/<tenancy>/... (set later)
+  repository: claimassist
+  tag: "1.0.0"              # matches the Task 6A-3 built images; overridden per env
+  pullPolicy: IfNotPresent
+  pullSecret: ""            # named docker-registry imagePullSecret (created on the
+                            # VM via `kubectl create secret docker-registry`);
+                            # consumed by every application Deployment when set
+
+# Default replica count; individual services may override (values/<service>.replicas).
+# TASK 6A-14B-4B: free-tier baseline is 1 replica for EVERY environment (DEV,
+# STAGE, PROD all run 1 when active - a single active env at a time on the
+# 2-OCPU node). Scale to 2/3+ by changing values only (no template change), and
+# add nodes for true multi-node HA later. Single-replica = NO pod-level
+# tolerance and NO zero-gap rollout on the free-tier profile.
+replicaCount: 1
+
+# Namespace handling - see templates/namespace.yaml.
+namespace:
+  create: true
+
+# Foundation ServiceAccounts (one per app, no cluster permissions).
+serviceAccounts:
+  create: true
+
+# Foundation RBAC roles (inert) - see templates/rbac.yaml.
+adminRbac:
+  enabled: false
+  name: claimassist-admin
+
+# -----------------------------------------------------------------------------
+# RBAC bindings (Task 6A-14) - INERT by default. No real identity exists yet, so
+# nothing is bound to a human user/group in this chart. Enable these ONLY after
+# a real kubeconfig/authZ identity is provisioned (bootstrap task). Model:
+#   A. infrastructure-admin: single-owner cluster admin (adminRbac.enabled + this
+#      binding), bound to the sole infra owner.
+#   B. team-readonly: namespace-scoped read-only (no secrets, no write verbs),
+#      bound to a team group per environment namespace.
+# PROD is kept the strongest: team-read-only binding is enabled selectively and
+# never carries secrets/write; production Secrets/RBAC/write stay admin-only.
+# -----------------------------------------------------------------------------
+rbac:
+  adminBinding:
+    enabled: false
+    user: "admin-placeholder"      # real identity set at bootstrap, never committed
+  teamReadOnly:
+    binding:
+      enabled: false               # enable per-env when the team group exists
+      group: "claimassist-team"    # identity set at bootstrap, never committed
+
+# Foundation ConfigMap/Secret scaffolding (disabled by default).
+configMap:
+  enabled: false
+  name: claimassist-shared-config
+  data: {}
+secrets:
+  create: false
+  name: app-secrets
+  values: {}
+
+# Graceful shutdown window (matching spring.lifecycle.timeout-per-shutdown-phase).
+terminationGracePeriodSeconds: 60
+
+# Probes - driven by the ACTUAL actuator endpoints enabled in repository config
+# (management.endpoint.health.probes + livenessstate/readinessstate => the app
+# exposes /actuator/health/liveness and /actuator/health/readiness). startup and
+# liveness hit 'liveness'; readiness hits 'readiness'.
+probes:
+  startup:
+    path: /actuator/health/liveness
+    periodSeconds: 10
+    failureThreshold: 30
+    timeoutSeconds: 3
+  liveness:
+    path: /actuator/health/liveness
+    periodSeconds: 15
+    failureThreshold: 10
+    timeoutSeconds: 3
+  readiness:
+    path: /actuator/health/readiness
+    periodSeconds: 10
+    failureThreshold: 3
+    timeoutSeconds: 3
+    initialDelaySeconds: 10
+
+# -----------------------------------------------------------------------------
+# Deployment strategy - ZERO-DOWNTIME rolling update (Task 6A-11).
+# maxUnavailable: 0 => never run below desired replicas during a rollout.
+# maxSurge: 1 => bring one new ready pod up before terminating an old one.
+# KEPT CONFIGURABLE for when replicas >= 2 (future/enterprise HA). On the
+# free-tier single-replica profile (6A-14B-4B) a rolling update is effectively
+# a single-pod recreate (surge cannot help a 1-replica app), so availability
+# during a rollout is NOT guaranteed there - see "Zero-downtime vs free-tier".
+# -----------------------------------------------------------------------------
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+# PodDisruptionBudget. Rendered ONLY for services with >= 2 replicas (see
+# templates/poddisruptionbudget.yaml); a single-replica free-tier workload gets no
+# misleading PDB. minAvailable applies when a PDB is produced.
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# -----------------------------------------------------------------------------
+# NetworkPolicy + environment isolation (Task 6A-14B-3). See templates/
+# networkpolicy.yaml. Default-deny (ingress+egress) at the namespace trust
+# boundary; explicit allows only for same-namespace internal traffic, cluster DNS
+# (kube-system), Prometheus scraping (claimassist-observability) and the nginx
+# ingress-controller -> api-gateway edge. Cross-environment traffic is impossible
+# because no rule ever selects another environment's namespace/pods.
+#
+# The three shared-infra selectors are deploy-time dependencies - their namespaces
+#   and pod labels must match what the actual K3s bootstrap installs (nginx-ingress,
+#   kube-system kube-dns, claimassist-observability prometheus). They are
+# conventional defaults and are overridable per environment / at deploy time.
+# -----------------------------------------------------------------------------
+networkPolicy:
+  enabled: true
+  kubeDns:
+    namespace: kube-system
+    selector:
+      k8s-app: kube-dns
+  # F5 NGINX Ingress Controller (OSS) - current supported controller. The K3s
+  # bundled Traefik is disabled separately on the VM and the retired community
+  # ingress-nginx controller is NOT used. `namespace`/`selector` are the F5
+  # nginxinc/kubernetes-ingress Helm chart conventions; override them at deploy
+  # time if the controller is installed under a different namespace/labels.
+  ingressController:
+    namespace: nginx-ingress
+    selector:
+      app: nginx-ingress
+  prometheus:
+    namespace: claimassist-observability
+    selector:
+      app: prometheus
+
+# -----------------------------------------------------------------------------
+# HPA (Task 6A-14B-3). CPU-based, only for the STATELESS application services
+# (a service is scaled only if present under hpa.services). See templates/hpa.yaml.
+# default.min/max are the ceiling when a service does not set its own; each
+# environment overrides per-service min/max. Task 6A-14B-4B (free-tier) bounds
+# ALL environments to min 1 / max 2 (DEV, STAGE and PROD) - max is NEVER raised
+# to 3. averageUtilization is against each pod's CPU *request* (no invented
+# thresholds).
+#
+# HPA SAFETY on the single 2-OCPU node: 2 replicas is an UPPER BOUND, not
+# guaranteed simultaneous capacity. If CPU pressure drives all four services
+# toward their max at once, the extra pods simply become unschedulable - the
+# Kubernetes scheduler keeps the node under its capacity and the extra scaling
+# is harmless. metrics-server must be present for the Resource (CPU) metric.
+# -----------------------------------------------------------------------------
+hpa:
+  enabled: true
+  cpuUtilization: 70
+  default:
+    min: 1
+    max: 2
+  services:
+    api-gateway: {}
+    customer-service: {}
+    claims-service: {}
+    agent-service: {}
+
+# -----------------------------------------------------------------------------
+# Public application edge - nginx Ingress gateway (Task 6A-11).
+# Internet -> OCI VM public IP -> NodePort -> nginx ingress controller -> THIS
+# Ingress -> claimassist-api-gateway:8080 -> internal K8s Services.
+#
+# The nginx ingress CONTROLLER itself is the shared cluster component installed
+# separately (its Service is configured type: NodePort with configurable
+# httpNodePort/httpsNodePort, NO cloud LoadBalancer - OCI paid LB is NOT used on
+# the Always Free tier). This chart only defines the application Ingress + TLS.
+# `host` is a DEPLOYMENT-TIME placeholder; do not treat api-dev.<your-domain> as a
+# real domain. Set ingress.host per environment at deploy time.
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  host: "<your-domain>"        # e.g. api-dev.<your-domain> - set at deploy time
+  path: /
+  pathType: Prefix
+  tlsSecretName: claimassist-api-gateway-tls
+
+# -----------------------------------------------------------------------------
+# cert-manager (Task 6A-11). Renders the Namespace-scoped automatic-TLS Issuer for
+# this environment; installing the cert-manager operator is a separate release-time
+# prerequisite (NOT done/redeployed here, and NOT claimed to be present). Email +
+# server must be supplied at deploy time; nothing sensitive is committed.
+# DEV -> staging ACME (no production certificate); STAGE/PROD -> production ACME.
+# -----------------------------------------------------------------------------
+certManager:
+  enabled: true
+  issuerName: claimassist-letsencrypt
+  issuerSecretName: claimassist-letsencrypt-account
+  email: "cert-manager@example.com"   # DEPLOYMENT-TIME placeholder - replace with operator contact
+  server: ""                          # ACME directory - set per environment (staging/production)
+
+# -----------------------------------------------------------------------------
+# Stateless application workloads (Task 6A-6). LOCKED K8s architecture:
+# ONLY the four application services below are deployed. discovery-service and
+# config-service are NOT deployed in Kubernetes (they remain LOCAL-only).
+#
+# Kubernetes service discovery = K8s ClusterIP Service + DNS (no Eureka).
+# Kubernetes runtime configuration = ConfigMap + Secret (no Config Server,
+# no config-repo). Each app ships an application-k8s.yaml ConfigMap (k8sConfig)
+# that disables the Config Server import + Eureka/discovery via the EXISTING
+# Spring `k8s` profile mechanism (NO Java changes).
+#
+# Keys MUST match the ServiceAccounts in templates/serviceaccounts.yaml (<key>-sa)
+# and the Service DNS names (claimassist-<key>) used by the gateway routes.
+# Resources are conservative free-tier starting values; stateful resources and
+# their configuration are added in later tasks.
+# -----------------------------------------------------------------------------
+services:
+  api-gateway:
+    image: api-gateway
+    port: 8080
+    replicas: 1
+    k8sConfig: true          # application-k8s.yaml (routes -> K8s Service DNS, no config server/eureka)
+    # Task 6A-8: api-gateway uses Redis (Spring Cloud Gateway Redis rate limiter +
+    # redis metrics). Wires SPRING_DATA_REDIS_HOST/PORT to claimassist-redis:6379.
+    redis: true
+    env: []
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+  customer-service:
+    image: customer-service
+    port: 8081
+    replicas: 1
+    k8sConfig: true
+    # Task 6A-8: customer-service uses Redis (@EnableCaching policy/policyCoverage/
+    # referenceData + RedisHealthIndicator). Wires SPRING_DATA_REDIS_HOST/PORT.
+    redis: true
+    env: []
+    # Task 6A-7: PostgreSQL database this service owns (same naming convention as
+    # LOCAL config-repo `claimassist_<svc>_local`, minus the LOCAL-only `_local`
+    # suffix). Wires spring.datasource.* env + disables in-app Flyway (migration
+    # is a separate Job). NULL/absent for non-DB services.
+    database: claimassist_customer
+    # TASK 6A-14B-4B: CPU request reduced 150m -> 100m. It is a scheduling
+    # MINIMUM (burst is allowed above it up to the limit), and lowering it lets
+    # the 2-OCPU Always-Free node guarantee-schedule more pods. The CPU LIMIT
+    # stays 800m so normal Spring Boot operation is unaffected.
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 800m, memory: 640Mi }
+
+  claims-service:
+    image: claims-service
+    port: 8082
+    replicas: 1
+    k8sConfig: true
+    # Task 6A-8: claims-service uses Redis (@Cacheable claimStatus/claimPermissionLookup
+    # + CacheService cache-aside). Wires SPRING_DATA_REDIS_HOST/PORT.
+    redis: true
+    # Task 6A-9: claims-service is a Kafka producer (outbox) + consumer (claim
+    # update + saga + CQRS). Wires SPRING_KAFKA_BOOTSTRAP_SERVERS=claimassist-kafka:9092.
+    kafka: true
+    env: []
+    database: claimassist_claims
+    # TASK 6A-14B-4B: CPU request reduced 150m -> 100m (same reasoning as
+    # customer-service: request is a minimum, not a cap; limit stays 800m).
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 800m, memory: 640Mi }
+
+  agent-service:
+    image: agent-service
+    port: 8083
+    replicas: 1
+    k8sConfig: true
+    # Task 6A-8: agent-service has Redis cache code (CacheService cache-aside) +
+    # RedisHealthIndicator + spring-boot-starter-data-redis. Cache is optional
+    # (RedisTemplate injected required=false) and Redis connection is degraded to
+    # a cache-loss-tolerant no-op if unavailable. Wires SPRING_DATA_REDIS_HOST/PORT.
+    redis: true
+    # Task 6A-9: agent-service is a Kafka producer (outbox) + consumer (claim
+    # update response saga handler). Wires SPRING_KAFKA_BOOTSTRAP_SERVERS.
+    kafka: true
+    env: []
+    database: claimassist_agent
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 700m, memory: 640Mi }
+
+# -----------------------------------------------------------------------------
+# PostgreSQL (Task 6A-7). ONE StatefulSet + ClusterIP Service + PVC per K8s
+# environment (namespace claimassist-dev/stage/prod). Inside each instance the
+# application databases (customer / claims / agent) are created by the standard
+# postgres image init mechanism (scripts in /docker-entrypoint-initdb.d, sourced
+# from a ConfigMap). SCHEMA belongs to Flyway (separate Job) - NOT to Hibernate
+# (ddl-auto=none) and NOT to the postgres image. Kept internal: no NodePort /
+# LoadBalancer / Ingress. Fully configurable; conservative Always-Free values.
+# -----------------------------------------------------------------------------
+postgresql:
+  enabled: true
+  replicaCount: 1
+  serviceName: claimassist-postgresql
+  hostPath: claimassist-postgresql       # k8s Service DNS name used by apps + Flyway
+  port: 5432
+  timezone: Asia/Kolkata                 # matches LOCAL POSTGRES_TZ/PGTZ
+  image:
+    registry: ""                         # empty => docker.io default
+    repository: postgres
+    tag: "16"                            # pinned to the LOCAL major version (postgres:16)
+    pullPolicy: IfNotPresent
+  # Storage: default K3s (local-path) StorageClass via empty string. Do NOT invent
+  # an OCI-specific class; overridden at deploy time if the cluster provides one.
+  storageClassName: ""
+  storageSize: 8Gi                       # conservative Always-Free starting value
+  resources:
+    # TASK 6A-14B-4B: CPU request 250m -> 200m. Request is a scheduling MINIMUM
+    # (Postgres may burst to its limit); the small single-DB free-tier instance
+    # needs no 250m guarantee. Memory and the limit are unchanged.
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 768Mi } # leaves room for apps + future Redis/Kafka/Keycloak/obs
+  # Databases owned by application services. Order preserved for the init script
+  # and the Flyway Job loop. `migrations` MUST exactly match the repository
+  # migration files (on disk under files/migrations/<service>/ - mirrored from
+  # each service's src/main/resources/db/migration).
+  databases:
+    - name: claimassist_customer
+      service: customer-service
+      migrations:
+        - V1__init_customer_schema.sql
+        - V2__keycloak_migration.sql
+        - V3__add_refresh_tokens_table.sql
+    - name: claimassist_claims
+      service: claims-service
+      migrations:
+        - V1__init_claims_schema.sql
+        - V2__add_claims_reliability.sql
+        - V3__add_document_processing.sql
+        - V4__enhance_outbox_reliability.sql
+        - V5__add_saga_orchestrator_tables.sql
+        - V6__add_saga_recovery_tracking.sql
+        - V7__add_outbox_trace_context.sql
+    - name: claimassist_agent
+      service: agent-service
+      migrations:
+        - V1__init_agent_schema.sql
+        - V2__add_session_tracking.sql
+        - V3__add_event_processing.sql
+        - V4__enhance_outbox_reliability.sql
+        - V5__add_outbox_trace_context.sql
+  # Credentials are NEVER committed. Created as a Kubernetes Secret when
+  # `credentials.create` is true; real values must be supplied at deploy time via
+  # -f overrides / --set (works here because rendering uses empty placeholders).
+  # These map to the postgres superuser (as LOCAL: user claimassist). They are
+  # referenced by the StatefulSet, the app deployments and the Flyway Job.
+  credentials:
+    create: true
+    secretName: claimassist-postgresql-credentials
+    postgresUsername: ""   # e.g. claimassist - set at deploy time
+    postgresPassword: ""   # never committed
+  # Hardening: the official postgres image must drop privileges from root during
+  # init (chown of the data volume). runAsNonRoot would break it, so the pod
+  # securityContext is left empty by default and is configurable. See 6A-7 log.
+  securityContext: {}
+  initDbConfigMapName: claimassist-postgresql-init
+  probes:
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 6
+      timeoutSeconds: 5
+    liveness:
+      periodSeconds: 10
+      failureThreshold: 3
+      timeoutSeconds: 5
+    startup:
+      periodSeconds: 5
+      failureThreshold: 30
+      timeoutSeconds: 5
+
+# -----------------------------------------------------------------------------
+# Flyway migration Job (Task 6A-7). Runs the ACTUAL repository migrations against
+# each application database as a separate Kubernetes Job. Definitely NOT run
+# inside application startup (services set spring.flyway.enabled=false).
+# -----------------------------------------------------------------------------
+flyway:
+  enabled: true
+  image:
+    repository: flyway/flyway
+    tag: "11"                            # matches the Spring Boot 3.5-managed Flyway 11 major
+    pullPolicy: IfNotPresent
+  migrationsConfigMapName: claimassist-flyway-migrations
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  backoffLimit: 3
+  activeDeadlineSeconds: 600             # hard cap; migration must not run forever
+  # Rendered as a Helm post-install/post-upgrade hook so `helm install --wait` /
+  # `helm upgrade --wait` waits for the migration Job to succeed. Re-created on
+  # each install/upgrade; Flyway is idempotent per its own schema history.
+  jobAnnotations:
+    "helm.sh/hook": "post-install,post-upgrade"
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded"
+
+# -----------------------------------------------------------------------------
+# Redis (Task 6A-8). Redis is a CACHE / ephemeral state resource. ONE Deployment
+# + internal ClusterIP Service per K8s environment (namespace claimassist-dev /
+# stage / prod). Applications reach it via the K8s Service DNS claimassist-redis:
+# 6379. CACHE LOSS IS ACCEPTABLE - Redis restart means cache loss, and apps
+# recover from their source of truth (PostgreSQL). Therefore:
+#   - NO PVC, NO StatefulSet, NO persistence (emptyDir only for /data).
+#   - RDB save + AOF are DISABLED (--save "" --appendonly no) so nothing is
+#     written to disk; cache is genuinely ephemeral by design.
+#   - protected-mode is DISABLED because apps connect from other pods via
+#     ClusterIP (their pod IP, not loopback); without AUTH, protected-mode would
+#     reject those non-loopback connections. LOCAL uses no password, so K8s uses
+#     NO authentication - apps are not broken by an unexpected auth requirement
+#     (claims-service's manual RedisConfig would also not read a password).
+#   - No Secret / no ConfigMap required: no password (auth off) and the minimal
+#     runtime config lives in the Deployment command.
+#   - Non-root: runs as the official redis image user (uid/guid 999).
+# -----------------------------------------------------------------------------
+redis:
+  enabled: true
+  serviceName: claimassist-redis   # K8s Service DNS used by app deployments
+  port: 6379
+  image:
+    registry: ""                   # empty => docker.io default
+    repository: redis
+    tag: "7.4"                     # pinned 7.x minor, matching LOCAL major (redis:7)
+    pullPolicy: IfNotPresent
+  # official redis:7 image user (redis). runAsNonRoot/fsGroup keep /data writable
+  # by that user for the ephemeral emptyDir while dropping privileges (no volume,
+  # no persistence).
+  securityContext:
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }   # matches LOCAL compose redis limit (256Mi)
+  # redis-cli ping => PONG (matches LOCAL docker-compose healthcheck).
+  # Conservative timings; probe failures must NOT spin-restart a healthy Redis.
+  probes:
+    startup:
+      initialDelaySeconds: 2
+      periodSeconds: 5
+      failureThreshold: 30
+      timeoutSeconds: 5
+    readiness:
+      initialDelaySeconds: 2
+      periodSeconds: 5
+      failureThreshold: 6
+      timeoutSeconds: 5
+    liveness:
+      periodSeconds: 10
+      failureThreshold: 3
+      timeoutSeconds: 5
+
+# -----------------------------------------------------------------------------
+# Kafka (Task 6A-9). Kafka is an EVENT / LOG resource (unlike Redis, cache loss
+# is NOT acceptable here) so it is a StatefulSet with a persistent PVC. ONE KRaft
+# combined broker+controller node per K8s environment namespace (dev / stage /
+# prod each get their own isolated claimassist-kafka + storage). No ZooKeeper.
+# KRaft configuration is passed through the apache/kafka image's native env vars
+# (EXACTLY matching the LOCAL docker-compose broker env), with the K8s Service DNS
+# (claimassist-kafka) substituted for the LOCAL compose service name.
+#
+# INTENT: this is the free-learning-tier implementation. It is NOT production HA:
+#   - 1 broker => broker failure = Kafka downtime
+#   - replication factor = 1 (every topic + offsets + transaction state log)
+#   - no broker failover, no rack/AZ awareness
+# Production scale is 3+ brokers, RF >= 3, multi-node, rack-aware - NOT provisioned
+# here (OCI Always Free). Applications are unaffected either way because they use
+# the standard spring.kafka.bootstrap-servers property.
+#
+# Security: internal PLAINTEXT only (LOCAL uses PLAINTEXT; no SASL/TLS). No
+# credentials, so no Secret / ConfigMap required - the KRaft env lives in the
+# StatefulSet. Kafka is never publicly exposed (ClusterIP only).
+# -----------------------------------------------------------------------------
+kafka:
+  enabled: true
+  replicaCount: 1
+  serviceName: claimassist-kafka   # K8s Service DNS used by app deployments (claimassist-kafka:9092)
+  internalPort: 9092               # broker listener / client port
+  controllerPort: 9093             # controller listener (internal-only; single-node quorum)
+  image:
+    registry: ""                   # empty => docker.io default
+    repository: apache/kafka
+    tag: "3.8.0"                   # pinned, matching LOCAL docker-compose apache/kafka:3.8.0
+    pullPolicy: IfNotPresent
+  # Persistent storage - Kafka events/log are the source of truth for the saga
+  # machinery. PVC via volumeClaimTemplates; NOT emptyDir. "" => default (K3s
+  # local-path) StorageClass, overridden at deploy time if the cluster provides one.
+  storageClassName: ""
+  storageSize: 8Gi                 # conservative Always-Free starting value
+  logDir: /var/lib/kafka/data     # KAFKA_LOG_DIRS - where the PVC is mounted
+  # JVM heap cap (KAFKA_HEAP_OPTS) so a single broker does not consume the whole
+  # free-tier VM; the rest of the finite memory limit covers OS + page cache.
+  jvmHeapOpts: "-Xms512m -Xmx512m"
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 500m, memory: 1Gi }   # conservative; includes 512m heap + overhead
+  # apache/kafka:3.8 image default user is appuser (uid/gid 1000) and fork supports
+  # non-root. fsGroup=1000 makes the mounted PVC writable by that user while the
+  # container drops privileges and all capabilities. Full securityContext is
+  # configurable in case the image/k8s combination needs adjustment.
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  # Kafka-specific probes. kafka-broker-api-versions.sh returns non-zero until the
+  # single KRaft node's broker listener is actually usable (validated against the
+  # real image: ready ~10s, then the probe succeeds), so readiness/startup gate
+  # traffic on real broker readiness and liveness only restarts after a genuinely
+  # long outage (6 x 20s). Conservative intervals; no aggressive restart loop.
+  probes:
+    startup:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      failureThreshold: 30
+      timeoutSeconds: 10
+    readiness:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      failureThreshold: 6
+      timeoutSeconds: 10
+    liveness:
+      periodSeconds: 20
+      failureThreshold: 6
+      timeoutSeconds: 10
+
+# -----------------------------------------------------------------------------
+# Keycloak (Task 6A-10) - self-hosted OIDC identity provider + its OWN dedicated
+# PostgreSQL. One Keycloak + one Keycloak PostgreSQL per K8s environment
+# namespace (claimassist-dev/stage/prod are FULLY isolated: no cross-environment
+# realm / issuer / DB / client references). Keycloak is INTERNAL ONLY - the four
+# application services reach it via the K8s Service DNS claimassist-keycloak:8080.
+# No NodePort / LoadBalancer / Ingress (Ingress + TLS = Task 6A-11).
+#
+# REALM STRATEGY (LOCKED): ONE realm per environment named after the environment
+# (claimassist-dev / claimassist-stage / claimassist-prod). This is implemented
+# with a deterministic realm import JSON rendered as a ConfigMap and consumed with
+# the official Keycloak `--import-realm` bootstrap - the SAME initialization
+# mechanism LOCAL uses (no second competing mechanism). The realm JSON faithfully
+# mirrors the repository's existing realm-export.json (same probe clients, PKCE
+# S256, realm roles: CUSTOMER / ADJUSTER / AUDITOR, default-role, userId-claim
+# protocol mapper) but parameterizes the realm name, the dependent default-role
+# name and the confidential admin client secret so the real app contract is
+# preserved while staying per-environment and never committing credentials. The
+# LOCAL hardcoded `demo.customer` user with a committed plaintext password is NOT
+# reproduced in Kubernetes (users are runtime data created via the app's
+# KeycloakUserProvisioningService signup flow; no committed credentials).
+#
+# SECURITY CONTEXT: the official quay.io/keycloak/keycloak image (>=25) runs as a
+# non-root user (uid 1000) by default, so we do NOT force runAsNonRoot=true.
+# We harden by dropping ALL capabilities, disabling privilege escalation and
+# applying the RuntimeDefault seccomp profile (all configurable).
+#
+# LEARNING-TIER (replicas: 1, no Keycloak HA). Annual OCI Always-Free resources are
+# finite and shared with K3s + 4 apps + PostgreSQL + Redis + Kafka, so Keycloak
+# does NOT request a PVC (its persistent state lives in the dedicated PostgreSQL).
+# Production-scale Keycloak (multiple replicas + shared HA DB + multi-node K8s)
+# is NOT provisioned here.
+# -----------------------------------------------------------------------------
+keycloak:
+  enabled: true
+  replicaCount: 1
+  serviceName: claimassist-keycloak
+  port: 8080
+  realm: claimassist-dev            # ONE realm per environment (values-<env>)
+  hostname: claimassist-keycloak    # KC_HOSTNAME - internal Service DNS
+  image:
+    registry: ""
+    repository: quay.io/keycloak/keycloak
+    tag: "26.0"                     # pinned, matching LOCAL docker-compose keycloak:26.0
+    pullPolicy: IfNotPresent
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 500m, memory: 1024Mi }
+  # Admin bootstrap + confidential admin-client secret - Kubernetes Secret.
+  # NO real values committed; supplied at deploy time (values.keycloak.credentials.*).
+  credentials:
+    secretName: claimassist-keycloak-admin
+    adminUsername: ""               # KEYCLOAK_ADMIN           - set at deploy time
+    adminPassword: ""               # KEYCLOAK_ADMIN_PASSWORD  - set at deploy time
+    adminClientSecret: ""           # claimassist-admin-service client secret
+  # Deterministic realm import (ConfigMap name + client contract).
+  realmConfigMapName: claimassist-keycloak-realm
+  client:
+    customerClientId: claimassist-customer-app   # public client (Authorization Code + PKCE)
+    adminClientId: claimassist-admin-service     # confidential, service-account client
+    redirectUris:
+      - http://claimassist-api-gateway:8080/customer/auth/callback
+    webOrigins:
+      - http://claimassist-api-gateway:8080
+  # Conservative Keycloak probes. Allow generous startup time for Keycloak +
+  # PostgreSQL + realm import. startup gates on health; liveness is lenient
+  # (must not spin-restart during a slow cold start on a shared free-tier node).
+  probes:
+    startup:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      failureThreshold: 60
+      timeoutSeconds: 5
+    readiness:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      failureThreshold: 6
+      timeoutSeconds: 5
+    liveness:
+      periodSeconds: 20
+      failureThreshold: 6
+      timeoutSeconds: 5
+
+  # Dedicated Keycloak PostgreSQL - ISOLATED from the application PostgreSQL
+  # (postgresql.*) above. Same per-environment isolation: one per namespace, no
+  # cross-environment DB references. No public exposure (ClusterIP only).
+  postgresql:
+    enabled: true
+    replicaCount: 1
+    serviceName: claimassist-keycloak-postgresql
+    port: 5432
+    database: keycloak                 # dedicated Keycloak DB, NOT claimassist_*
+    timezone: Asia/Kolkata             # matches LOCAL PGTZ convention
+    storageClassName: ""
+    storageSize: 2Gi                   # Keycloak schema is small; conservative free-tier
+    image:
+      registry: ""
+      repository: postgres
+      tag: "16"                        # pinned, matching LOCAL keycloak-postgres postgres:16
+      pullPolicy: IfNotPresent
+    securityContext: {}                # official postgres image needs root to chown volume at init
+    credentials:
+      secretName: claimassist-keycloak-postgresql-credentials
+      username: ""                     # set at deploy time
+      password: ""                     # never committed
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    probes:
+      startup:
+        periodSeconds: 5
+        failureThreshold: 30
+        timeoutSeconds: 5
+      readiness:
+        initialDelaySeconds: 5
+        periodSeconds: 5
+        failureThreshold: 6
+        timeoutSeconds: 5
+      liveness:
+        periodSeconds: 10
+        failureThreshold: 3
+        timeoutSeconds: 5

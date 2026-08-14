@@ -1,0 +1,30 @@
+{{- if .Values.kafka.enabled }}
+# Kafka ClusterIP Service - Task 6A-9. INTERNAL ONLY. Applications in the same
+# namespace connect to claimassist-kafka:9092 via the K8s Service DNS. The
+# controller listener (9093) is also exposed (ClusterIP) so the single combined
+# node's controller quorum hostname (claimassist-kafka:9093) resolves. No
+# NodePort, no LoadBalancer, no Ingress - Kafka is never exposed publicly and is
+# never shared across environments (each env has its own namespace + broker).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.kafka.serviceName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: kafka
+  ports:
+    - name: kafka
+      port: {{ .Values.kafka.internalPort }}
+      targetPort: kafka
+      protocol: TCP
+    - name: controller
+      port: {{ .Values.kafka.controllerPort }}
+      targetPort: controller
+      protocol: TCP
+{{- end }}

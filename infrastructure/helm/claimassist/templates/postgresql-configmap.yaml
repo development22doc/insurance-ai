@@ -1,0 +1,30 @@
+{{- if .Values.postgresql.enabled }}
+# PostgreSQL database creation init script. Rendered from values and mounted into
+# the official postgres image's /docker-entrypoint-initdb.d (run once on first
+# init of an empty data volume). It creates ONLY the application databases that
+# the service list genuinely requires (mirrors LOCAL infrastructure/docker/
+# postgres/init-db.sql, minus the LOCAL-only `_local` suffix, and is idempotent).
+# SCHEMA (tables) belongs to Flyway, NOT here and NOT to Hibernate.
+# Non-sensitive: no passwords in this ConfigMap.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.postgresql.initDbConfigMapName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+data:
+  00-create-databases.sh: |
+    #!/bin/sh
+    set -e
+    {{- range .Values.postgresql.databases }}
+    dbname="{{ .name }}"
+    if ! psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbname}'" | grep -q 1; then
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -c "CREATE DATABASE \"${dbname}\" OWNER \"$POSTGRES_USER\";"
+      echo "created database ${dbname}"
+    else
+      echo "database ${dbname} already exists"
+    fi
+    {{- end }}
+{{- end }}

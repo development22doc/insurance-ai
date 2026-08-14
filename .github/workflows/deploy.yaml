@@ -1,0 +1,124 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - '**.java'
+      - '**.xml'
+      - 'Dockerfile*'
+      - 'k8s/**'
+      - 'helm/claimassist/values*.yaml'
+      - '.github/workflows/deploy.yaml'
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm deploy to dev
+        run: |
+          helm upgrade --install claimassist-platform ./helm/claimassist \
+            -f ./helm/claimassist/values-dev.yaml \
+            -n claimassist-core \
+            --create-namespace \
+            --timeout 10m
+          kubectl rollout status deployment -n claimassist-core
+
+  deploy-qa:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    needs: deploy-dev
+    environment:
+      name: qa
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm deploy to qa
+        run: |
+          helm upgrade --install claimassist-platform ./helm/claimassist \
+            -f ./helm/claimassist/values-qa.yaml \
+            -n claimassist-core \
+            --create-namespace \
+            --timeout 10m
+          kubectl rollout status deployment -n claimassist-core
+
+  deploy-uat:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm deploy to uat
+        run: |
+          helm upgrade --install claimassist-platform ./helm/claimassist \
+            -f ./helm/claimassist/values-uat.yaml \
+            -n claimassist-core \
+            --create-namespace \
+            --timeout 10m
+          kubectl rollout status deployment -n claimassist-core
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: deploy-uat
+    environment:
+      name: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm deploy to prod
+        run: |
+          helm upgrade --install claimassist-platform ./helm/claimassist \
+            -f ./helm/claimassist/values-prod.yaml \
+            -n claimassist-core \
+            --create-namespace \
+            --timeout 10m
+          kubectl rollout status deployment -n claimassist-core
+
+  rollback:
+    runs-on: ubuntu-latest
+    if: failure() && github.ref == 'refs/heads/main'
+    needs: deploy-prod
+    environment:
+      name: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+
+      - name: Helm rollback
+        run: |
+          helm rollback claimassist-platform -n claimassist-core
+          kubectl rollout status deployment -n claimassist-core

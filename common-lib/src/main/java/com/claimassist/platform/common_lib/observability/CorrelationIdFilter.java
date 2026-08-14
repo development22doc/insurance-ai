@@ -83,7 +83,10 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         String spanId = valueOrDash(resolveSpanId(request));
         String method = valueOrDash(request.getMethod());
         String path = valueOrDash(request.getRequestURI());
-        String query = request.getQueryString() != null ? request.getQueryString() : "";
+        // Query strings can carry one-time OAuth authorization codes, refresh or
+        // access tokens or other credentials (e.g. /customer/auth/callback?code=...).
+        // Never write those raw into the observability log - redact sensitive keys.
+        String query = maskQuery(request.getQueryString());
         String remoteIp = valueOrDash(request.getRemoteAddr());
         String userAgent = maskIfSensitive("User-Agent", request.getHeader("User-Agent"));
         String auth = maskIfSensitive("Authorization", request.getHeader("Authorization"));
@@ -137,6 +140,46 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         }
 
         return value;
+    }
+
+    /**
+     * Redact credential-bearing query parameters so observability/audit logs do
+     * not become a secret leak. OAuth flows pass short-lived but sensitive values
+     * in the query string (code, state, id_token, access/refresh tokens). Keep the
+     * structure (key=***) so correlation still works, never the value.
+     */
+    private String maskQuery(String query) {
+        if (query == null || query.isEmpty()) {
+            return query == null ? "" : query;
+        }
+        String[] params = query.split("&");
+        StringBuilder masked = new StringBuilder();
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) masked.append('&');
+            String param = params[i];
+            int eq = param.indexOf('=');
+            String key = eq >= 0 ? param.substring(0, eq) : param;
+            if (isSensitiveQueryKey(key)) {
+                masked.append(key).append('=').append("***");
+            } else {
+                masked.append(param);
+            }
+        }
+        return masked.toString();
+    }
+
+    private boolean isSensitiveQueryKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        String k = key.toLowerCase();
+        return k.contains("token") || k.contains("secret") || k.contains("password")
+                || k.contains("passwd") || k.contains("pwd") || k.contains("authorization")
+                || k.contains("credential") || k.contains("api_key") || k.contains("apikey")
+                || k.contains("client_secret") || k.contains("access_token")
+                || k.contains("refresh_token") || k.contains("code_verifier")
+                || k.contains("code_challenge") || k.equals("code") || k.equals("auth_code")
+                || k.contains("auth_code");
     }
 
     private boolean looksLikeJwt(String v) {

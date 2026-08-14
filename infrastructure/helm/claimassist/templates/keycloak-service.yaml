@@ -1,0 +1,26 @@
+{{- if .Values.keycloak.enabled }}
+# Keycloak ClusterIP Service. INTERNAL ONLY - the four application services reach
+# Keycloak via the K8s Service DNS (claimassist-keycloak:8080) and validate JWTs
+# against this issuer. No NodePort, no LoadBalancer, no Ingress - Keycloak is NOT
+# exposed publicly in this task (Ingress + TLS = Task 6A-11). The realm issuer
+# served by Keycloak therefore matches the internal URL the apps are configured
+# with (http://claimassist-keycloak:8080/realms/<env-realm>).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.keycloak.serviceName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: keycloak
+  ports:
+    - name: http
+      port: {{ .Values.keycloak.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

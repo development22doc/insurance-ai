@@ -1,0 +1,26 @@
+{{- range $name, $svc := .Values.services }}
+{{- if and $.Values.pdb.enabled (ge (int (default 1 $svc.replicas)) 2) }}
+---
+# Task 6A-11: PodDisruptionBudget for {{ $name }}. Rendered ONLY when the service
+# runs >= 2 replicas, so a single-replica (free-tier) workload is NOT given a
+# misleading PDB. minAvailable: 1 keeps voluntary evictions (node drains, cluster
+# maintenance) from dropping the service to zero ready pods while it is scaled for
+# availability. Stateless service: on a 2-replica deployment this tolerates one
+# voluntary pod eviction and the surviving pod still serves (with readiness gating).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: claimassist-{{ $name }}
+  namespace: {{ include "claimassist.namespace" $ | quote }}
+  labels:
+    {{- include "claimassist.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  minAvailable: {{ $.Values.pdb.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "claimassist.name" $ | quote }}
+      app.kubernetes.io/instance: {{ $.Release.Name | quote }}
+      app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- end }}

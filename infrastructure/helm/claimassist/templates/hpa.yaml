@@ -1,0 +1,71 @@
+{{- if .Values.hpa.enabled }}
+{{- $defMin := .Values.hpa.default.min | default 1 }}
+{{- $defMax := .Values.hpa.default.max | default 2 }}
+{{- $defCpu := .Values.hpa.cpuUtilization | default 70 }}
+# =============================================================================
+# Task 6A-14B-3 + TASK 6A-14B-4B - HPA for the STATELESS application services ONLY.
+#
+#   api-gateway / customer-service / claims-service / agent-service
+#
+# NO HPA is ever created for PostgreSQL, Kafka, Redis, Keycloak-PostgreSQL or
+# Keycloak (stateful; fixed single-replica on the free tier). Only a service
+# listed in .Values.hpa.services gets an HPA - absent keys render nothing.
+#
+# CPU (Resource) target is driven by each pod's CPU *request* (see the Deployment
+# resources), so scaling tracks real utilization without inventing thresholds.
+# Task 6A-14B-4B bounds min/max to 1/2 for DEV, STAGE and PROD - max is NEVER 3.
+#
+# HPA SAFETY on the single 2-OCPU node: 2 replicas is an UPPER BOUND, not
+# guaranteed simultaneous capacity. If CPU pressure drives several services toward
+# their max together, the extra pods simply become unschedulable - the Kubernetes
+# scheduler keeps the node under its capacity, so HPA cannot overflow the budget.
+#
+# POD-LEVEL scaling only - this is NOT node-level scaling. The single-node
+# Always-Free A1.Flex (2 OCPU / 12GB) remains a node-level single point of
+# failure; HPA only adds/removes pods on that one node.
+# =============================================================================
+{{- range $name, $svc := .Values.services }}
+{{- if hasKey $.Values.hpa.services $name }}
+{{- $spec := index $.Values.hpa.services $name }}
+{{- $min := $spec.min | default $defMin }}
+{{- $max := $spec.max | default $defMax }}
+{{- $cpu := $spec.cpuUtilization | default $defCpu }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: claimassist-{{ $name }}
+  namespace: {{ include "claimassist.namespace" $ | quote }}
+  labels:
+    {{- include "claimassist.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: claimassist-{{ $name }}
+  minReplicas: {{ $min }}
+  maxReplicas: {{ $max }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $cpu }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+{{- end }}
+{{- end }}
+{{- end }}

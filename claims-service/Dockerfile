@@ -1,13 +1,17 @@
 # Multi-stage build for claims-service
 FROM maven:3.9-eclipse-temurin-21 AS builder
-WORKDIR /workspace
+WORKDIR /build
 
-COPY pom.xml .
-COPY common-lib ../common-lib
-COPY claims-service .
+# Copy the full repository (respecting .dockerignore) so the Maven reactor can
+# resolve the root aggregator pom.xml and the common-lib dependency.
+COPY . .
 
-RUN mvn clean package -DskipTests -q
+# Build ONLY this service plus its required reactor dependencies (common-lib).
+# maven.test.skip=true skips test compilation AND execution so a pre-existing
+# broken test source cannot block a production image build.
+RUN --mount=type=cache,target=/root/.m2 mvn -B -pl claims-service -am package -Dmaven.test.skip=true
 
+# Runtime
 FROM eclipse-temurin:21-jre-alpine
 
 # Install curl for healthcheck and create a non-root user
@@ -16,11 +20,19 @@ RUN apk add --no-cache curl \
 
 WORKDIR /app
 
-# copy the fat jar and set ownership to non-root user
-COPY --from=builder --chown=app:app /workspace/target/claims-service-1.0.0.jar app.jar
+# Pre-create a writable log directory owned by the non-root user (logback
+# writes to /app/logs/<service>/ so the app user must own it).
+RUN mkdir -p /app/logs && chown app:app /app /app/logs
 
-ENV JAVA_OPTS="-Dapp.name=claims-service -Duser.timezone=Asia/Kolkata"
+# Copy the executable Spring Boot jar only (single *.jar in target;
+# the pre-repackage .jar.original is not matched by the *.jar glob).
+COPY --from=builder --chown=app:app /build/claims-service/target/*.jar app.jar
+
+# Configurable runtime knobs. JAVA_OPTS may be empty - the JVM command stays valid.
+ENV JAVA_OPTS=""
+ENV JAVA_RAM_PERCENTAGE=75
 ENV SERVICE_PORT=8082
+ENV TZ=Asia/Kolkata
 
 EXPOSE 8082
 
@@ -29,4 +41,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 USER app
 
-ENTRYPOINT ["sh","-c","exec java -Dapp.name=claims-service $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["sh","-c","exec java -Dapp.name=claims-service -XX:MaxRAMPercentage=${JAVA_RAM_PERCENTAGE} -Duser.timezone=${TZ} $JAVA_OPTS -jar /app/app.jar"]

@@ -1,0 +1,59 @@
+spring:
+  cloud:
+    config:
+      enabled: false
+  config:
+    import: ""
+
+  datasource:
+    url: jdbc:tc:postgresql:16-alpine:///testdb
+    username: test
+    password: test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+
+  main:
+    allow-bean-definition-overriding: true
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "0"
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration
+      - org.springframework.cloud.config.client.ConfigServerAutoConfiguration
+      - org.springframework.cloud.client.discovery.composite.CompositeDiscoveryClientAutoConfiguration
+      - org.springframework.cloud.client.discovery.composite.simple.SimpleDiscoveryClientAutoConfiguration
+      - org.springframework.cloud.client.serviceregistry.AutoServiceRegistrationAutoConfiguration
+
+eureka:
+  client:
+    enabled: false
+
+management:
+  health:
+    redis:
+      enabled: false
+
+logging:
+  level:
+    com.claimassist: DEBUG
+    org.springframework.security: WARN
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN

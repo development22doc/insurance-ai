@@ -1,0 +1,152 @@
+# =============================================================================
+# ClaimAssist - DEV environment values
+# Namespace: claimassist-dev | one shared K3s cluster.
+# Stateless application workload overrides (Task 6A-6).
+# =============================================================================
+global:
+  environment: dev
+  app: claimassist
+  managedBy: helm
+
+image:
+  registry: ""              # OCIR placeholder - set at deploy time
+  repository: claimassist
+  tag: "1.0.0"              # matches Task 6A-3 built images (dev tag convention later)
+  pullPolicy: Always
+  pullSecret: ""
+
+namespace:
+  create: true
+
+serviceAccounts:
+  create: true
+
+configMap:
+  enabled: false
+  data: {}
+
+secrets:
+  create: false
+  values: {}
+
+# Task 6A-7: PostgreSQL + Flyway for DEV (namespace claimassist-dev). One
+# PostgreSQL StatefulSet + ClusterIP Service + PVC for this environment only.
+# Real credentials are supplied at deploy time (postgresql.credentials.*) - never
+# committed. App databases (claimassist_customer/claims/agent) live inside THIS
+# instance; no cross-environment URLs.
+postgresql:
+  enabled: true
+  storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
+  storageSize: 8Gi
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  securityContext: {}
+
+# Task 6A-8: Redis for DEV (namespace claimassist-dev). One internal Deployment +
+# ClusterIP Service. Cache only (no PVC / no persistence). Conservative free-tier
+# resources; overridable here without a template change.
+redis:
+  enabled: true
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+
+# Task 6A-9: Kafka for DEV (namespace claimassist-dev). One KRaft broker
+# StatefulSet + internal ClusterIP Service + PVC. Free-learning-tier (NOT HA):
+# RF=1, single broker. Conservative resources; overridable here.
+kafka:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 500m, memory: 1Gi }
+
+flyway:
+  enabled: true
+
+# Task 6A-10: Keycloak for DEV (namespace claimassist-dev). One self-hosted
+# Keycloak + one dedicated Keycloak PostgreSQL, fully isolated in this namespace.
+# Realm = claimassist-dev (ONE realm per environment). Internal Service DNS only;
+# no Ingress/TLS until Task 6A-11. Real admin/DB/secret values supplied at deploy
+# time (keycloak.credentials.* / keycloak.postgresql.credentials.*) - never here.
+keycloak:
+  enabled: true
+  realm: claimassist-dev
+  replicaCount: 1
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 500m, memory: 1024Mi }
+  postgresql:
+    enabled: true
+    storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
+    storageSize: 2Gi
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+
+# Task 6A-11: DEV public edge + TLS. Let's Encrypt STAGING certificate - DEV is
+# explicitly NEVER issued a production certificate (staging avoids rate limits and
+# costs nothing). `host` is a DEPLOYMENT-TIME placeholder; replace api-dev.<your-domain>
+# with the real DEV host when DNS exists. certManager.server points at the staging
+# ACME directory; certManager.email is a placeholder. No production issuer here.
+ingress:
+  enabled: true
+  className: nginx
+  host: api-dev.<your-domain>          # DEPLOYMENT-TIME placeholder
+  tlsSecretName: claimassist-api-gateway-tls
+
+certManager:
+  enabled: true
+  issuerName: claimassist-letsencrypt
+  issuerSecretName: claimassist-letsencrypt-account
+  email: "cert-manager@example.com"    # DEPLOYMENT-TIME placeholder
+  server: "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+# Task 6A-14 RBAC intent (DEV): team-read-only is permitted here for debugging
+# (pods/log, deployments, events, HPA/PDB - NO secrets, NO write). Bindings stay
+# inert until a real team group identity exists (rbac.teamReadOnly.binding.enabled
+# default false; set true at bootstrap to bind claimassist-team in this namespace).
+rbac:
+  adminBinding:
+    enabled: false
+  teamReadOnly:
+    binding:
+      enabled: false
+# Task 6A-12 + TASK 6A-14B-4B: Stateless application replicas (DEV).
+# FREE-TIER PROFILE: DEV is the DEFAULT-ACTIVE environment (one active env at a
+# time on the single 2-OCPU node). Single-replica => NO pod-level tolerance, NO
+# zero-gap rollout, NO PDB (renders only at >= 2 replicas). When STAGE/PROD are
+# verified, DEV is scaled down (replicas -> 0) at runtime - namespaces/values
+# are never deleted.
+# Task 6A-14B-4B: DEV is the environment left RUNNING by default. Its CPU/mem
+# budget is ~1.0 OCPU / ~2.4GiB for apps+data + shared observability.
+services:
+  api-gateway:
+    replicas: 1
+  customer-service:
+    replicas: 1
+  claims-service:
+    replicas: 1
+  agent-service:
+    replicas: 1
+
+# Task 6A-14B-3 + TASK 6A-14B-4B: HPA (DEV). Low-cost learning environment:
+# 1 baseline replica, bounded ceiling of 2. If a spike raises CPU above the 70%
+# request-based target, HPA may add ONE extra pod on the shared node, then scale
+# back after 5 minutes of idle (stabilization window). No uncontrolled growth.
+# 2 replicas is an UPPER BOUND; if the node is CPU constrained the extra pod stays
+# unschedulable. metrics-server must be present at bootstrap for the CPU metric.
+hpa:
+  services:
+    api-gateway:
+      min: 1
+      max: 2
+    customer-service:
+      min: 1
+      max: 2
+    claims-service:
+      min: 1
+      max: 2
+    agent-service:
+      min: 1
+      max: 2

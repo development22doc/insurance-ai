@@ -1,0 +1,178 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $ns := include "claimassist.namespace" . }}
+{{- $app := include "claimassist.name" . }}
+{{- $dns := .Values.networkPolicy.kubeDns }}
+{{- $ing := .Values.networkPolicy.ingressController }}
+{{- $prom := .Values.networkPolicy.prometheus }}
+{{- $gw := index .Values.services "api-gateway" }}
+# =============================================================================
+# Task 6A-14B-3 - NETWORKPOLICY + ENVIRONMENT ISOLATION.
+#
+# Isolation model (default-deny at the namespace trust boundary):
+#   - A single DEFAULT-DENY (Ingress + Egress) selects every workload this chart
+#     manages in THIS namespace. Nothing may reach a ClaimAssist pod, and no
+#     ClaimAssist pod may leave the namespace, unless an allow policy below
+#     (or a peer pod rule in the same namespace) permits it.
+#   - CROSS-ENVIRONMENT isolation follows structurally: every allow rule selects
+#     same-namespace pods OR specific shared infra namespaces
+#     (kube-system for DNS, claimassist-observability for Prometheus,
+#     nginx-ingress for the public edge). No rule in this chart can ever match a
+#     pod in claimassist-stage / claimassist-prod, and vice versa - so dev can
+#     never reach stage/prod (or the reverse) at the network layer, regardless of
+#     any application-level configuration.
+#   - This is enforced with the CURRENT Helm labels only (app.kubernetes.io/name,
+#     app.kubernetes.io/instance, app.kubernetes.io/component). No legacy labels.
+# =============================================================================
+
+---
+# 1) DEFAULT-DENY - ingress + egress for every managed pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-default-deny
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $app | quote }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress: []
+  egress: []
+
+---
+# 2) INTRA-NAMESPACE TRUST BOUNDARY. Every legitimate connection required by the
+#    locked architecture is between this chart's own pods in ONE namespace:
+#      gateway -> customer/claims/agent            (K8s Service DNS routes)
+#      customer/claims/agent -> PostgreSQL:5432    (DataSources)
+#      all four apps        -> Redis:6379          (rate-limit / cache)
+#      claims/agent         -> Kafka:9092          (producer + consumer)
+#      Kafka controller self-quorum -> :9093       (single-node KRaft)
+#      apps                 -> Keycloak:8080       (JWKS/issuer/admin client)
+#      Keycloak             -> Keycloak-PostgreSQL:5432
+#      Flyway Job           -> PostgreSQL:5432     (schema migrations)
+#    Gridding out every peer x port here would only duplicate the egress matrix
+#    without tightening the real trust boundary (the namespace) and invites
+#    drift/guesswork. External and cross-environment traffic stay blocked.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-internal
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $app | quote }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $app | quote }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $app | quote }}
+
+---
+# 3) DNS - cluster DNS (kube-system) is ALWAYS required and NEVER blocked.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-dns
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $app | quote }}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $dns.selector | nindent 14 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+{{- range $name, $svc := .Values.services }}
+---
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discovers each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-{{ $name }}
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "claimassist.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $app | quote }}
+      app.kubernetes.io/component: {{ $name }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $prom.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $prom.selector | nindent 14 }}
+      ports:
+        - port: {{ $svc.port }}
+          protocol: TCP
+{{- end }}
+
+---
+# 5) PUBLIC EDGE - nginx ingress-controller -> claimassist-api-gateway:8080.
+#    The controller is installed separately (shared cluster component in its own
+#    namespace, Service type NodePort on the single free-tier node - no cloud LB),
+#    and is the F5 NGINX OSS controller (nginx.org/*), NOT the retired community
+#    ingress-nginx project.
+#    ONLY the gateway receives external traffic; every other service is internal.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-controller
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $app | quote }}
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ing.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $ing.selector | nindent 14 }}
+      ports:
+        - port: {{ $gw.port }}
+          protocol: TCP
+{{- end }}

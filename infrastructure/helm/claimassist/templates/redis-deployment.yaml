@@ -1,0 +1,99 @@
+{{- if .Values.redis.enabled }}
+# Redis Deployment - Task 6A-8. Redis is a CACHE / ephemeral state resource.
+# Exactly ONE instance per K8s environment namespace (dev / stage / prod each get
+# their own isolated claimassist-redis). A Deployment (not a StatefulSet) is used
+# because Redis needs no stable pod identity and no persistent storage here.
+#
+# CACHE LOSS IS ACCEPTABLE: RDB save and AOF are disabled (--save "" --appendonly
+# no) and /data is an ephemeral emptyDir, so a restart clears the cache and
+# applications recover from their source of truth (PostgreSQL). Intentionally NO
+# PVC, NO persistence, NO replication, NO Sentinel, NO Cluster.
+#
+# protected-mode is disabled because this cluster has no Redis AUTH (LOCAL uses
+# no password), and the applications connect from OTHER pods via the ClusterIP
+# Service (their pod IP, not loopback); protected-mode would otherwise reject
+# those non-loopback connections. Runs as the official redis image user (999) with
+# all capabilities dropped.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.redis.serviceName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "claimassist.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: {{ .Values.redis.securityContext.fsGroup | default 999 }}
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image.registry }}{{ if .Values.redis.image.registry }}/{{ end }}{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          command: ["redis-server"]
+          args:
+            - "--save"          # disable RDB snapshots (cache loss acceptable)
+            - ""
+            - "--appendonly"     # disable AOF persistence (cache loss acceptable)
+            - "no"
+            - "--protected-mode" # allow non-loopback (other-pod) clients without AUTH
+            - "no"
+          ports:
+            - name: redis
+              containerPort: {{ .Values.redis.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ .Values.redis.securityContext.runAsUser | default 999 }}
+            runAsGroup: {{ .Values.redis.securityContext.runAsGroup | default 999 }}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.redis.probes.startup }}
+          startupProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- with .Values.redis.probes.readiness }}
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- with .Values.redis.probes.liveness }}
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+      volumes:
+        # Ephemeral scratch for the redis user's transient writes. NOT a PVC:
+        # data is lost on pod restart by design (cache-loss tolerant).
+        - name: data
+          emptyDir: {}
+{{- end }}

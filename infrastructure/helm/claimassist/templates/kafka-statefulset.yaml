@@ -1,0 +1,145 @@
+{{- if .Values.kafka.enabled }}
+# Kafka StatefulSet - Task 6A-9. Kafka is an EVENT / LOG resource, so it needs
+# stable identity + persistent storage: a StatefulSet (replicas 1) with a PVC via
+# volumeClaimTemplates (NOT emptyDir - unlike Redis, event loss is not acceptable).
+#
+# KRaft combined broker+controller node (no ZooKeeper). The env mirrors the LOCAL
+# docker-compose broker configuration EXACTLY, except the LOCAL compose service
+# name (kafka) is replaced by the K8s Service DNS (claimassist-kafka) in the
+# advertised listener + controller quorum. 9093 (controller) is also exposed via
+# the ClusterIP Service so the single node's controller quorum hostname
+# (claimassist-kafka:9093) resolves.
+#
+# SINGLE-BROKER HONESTY: this is the free-learning-tier architecture, NOT
+# production HA. One broker => broker failure = Kafka downtime; RF = 1 everywhere
+# (topics, consumer offsets, transaction state log); no failover / rack awareness.
+# See the deployment help below.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.kafka.serviceName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  serviceName: {{ .Values.kafka.serviceName }}
+  replicas: {{ .Values.kafka.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+      app.kubernetes.io/component: kafka
+  template:
+    metadata:
+      labels:
+        {{- include "claimassist.labels" . | nindent 8 }}
+        app.kubernetes.io/component: kafka
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: {{ .Values.kafka.securityContext.fsGroup | default 1000 }}
+      containers:
+        - name: kafka
+          image: "{{ .Values.kafka.image.registry }}{{ if .Values.kafka.image.registry }}/{{ end }}{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          imagePullPolicy: {{ .Values.kafka.image.pullPolicy }}
+          ports:
+            - name: kafka
+              containerPort: {{ .Values.kafka.internalPort }}
+              protocol: TCP
+            - name: controller
+              containerPort: {{ .Values.kafka.controllerPort }}
+              protocol: TCP
+          env:
+            # KRaft single-node cluster identity.
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            # Internal listeners. Advertised broker + controller quorum use the
+            # K8s Service DNS (claimassist-kafka), never localhost / 127.0.0.1.
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://:{{ .Values.kafka.internalPort }},CONTROLLER://:{{ .Values.kafka.controllerPort }}"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://{{ .Values.kafka.serviceName }}:{{ .Values.kafka.internalPort }}"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@{{ .Values.kafka.serviceName }}:{{ .Values.kafka.controllerPort }}"
+            # Single broker => RF and ISR must be 1 everywhere (matches LOCAL
+            # and the application's replication-factor:1 / min-isr:1 outbox topics).
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            # Topics are created by the application's NewTopic beans (KafkaAdmin)
+            # and auto-created via this flag; no separate topic-init Job needed.
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_LOG_DIRS
+              value: {{ .Values.kafka.logDir | quote }}
+            # JVM heap cap so the free-tier broker stays within its memory limit.
+            - name: KAFKA_HEAP_OPTS
+              value: {{ .Values.kafka.jvmHeapOpts | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.kafka.logDir | quote }}
+          resources:
+            {{- toYaml .Values.kafka.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ .Values.kafka.securityContext.runAsUser | default 1000 }}
+            runAsGroup: {{ .Values.kafka.securityContext.runAsGroup | default 1000 }}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          {{- with .Values.kafka.probes.startup }}
+          startupProbe:
+            exec:
+              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- with .Values.kafka.probes.readiness }}
+          readinessProbe:
+            exec:
+              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- with .Values.kafka.probes.liveness }}
+          livenessProbe:
+            exec:
+              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "claimassist.labels" . | nindent 10 }}
+          app.kubernetes.io/component: kafka
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.kafka.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.kafka.storageSize | quote }}
+{{- end }}

@@ -1,0 +1,17 @@
+{{- if .Values.configMap.enabled }}
+# Foundation ConfigMap for NON-SENSITIVE shared configuration.
+# Disabled by default (values.configMap.enabled=false) so nothing renders until
+# real non-secret app/service config is introduced. No credentials belong here;
+# sensitive values go to the Secret template (secrets.yaml), also disabled.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configMap.name | default "claimassist-shared-config" }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+data:
+{{- range $key, $val := .Values.configMap.data }}
+  {{ $key }}: {{ $val | quote }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,19 @@
+# Kubernetes runtime configuration for agent-service.
+# Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+# LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+# agent-service also disables spring.cloud.config locally (config client off),
+# and its base application.yaml now imports config server optionally; the empty
+# override here guarantees no Config Server dependency at runtime.
+spring:
+  config:
+    import: ""
+  cloud:
+    discovery:
+      enabled: false
+
+eureka:
+  client:
+    enabled: false
+
+server:
+  port: 8083

@@ -41,6 +41,10 @@ public class ClaimStatusHistory {
 
     String note;
 
+    @Lob
+    @Column(columnDefinition = "text")
+    String metadata;
+
     @Builder.Default
     Instant changedAt = Instant.now();
 }
