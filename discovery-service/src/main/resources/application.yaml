@@ -2,6 +2,18 @@ spring:
   application:
     name: discovery-service
 
+  # Eureka server does not use a database. common-lib brings
+  # spring-boot-starter-data-jpa onto the classpath; without these excludes Boot
+  # would attempt to configure a DataSource/EntityManagerFactory and fail because
+  # no datasource URL is set.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.sql.init.SqlInitializationAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+
 server:
   port: 8761
 

@@ -47,6 +47,16 @@ public class Claim {
     @Column(nullable = false)
     Instant incidentDate;
 
+    /**
+     * Optimistic-lock version. Hibernate manages this: every committed UPDATE
+     * increments it and filters the write with "AND version = <readVersion>",
+     * so a stale concurrent writer affects 0 rows and surfaces as an
+     * {@code OptimisticLockingFailureException} instead of silently overwriting
+     * a newer status. Never set this from application code.
+     */
+    @Version
+    Long version;
+
     @Column(nullable = false)
     @Builder.Default
     Instant createdAt = Instant.now();

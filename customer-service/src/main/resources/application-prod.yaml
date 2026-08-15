@@ -26,26 +26,6 @@ spring:
           acquire_retry_attempts: 5
           acquire_retry_delay: 1000
 
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
-    producer:
-      acks: all
-      retries: 2147483647
-      batch-size: 32768
-      linger-ms: 20
-      compression-type: snappy
-      delivery-timeout-ms: 300000
-      properties:
-        linger.ms: 20
-        request.timeout.ms: 60000
-        retry.backoff.ms: 2000
-        max.in.flight.requests.per.connection: 5
-    consumer:
-      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
-      group-id: customer-service-prod
-      max-poll-records: 500
-      session-timeout-ms: 30000
-
   security:
     oauth2:
       resourceserver:

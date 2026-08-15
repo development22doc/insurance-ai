@@ -2,6 +2,7 @@ package com.claimassist.platform.agent_service.cache;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -185,7 +186,7 @@ public class CacheService {
     public void clearAll() {
         long start = System.nanoTime();
         try {
-            redisTemplate.getConnectionFactory().getConnection().flushAll();
+            redisTemplate.execute((RedisCallback<Object>) connection -> { connection.flushAll(); return null; });
             log.warn("Cleared entire Redis cache");
         } catch (Exception e) {
             log.error("Error clearing cache", e);

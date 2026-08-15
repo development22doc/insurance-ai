@@ -2,6 +2,19 @@ spring:
   application:
     name: config-service
 
+  # Config Server (native, file:./config-repo) does not use a database. common-lib
+  # brings spring-boot-starter-data-jpa onto the classpath; without these excludes
+  # Boot would attempt to configure a DataSource/EntityManagerFactory and fail
+  # because no datasource URL is set. Exclude only the JDBC/JPA/initialization
+  # auto-configurations that are irrelevant to a native Config Server.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.sql.init.SqlInitializationAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+
   cloud:
     config:
       server:

@@ -45,55 +45,50 @@ public class SagaFailureRecoveryService {
     @Scheduled(fixedDelayString = "${saga.recovery.scan-ms:15000}")
     public void recoverFailedSagas() {
         try {
+            Instant now = Instant.now();
+            Instant eligibleBefore = now.minusSeconds(retryDelaySeconds);
             List<ClaimSagaOrchestration> recoverable = sagaRepository.findRecoverableSagas(
                     SagaOrchestrationStatus.FAILED,
-                    Instant.now().minusSeconds(retryDelaySeconds));
+                    eligibleBefore);
 
             for (ClaimSagaOrchestration saga : recoverable) {
                 if (saga.getAttempts() >= maxRecoveryAttempts) {
                     log.warn("Saga {} exceeded max recovery attempts ({}), marking as unrecoverable",
                             saga.getSagaId(), maxRecoveryAttempts);
-                    saga.setStatus(SagaOrchestrationStatus.FAILED);
-                    metricsService.incrementFailed();
                     continue;
                 }
 
+                long delayMs = calculateBackoffDelay(saga.getAttempts());
                 try {
-                    recoverSaga(saga);
-                    metricsService.incrementRecoveryRetry();
+                    // Atomic guarded claim: this saga may be picked up concurrently by the
+                    // orchestrator recovery scan or a manual trigger. Only the caller that wins the
+                    // DB-side claim (1 row updated) transitions it to IN_PROGRESS, increments
+                    // attempts, and schedules the backoff retry. A claim of 0 rows means another
+                    // writer already claimed it (or it became ineligible), so we must NOT mutate it.
+                    int claimed = sagaRepository.claimRecoveryForFailureRecovery(
+                            saga.getId(),
+                            SagaOrchestrationStatus.FAILED,
+                            SagaOrchestrationStatus.IN_PROGRESS,
+                            now.plusMillis(delayMs),
+                            now,
+                            eligibleBefore,
+                            maxRecoveryAttempts);
+                    if (claimed == 1) {
+                        metricsService.incrementRecoveryRetry();
+                        log.info("Saga {} recovery scheduled: attempt={}, nextRetry in {}ms",
+                                saga.getSagaId(), saga.getAttempts() + 1, delayMs);
+                    }
                 } catch (Exception e) {
                     log.error("Failed to recover saga {}", saga.getSagaId(), e);
                     recordRecoveryFailure(saga, e);
                 }
             }
-
-            sagaRepository.saveAll(recoverable);
+            // No saveAll: each transition is persisted by the guarded claim UPDATE above; a row
+            // skipped (claimed == 0) preserves whatever newer state another writer committed.
 
         } catch (Exception e) {
             log.error("Error during saga failure recovery scan", e);
         }
-    }
-
-    /**
-     * Recover a single failed saga by re-attempting from the failed step.
-     */
-    private void recoverSaga(ClaimSagaOrchestration saga) {
-        log.info("Recovering failed saga {}: currentStep={}, attempts={}",
-                saga.getSagaId(), saga.getCurrentStep(), saga.getAttempts());
-
-        int nextAttempt = saga.getAttempts() + 1;
-        
-        // Calculate backoff delay
-        long delayMs = calculateBackoffDelay(saga.getAttempts());
-        saga.setNextRetryAt(Instant.now().plusMillis(delayMs));
-        
-        // Retry the failed step
-        saga.setStatus(SagaOrchestrationStatus.IN_PROGRESS);
-        saga.setAttempts(nextAttempt);
-        saga.setLastRecoveryAttemptAt(Instant.now());
-
-        log.info("Saga {} recovery scheduled: attempt={}, nextRetry in {}ms",
-                saga.getSagaId(), nextAttempt, delayMs);
     }
 
     /**
@@ -106,32 +101,50 @@ public class SagaFailureRecoveryService {
     }
 
     /**
-     * Record that recovery attempt failed.
+     * Record that recovery attempt failed. Persisted atomically DB-side so concurrent writers
+     * cannot lose a failure increment (avoids a stale full-row overwrite via saveAll).
      */
     private void recordRecoveryFailure(ClaimSagaOrchestration saga, Exception e) {
-        saga.setLastRecoveryError(e.getMessage());
-        saga.setRecoveryFailureCount(saga.getRecoveryFailureCount() + 1);
-        
-        if (saga.getRecoveryFailureCount() >= 3) {
-            log.error("Saga {} recovery failed multiple times, marking as unrecoverable", saga.getSagaId());
-            saga.setStatus(SagaOrchestrationStatus.FAILED);
+        int updated = sagaRepository.recordRecoveryFailureAtomic(
+                saga.getId(),
+                e.getMessage(),
+                RECOVERY_FAILURE_CEILING,
+                SagaOrchestrationStatus.FAILED,
+                Instant.now());
+        if (updated == 1) {
+            log.error("Saga {} recovery failed, recorded failure", saga.getSagaId());
         }
     }
 
     /**
-     * Manually trigger recovery for a specific saga.
+     * Manually trigger recovery for a specific saga. Uses the same atomic guarded claim so a
+     * concurrent scheduled scan cannot also claim (and thus double-increment) the same saga.
      */
     @Transactional
     public void triggerRecovery(String sagaId) {
         sagaRepository.findBySagaId(sagaId).ifPresentOrElse(saga -> {
             if (saga.getStatus() == SagaOrchestrationStatus.FAILED) {
-                recoverSaga(saga);
-                sagaRepository.save(saga);
-                log.info("Manual recovery triggered for saga {}", sagaId);
+                long delayMs = calculateBackoffDelay(saga.getAttempts());
+                int claimed = sagaRepository.claimRecoveryForFailureRecovery(
+                        saga.getId(),
+                        SagaOrchestrationStatus.FAILED,
+                        SagaOrchestrationStatus.IN_PROGRESS,
+                        Instant.now().plusMillis(delayMs),
+                        Instant.now(),
+                        Instant.now(),
+                        maxRecoveryAttempts);
+                if (claimed == 1) {
+                    log.info("Manual recovery triggered for saga {}", sagaId);
+                } else {
+                    log.warn("Saga {} not eligible for manual recovery (already claimed or max attempts reached)",
+                            sagaId);
+                }
             } else {
                 log.warn("Cannot recover saga {} - status is {}", sagaId, saga.getStatus());
             }
         }, () -> log.warn("Saga {} not found", sagaId));
     }
+
+    private static final int RECOVERY_FAILURE_CEILING = 3;
 }
 

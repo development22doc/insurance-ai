@@ -32,7 +32,7 @@ spring:
       batch-size: ${KAFKA_PRODUCER_BATCH_SIZE:16384}
       linger-ms: ${KAFKA_PRODUCER_LINGER_MS:10}
       properties:
-        compression.type: ${KAFKA_PRODUCER_COMPRESSION:snappy}
+        compression.type: ${KAFKA_PRODUCER_COMPRESSION:none}
         delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:120000}
         request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
         retry.backoff.ms: ${KAFKA_RETRY_BACKOFF_MS:1000}

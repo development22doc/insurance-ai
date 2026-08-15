@@ -7,7 +7,6 @@ import com.claimassist.platform.common_lib.enums.ClaimPermission;
 import feign.FeignException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
-import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +39,6 @@ public class ClaimsServiceGateway {
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "statusFallback")
     @Retry(name = INSTANCE)
-    @TimeLimiter(name = INSTANCE)
     @Bulkhead(name = INSTANCE)
     @RateLimiter(name = INSTANCE)
     public ClaimStatusDto getClaimStatus(Long claimId) {
@@ -49,7 +47,6 @@ public class ClaimsServiceGateway {
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "documentsFallback")
     @Retry(name = INSTANCE)
-    @TimeLimiter(name = INSTANCE)
     @Bulkhead(name = INSTANCE)
     @RateLimiter(name = INSTANCE)
     public List<ClaimDocumentSummaryDto> getClaimDocuments(Long claimId) {
@@ -58,7 +55,6 @@ public class ClaimsServiceGateway {
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "permissionFallback")
     @Retry(name = INSTANCE)
-    @TimeLimiter(name = INSTANCE)
     @Bulkhead(name = INSTANCE)
     @RateLimiter(name = INSTANCE)
     public boolean checkPermission(Long claimId, ClaimPermission permission) {

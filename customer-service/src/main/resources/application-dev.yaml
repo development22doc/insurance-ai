@@ -21,23 +21,6 @@ spring:
           batch_size: 20
           fetch_size: 50
 
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
-    producer:
-      acks: all
-      retries: 2147483647
-      batch-size: 16384
-      linger-ms: 10
-      compression-type: snappy
-      delivery-timeout-ms: 120000
-      properties:
-        linger.ms: 10
-        request.timeout.ms: 30000
-        retry.backoff.ms: 1000
-    consumer:
-      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
-      group-id: customer-service-dev
-
   security:
     oauth2:
       resourceserver:

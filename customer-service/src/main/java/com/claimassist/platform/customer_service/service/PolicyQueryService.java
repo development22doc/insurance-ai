@@ -40,7 +40,15 @@ public class PolicyQueryService {
                 .toList();
     }
 
-    @Cacheable(cacheNames = RedisCacheConfig.POLICY_COVERAGE_CACHE, key = "#policyId + '-' + #callingUserId")
+    // sync = true: this is the platform's hottest read path - it backs the
+    // claim-submission ACTIVE validation in claims-service, the agent
+    // get_policy_coverage tool call, and the customer's own coverage view.
+    // With a 10-minute TTL the load (policy lookup + nested coverage-plan
+    // snapshot) is recomputed on expiry; single-flight collapses concurrent
+    // misses on the same (policyId, caller) key to one DB load. JVM-local,
+    // per-key (not a global lock), and identical to the sync=true already
+    // approved for claimStatus/claimPermissionLookup in Phase 10 Task 10.1.
+    @Cacheable(cacheNames = RedisCacheConfig.POLICY_COVERAGE_CACHE, key = "#policyId + '-' + #callingUserId", sync = true)
     public PolicyCoverageDto getPolicyCoverage(Long policyId, Long callingUserId) {
         Policy policy = policyRepository.findByIdAndCustomerId(policyId, callingUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("Policy", policyId.toString()));
@@ -71,14 +79,19 @@ public class PolicyQueryService {
     }
 
     /**
-     * Call this from wherever a Policy's status/plan is mutated (renewal,
-     * cancellation, plan change) - none of those flows are implemented in
-     * this pass (see INSURANCE_AI_PLATFORM.md "documented simplifications"),
-     * but whoever adds them MUST call this, or a cached ACTIVE policy could
-     * keep answering "ACTIVE" for up to POLICY_COVERAGE_CACHE's 5-minute TTL
-     * after a cancellation - acceptable staleness for a chat answer, NOT
-     * acceptable for the claim-submission ACTIVE check in claims-service, so
-     * that check should eventually call a non-cached path or a short-TTL one.
+     * Called from wherever a Policy's status/plan is mutated. Eviction IS
+     * wired today: PolicyServiceImpl.updatePolicy and deletePolicy both call
+     * this (alongside evictMyPolicies) after the DB write, so a cancelled /
+     * renewed policy stops answering from a stale cache immediately for the
+     * owning customer - the cache key here (policyId-customerId) matches the
+     * read key (policyId-callingUserId) because the caller is the owner on both
+     * paths. Residual staleness is the standard cache-aside evict-vs-read race,
+     * bounded by POLICY_COVERAGE_CACHE's 10-minute TTL, plus the fact that the
+     * eviction fires before the surrounding transaction commits. That 10-minute
+     * bound is acceptable for chat/customer answers but is why the claims-side
+     * ACTIVE validation must keep failing closed (CustomerServiceGateway throws
+     * on any non-ACTIVE / unavailable response) rather than trusting a cached
+     * status for correctness-critical authorization.
      */
     @CacheEvict(cacheNames = RedisCacheConfig.POLICY_COVERAGE_CACHE, key = "#policyId + '-' + #customerId")
     public void evictPolicyCoverage(Long policyId, Long customerId) {

@@ -9,6 +9,15 @@ spring:
     config:
       # Disable config client locally so service can start even when config server is down
       enabled: false
+    openfeign:
+      client:
+        config:
+          claims-service:
+            connect-timeout: 2000
+            read-timeout: 5000
+          customer-service:
+            connect-timeout: 2000
+            read-timeout: 5000
   config:
     # Make config server import optional so service can start when config server is unavailable
     import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
@@ -80,21 +89,11 @@ resilience4j:
   circuitbreaker:
     instances:
       claimsService:
-        sliding-window-type: COUNT_BASED
         sliding-window-size: 20
         minimum-number-of-calls: 10
-        failure-rate-threshold: 50
-        wait-duration-in-open-state: 10s
-        permitted-number-of-calls-in-half-open-state: 3
-        automatic-transition-from-open-to-half-open-enabled: true
       customerService:
-        sliding-window-type: COUNT_BASED
         sliding-window-size: 20
         minimum-number-of-calls: 10
-        failure-rate-threshold: 50
-        wait-duration-in-open-state: 10s
-        permitted-number-of-calls-in-half-open-state: 3
-        automatic-transition-from-open-to-half-open-enabled: true
   retry:
     instances:
       claimsService:
