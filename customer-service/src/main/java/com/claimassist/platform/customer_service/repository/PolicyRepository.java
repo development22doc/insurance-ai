@@ -1,6 +1,8 @@
 package com.claimassist.platform.customer_service.repository;
 
 import com.claimassist.platform.customer_service.entity.Policy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,4 +16,6 @@ public interface PolicyRepository extends JpaRepository<Policy, Long> {
     Optional<Policy> findByIdAndCustomerId(@Param("policyId") Long policyId, @Param("customerId") Long customerId);
 
     List<Policy> findByCustomerId(Long customerId);
+
+    Page<Policy> findByCustomerId(Long customerId, Pageable pageable);
 }
