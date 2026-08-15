@@ -189,7 +189,7 @@ networkPolicy:
   ingressController:
     namespace: nginx-ingress
     selector:
-      app: nginx-ingress
+      app.kubernetes.io/name: nginx-ingress
   prometheus:
     namespace: claimassist-observability
     selector:

@@ -31,6 +31,7 @@ startup-log.txt
 final-build.log
 build-*.log
 *build-*.txt
+master_change_log.md
 
 # ============================================================
 # Environment / Secrets
