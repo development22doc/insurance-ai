@@ -165,6 +165,7 @@ class RefreshTokenServiceTest {
     @Test
     void validateAndRotate_WithValidToken_ShouldRotateSuccessfully() {
         // Given
+        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
         when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
         RefreshToken newToken = RefreshToken.builder()
                 .id(2L)
@@ -184,16 +185,18 @@ class RefreshTokenServiceTest {
         assertThat(result.getToken()).isNotEqualTo("existing-token");
         assertThat(result.isRevoked()).isFalse();
         assertThat(result.getCustomer()).isEqualTo(testCustomer);
+        verify(refreshTokenRepository).consumeForRotation(eq("existing-token"), anyString(), any());
         verify(refreshTokenRepository).findByToken("existing-token");
-        verify(refreshTokenRepository, times(2)).save(any(RefreshToken.class));
-        verify(eventLogger, times(2)).logDatabaseEvent(anyString(), anyString(), anyLong(), any());
+        verify(refreshTokenRepository, times(1)).save(any(RefreshToken.class));
+        verify(eventLogger, times(1)).logDatabaseEvent(anyString(), anyString(), anyLong(), any());
         verify(eventLogger).logBusinessEvent(anyString(), anyString(), any());
-        verify(performanceLogger, times(4)).log(anyString(), anyString(), anyLong(), any());
+        verify(performanceLogger, times(3)).log(anyString(), anyString(), anyLong(), any());
     }
 
     @Test
     void validateAndRotate_ShouldMarkOldTokenAsRevoked() {
-        // Given
+        // Given: the CAS consumeForRotation returns 1, signalling this caller won the race.
+        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
         when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
         RefreshToken newToken = RefreshToken.builder()
                 .id(2L)
@@ -203,23 +206,17 @@ class RefreshTokenServiceTest {
                 .expiresAt(Instant.now().plusSeconds(1209600))
                 .revoked(false)
                 .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> {
-            RefreshToken token = invocation.getArgument(0);
-            if (token.getToken().equals("existing-token")) {
-                // This is the old token being revoked
-                return testRefreshToken;
-            } else {
-                // This is the new token being created
-                return newToken;
-            }
-        });
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(newToken);
 
         // When
-        refreshTokenService.validateAndRotate("existing-token");
+        RefreshToken result = refreshTokenService.validateAndRotate("existing-token");
 
         // Then
-        assertThat(testRefreshToken.isRevoked()).isTrue();
-        assertThat(testRefreshToken.getRotatedTo()).isEqualTo("new-rotated-token");
+        // The old token is consumed/revoked atomically by the CAS UPDATE rather than a save.
+        verify(refreshTokenRepository).consumeForRotation(eq("existing-token"), anyString(), any());
+        assertThat(result).isNotNull();
+        assertThat(result.getToken()).isEqualTo("new-rotated-token");
+        verify(refreshTokenRepository, never()).save(eq(testRefreshToken));
     }
 
     @Test
@@ -271,6 +268,7 @@ class RefreshTokenServiceTest {
     @Test
     void validateAndRotate_ShouldGenerateNewTokenWithNewExpiration() {
         // Given
+        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
         when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
         RefreshToken newToken = RefreshToken.builder()
                 .id(2L)
@@ -295,6 +293,7 @@ class RefreshTokenServiceTest {
     @Test
     void validateAndRotate_ShouldLogPerformanceMetrics() {
         // Given
+        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
         when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
         RefreshToken newToken = RefreshToken.builder()
                 .id(2L)
@@ -312,13 +311,13 @@ class RefreshTokenServiceTest {
         // Then
         verify(performanceLogger).log(eq("BUSINESS"), eq("refresh.token.validation"), anyLong(), any());
         verify(performanceLogger).log(eq("REPOSITORY"), eq("repository.refresh-token.save"), anyLong(), any());
-        verify(performanceLogger).log(eq("REPOSITORY"), eq("repository.refresh-token.revoke"), anyLong(), any());
         verify(performanceLogger).log(eq("BUSINESS"), eq("refresh.token.rotation"), anyLong(), any());
     }
 
     @Test
     void validateAndRotate_ShouldLogBusinessEvent() {
         // Given
+        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
         when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
         RefreshToken newToken = RefreshToken.builder()
                 .id(2L)

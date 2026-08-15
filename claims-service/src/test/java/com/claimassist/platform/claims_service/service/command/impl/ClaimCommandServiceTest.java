@@ -83,7 +83,7 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
                 50000L, 1L, "test-key-123");
 
         statusCommand = new ClaimCommands.UpdateClaimStatusCommand(
-                1L, "SUBMITTED", "APPROVED", "admin-user");
+                1L, "UNDER_REVIEW", null, "admin-user");
     }
 
     @Test
@@ -103,9 +103,9 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
                 eq("claims.submitClaim"),
                 eq(1L),
                 eq(ClaimResponse.class),
-                any())).thenAnswer(invocation -> {
-            return invocation.getArgument(4);
-        });
+                any())).thenAnswer(invocation -> ((java.util.function.Supplier<?>) invocation.getArgument(4)).get());
+
+        when(claimMapper.toClaimResponse(any(Claim.class))).thenReturn(new ClaimResponse(1L, "CLM-1", "SUBMITTED", "ACCIDENT"));
 
         // When
         ClaimResponse response = claimCommandService.submitClaim(submitCommand);
@@ -127,6 +127,13 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
         when(customerServiceGateway.getPolicyCoverage(1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
                 1L, "POL-001", "EXPIRED", "Plan Type A", "Health", 1000L, 100000L, null));
 
+        when(idempotencyService.execute(
+                eq("test-key-123"),
+                eq("claims.submitClaim"),
+                eq(1L),
+                eq(ClaimResponse.class),
+                any())).thenAnswer(invocation -> ((java.util.function.Supplier<?>) invocation.getArgument(4)).get());
+
         // When & Then
         assertThatThrownBy(() -> claimCommandService.submitClaim(submitCommand))
                 .isInstanceOf(BadRequestException.class)
@@ -137,7 +144,7 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
 
     @Test
     void applyStatusChange_WithValidTransition_ShouldApplyStatusChange() {
-        // Given
+        // Given: SUBMITTED -> UNDER_REVIEW is the only legal transition out of SUBMITTED.
         Claim existingClaim = Claim.builder()
                 .id(1L)
                 .policyId(1L)
@@ -145,20 +152,21 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
                 .build();
 
         when(claimRepository.findById(1L)).thenReturn(java.util.Optional.of(existingClaim));
+        when(claimRepository.save(any(Claim.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         Claim result = claimCommandService.applyStatusChange(statusCommand);
 
         // Then
         assertThat(result).isNotNull();
-        assertThat(result.getStatus()).isEqualTo(ClaimStatus.APPROVED);
+        assertThat(result.getStatus()).isEqualTo(ClaimStatus.UNDER_REVIEW);
         verify(claimRepository).findById(1L);
         verify(claimRepository).save(any(Claim.class));
     }
 
     @Test
     void applyStatusChange_WithInvalidFromStatus_ShouldThrowClaimStateTransitionException() {
-        // Given
+        // Given: DENIED may only transition to CLOSED, so a move to UNDER_REVIEW is illegal.
         Claim existingClaim = Claim.builder()
                 .id(1L)
                 .status(ClaimStatus.DENIED)
@@ -169,7 +177,7 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
         // When & Then
         assertThatThrownBy(() -> claimCommandService.applyStatusChange(statusCommand))
                 .isInstanceOf(ClaimStateTransitionException.class)
-                .hasMessageContaining("DENIED", "APPROVED");
+                .hasMessageContaining("DENIED", "UNDER_REVIEW");
 
         verify(claimRepository, never()).save(any());
     }
@@ -178,7 +186,7 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     void applyStatusChange_WithUnknownStatus_ShouldThrowBadRequestException() {
         // Given
         statusCommand = new ClaimCommands.UpdateClaimStatusCommand(
-                1L, "SUBMITTED", "UNKNOWN_STATUS", "admin-user");
+                1L, "UNKNOWN_STATUS", null, "admin-user");
 
         Claim existingClaim = Claim.builder()
                 .id(1L)
@@ -196,12 +204,12 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     @Test
     void applyStatusChange_WithNonExistentClaim_ShouldThrowResourceNotFoundException() {
         // Given
-        when(claimRepository.findById(999L)).thenReturn(java.util.Optional.empty());
+        when(claimRepository.findById(1L)).thenReturn(java.util.Optional.empty());
 
         // When & Then
         assertThatThrownBy(() -> claimCommandService.applyStatusChange(statusCommand))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Claim", String.valueOf(999L));
+                .hasMessageContaining("Claim", String.valueOf(1L));
 
         verify(claimRepository, never()).save(any());
     }

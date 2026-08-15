@@ -17,7 +17,6 @@ import com.claimassist.platform.claims_service.entity.ClaimStatusHistory;
 import com.claimassist.platform.common_lib.enums.ClaimStatus;
 import com.claimassist.platform.common_lib.enums.ClaimRole;
 
-import jakarta.persistence.PersistenceException;
 import java.time.Instant;
 import java.util.List;
 
@@ -66,6 +65,7 @@ class ClaimRepositoryTest {
         claim.setPolicyId(1L);
         claim.setIncidentType("THEFT");
         claim.setStatus(ClaimStatus.SUBMITTED);
+        claim.setIncidentDate(Instant.now());
         claimRepository.save(claim);
 
         Claim found = claimRepository.findByClaimNumber("CLM-TEST-002").orElse(null);
@@ -80,6 +80,7 @@ class ClaimRepositoryTest {
         c1.setPolicyId(1L);
         c1.setIncidentType("ACCIDENT");
         c1.setStatus(ClaimStatus.SUBMITTED);
+        c1.setIncidentDate(Instant.now());
         claimRepository.save(c1);
 
         Claim c2 = new Claim();
@@ -87,9 +88,10 @@ class ClaimRepositoryTest {
         c2.setPolicyId(2L);
         c2.setIncidentType("THEFT");
         c2.setStatus(ClaimStatus.SUBMITTED);
+        c2.setIncidentDate(Instant.now());
 
         assertThatThrownBy(() -> claimRepository.save(c2))
-                .isInstanceOf(PersistenceException.class);
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 
     @Test
@@ -106,6 +108,7 @@ class ClaimRepositoryTest {
         ClaimPartyId partyId1 = new ClaimPartyId(savedClaim.getId(), 100L);
         ClaimParty party1 = new ClaimParty();
         party1.setId(partyId1);
+        party1.setClaim(savedClaim);
         party1.setClaimRole(ClaimRole.POLICYHOLDER);
         party1.setAddedAt(Instant.now());
         claimPartyRepository.save(party1);
@@ -113,6 +116,7 @@ class ClaimRepositoryTest {
         ClaimPartyId partyId2 = new ClaimPartyId(savedClaim.getId(), 101L);
         ClaimParty party2 = new ClaimParty();
         party2.setId(partyId2);
+        party2.setClaim(savedClaim);
         party2.setClaimRole(ClaimRole.ADJUSTER);
         party2.setAddedAt(Instant.now());
         claimPartyRepository.save(party2);
@@ -172,7 +176,7 @@ class ClaimRepositoryTest {
         // Missing required fields: claimNumber, incidentType, status, incidentDate
 
         assertThatThrownBy(() -> claimRepository.save(claim))
-                .isInstanceOf(PersistenceException.class);
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 
     @Test
@@ -238,6 +242,7 @@ class ClaimRepositoryTest {
         ClaimPartyId partyId1 = new ClaimPartyId(savedClaim1.getId(), 200L);
         ClaimParty party1 = new ClaimParty();
         party1.setId(partyId1);
+        party1.setClaim(savedClaim1);
         party1.setClaimRole(ClaimRole.POLICYHOLDER);
         party1.setAddedAt(Instant.now());
         claimPartyRepository.save(party1);
@@ -245,11 +250,12 @@ class ClaimRepositoryTest {
         ClaimPartyId partyId2 = new ClaimPartyId(savedClaim2.getId(), 200L);
         ClaimParty party2 = new ClaimParty();
         party2.setId(partyId2);
+        party2.setClaim(savedClaim2);
         party2.setClaimRole(ClaimRole.POLICYHOLDER);
         party2.setAddedAt(Instant.now());
         claimPartyRepository.save(party2);
 
-        List<ClaimRepository.ClaimWithRoleProjection> accessibleClaims =
+        List<ClaimSummaryRow> accessibleClaims =
                 claimRepository.findAllAccessibleByUser(200L);
 
         assertThat(accessibleClaims).hasSize(2);
@@ -268,6 +274,7 @@ class ClaimRepositoryTest {
         ClaimPartyId partyId = new ClaimPartyId(savedClaim.getId(), 300L);
         ClaimParty party = new ClaimParty();
         party.setId(partyId);
+        party.setClaim(savedClaim);
         party.setClaimRole(ClaimRole.POLICYHOLDER);
         party.setAddedAt(Instant.now());
         claimPartyRepository.save(party);
@@ -293,17 +300,20 @@ class ClaimRepositoryTest {
         ClaimPartyId partyId = new ClaimPartyId(savedClaim.getId(), 400L);
         ClaimParty party1 = new ClaimParty();
         party1.setId(partyId);
+        party1.setClaim(savedClaim);
         party1.setClaimRole(ClaimRole.POLICYHOLDER);
         party1.setAddedAt(Instant.now());
         claimPartyRepository.save(party1);
 
-        // Try to add duplicate party (same claim and user)
+        // Try to add duplicate party (same claim and user). save() would merge silently,
+        // so persist+flush to force the composite-key PK violation.
         ClaimParty duplicateParty = new ClaimParty();
         duplicateParty.setId(partyId);
+        duplicateParty.setClaim(savedClaim);
         duplicateParty.setClaimRole(ClaimRole.ADJUSTER);
         duplicateParty.setAddedAt(Instant.now());
 
-        assertThatThrownBy(() -> claimPartyRepository.save(duplicateParty))
-                .isInstanceOf(PersistenceException.class);
+        assertThatThrownBy(() -> entityManager.persistAndFlush(duplicateParty))
+                .isInstanceOf(jakarta.persistence.EntityExistsException.class);
     }
 }

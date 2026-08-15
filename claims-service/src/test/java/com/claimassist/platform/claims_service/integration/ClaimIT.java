@@ -17,6 +17,7 @@ import com.claimassist.platform.claims_service.repository.ClaimRepository;
 import com.claimassist.platform.claims_service.repository.ClaimPartyRepository;
 import com.claimassist.platform.claims_service.repository.ClaimDocumentRepository;
 import com.claimassist.platform.claims_service.repository.ClaimStatusHistoryRepository;
+import com.claimassist.platform.claims_service.repository.ClaimSummaryRow;
 import com.claimassist.platform.common_lib.enums.ClaimStatus;
 import com.claimassist.platform.common_lib.enums.ClaimRole;
 
@@ -253,7 +254,7 @@ class ClaimIT {
         party2.setAddedAt(Instant.now());
         claimPartyRepository.save(party2);
 
-        List<ClaimRepository.ClaimWithRoleProjection> accessibleClaims =
+        List<ClaimSummaryRow> accessibleClaims =
                 claimRepository.findAllAccessibleByUser(200L);
 
         assertThat(accessibleClaims).hasSize(2);
