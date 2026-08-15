@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "ollama/MadhuryaPasan/Qwen3-ExpertTools:1.7b-q4_K_M",
+  "default_agent": "build",
+
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama Local",
+
+      "options": {
+        "baseURL": "http://localhost:11434/v1",
+        "apiKey": "ollama"
+      },
+
+      "models": {
+        "MadhuryaPasan/Qwen3-ExpertTools:1.7b-q4_K_M": {
+          "name": "Qwen3 ExpertTools 1.7B",
+          "limit": {
+            "context": 8192,
+            "output": 4096
+          }
+        }
+      }
+    }
+  }
+}
