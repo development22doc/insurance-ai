@@ -24,13 +24,20 @@ jobs:
         cache: maven
     
     - name: Run Maven dependency check
-      run: mvn dependency-check:check -DskipTests || true
+      # Invoked via full GA coordinates (group:artifact:version:goal) so it does NOT rely on
+      # Maven prefix discovery (which is why `mvn dependency-check:check` failed earlier). The
+      # plugin + version/config are declared in the root pom.xml (org.owasp:dependency-check-maven).
+      # No `|| true` / continue-on-error: this step must genuinely run and fail CI on a real error.
+      run: mvn org.owasp:dependency-check-maven:12.2.2:check -DskipTests
     
     - name: Resolve Maven dependencies (warm ~/.m2 for Trivy)
       run: mvn -B dependency:resolve -DskipTests
     
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
+      # Pinned to the immutable commit SHA for trivy-action v0.36.0 (current stable).
+      # Immutable SHA (not a mutable tag) prevents the CVE-2026-33634-style tag
+      # re-pointing supply-chain attack on aquasecurity/trivy-action.
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
       with:
         scan-type: 'fs'
         scan-ref: '.'

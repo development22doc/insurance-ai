@@ -35,7 +35,36 @@
     </properties>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <!--
+                    OWASP dependency-check. Version and config are centrally managed here (pluginManagement)
+                    so the Security workflow can invoke the plugin deterministically via full GA
+                    coordinates: mvn org.owasp:dependency-check-maven:12.2.2:check. Coordinates are
+                    org.owasp:dependency-check-maven (the previously used
+                    org.owasp.dependency-check-maven-plugin:dependency-check-maven-plugin does not exist on
+                    Maven Central). NOT bound to any lifecycle phase: only the Security workflow invokes it.
+                    failBuildOnCVSS=8 fails the build on any High+ vulnerability; failOnError=true fails if
+                    the scan itself errors.
+                -->
+                <plugin>
+                    <groupId>org.owasp</groupId>
+                    <artifactId>dependency-check-maven</artifactId>
+                    <version>12.2.2</version>
+                    <configuration>
+                        <failBuildOnCVSS>8</failBuildOnCVSS>
+                        <failOnError>true</failOnError>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
+            <!--
+                Declared here (not pluginManagement) so child modules inherit and actually
+                execute these lifecycle-bound goals. Maven's default lifecycle never invokes
+                JaCoCo's prepare-agent/report, so leaving it only in pluginManagement would
+                silently drop coverage; it must be an active inherited plugin.
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
