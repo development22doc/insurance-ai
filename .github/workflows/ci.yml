@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [ dev ]
+  pull_request:
+    branches: [ dev ]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Build with Maven
+      run: mvn clean install -DskipTests
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: build-artifacts-jdk21
+        path: '**/target/*.jar'
+        retention-days: 7
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Run tests
+      run: mvn clean test
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-jdk21
+        path: '**/target/surefire-reports/'
+        retention-days: 7
+
+    - name: Publish test report
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Test Results (JDK 21)
+        path: '**/target/surefire-reports/*.xml'
+        reporter: 'java-junit'
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Run Maven dependency check
+      # Invoked via full GA coordinates (group:artifact:version:goal) so it does NOT rely on
+      # Maven prefix discovery (which is why `mvn dependency-check:check` failed earlier). The
+      # plugin + version/config are declared in the root pom.xml (org.owasp:dependency-check-maven).
+      # No `|| true` / continue-on-error: this step must genuinely run and fail CI on a real error.
+      run: mvn org.owasp:dependency-check-maven:12.2.2:check -DskipTests
+
+    - name: Resolve Maven dependencies (warm ~/.m2 for Trivy)
+      run: mvn -B dependency:resolve -DskipTests
+
+    - name: Run Trivy vulnerability scanner
+      # Pinned to the immutable commit SHA for trivy-action v0.36.0 (current stable).
+      # Immutable SHA (not a mutable tag) prevents the CVE-2026-33634-style tag
+      # re-pointing supply-chain attack on aquasecurity/trivy-action.
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: hashFiles('trivy-results.sarif') != ''
+      with:
+        sarif_file: 'trivy-results.sarif'
+        category: 'trivy'
+
+    - name: Run CodeQL analysis
+      uses: github/codeql-action/init@v3
+      with:
+        languages: 'java'
+
+    - name: Build for CodeQL
+      run: mvn clean package -DskipTests
+
+    - name: Perform CodeQL analysis
+      uses: github/codeql-action/analyze@v3
+
+  sonar:
+    name: SonarQube Cloud
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Verify and run SonarQube Cloud analysis
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
+          -Dsonar.organization=development22doc \
+          -Dsonar.projectKey=development22doc_insurance-ai \
+          -Dsonar.qualitygate.wait=true \
+          -Dsonar.coverage.jacoco.xmlReportPaths="common-lib/target/site/jacoco/jacoco.xml,discovery-service/target/site/jacoco/jacoco.xml,config-service/target/site/jacoco/jacoco.xml,api-gateway/target/site/jacoco/jacoco.xml,customer-service/target/site/jacoco/jacoco.xml,claims-service/target/site/jacoco/jacoco.xml,agent-service/target/site/jacoco/jacoco.xml"
