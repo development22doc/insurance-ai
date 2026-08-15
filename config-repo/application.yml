@@ -28,68 +28,6 @@ management:
       percentiles-histogram:
         http.server.requests: true
 
-# Common resilience4j defaults shared across services
-resilience4j:
-  retry:
-    configs:
-      default:
-        max-attempts: 3
-        wait-duration: 1000
-        retry-exceptions:
-          - org.springframework.web.client.HttpServerErrorException
-          - java.io.IOException
-          - java.net.ConnectException
-          - feign.FeignException.ServiceUnavailable
-          - feign.FeignException.GatewayTimeout
-        ignore-exceptions:
-          - feign.FeignException.BadRequest
-          - feign.FeignException.NotFound
-          - feign.FeignException.Unauthorized
-          - org.springframework.security.authentication.CredentialsExpiredException
-    instances:
-      customerService:
-        base-config: default
-  circuitbreaker:
-    configs:
-      default:
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 50
-        slow-call-duration-threshold: 5000
-        sliding-window-size: 10
-        sliding-window-type: COUNT_BASED
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        automatic-transition-enabled: true
-        wait-duration-in-open-state: 10000
-    instances:
-      customerService:
-        base-config: default
-  timeout:
-    configs:
-      default:
-        timeout-duration: 5000
-        cancel-running-future: true
-    instances:
-      customerService:
-        base-config: default
-  bulkhead:
-    configs:
-      default:
-        max-concurrent-calls: 10
-        max-wait-duration: 5000
-    instances:
-      customerService:
-        base-config: default
-  ratelimiter:
-    configs:
-      default:
-        limit-refresh-period: 1m
-        limit-for-period: 100
-        timeout-duration: 5000
-    instances:
-      customerService:
-        base-config: default
-
 # Common outbox defaults
 outbox:
   publisher:

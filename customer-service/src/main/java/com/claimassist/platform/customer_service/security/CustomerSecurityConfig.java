@@ -2,7 +2,6 @@ package com.claimassist.platform.customer_service.security;
 
 import com.claimassist.platform.common_lib.observability.CorrelationIdFilter;
 import com.claimassist.platform.common_lib.security.KeycloakJwtAuthenticationConverter;
-import com.claimassist.platform.common_lib.security.SecurityHeadersFilter;
 import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

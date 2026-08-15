@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -70,26 +71,51 @@ public class RefreshTokenService {
         });
     }
 
+    /**
+     * Validates and rotates a refresh token using an atomic compare-and-set (CAS).
+     *
+     * <p>The single conditional UPDATE ({@link RefreshTokenRepository#consumeForRotation})
+     * is the authoritative concurrency gate: it revokes the token only if it is still
+     * valid (not revoked, not expired). Exactly one concurrent request can affect 1 row;
+     * every other concurrent request affects 0 rows and is rejected below. This closes the
+     * double-rotation race where two requests could both pass a read-then-check and both
+     * rotate the same token.
+     *
+     * <p>The CAS + creation of the rotated token run in ONE transaction, so if creating the
+     * new token fails the whole transaction rolls back (the old token is not left revoked
+     * with no replacement). No pessimistic lock is held and no external network call happens
+     * inside this transaction.
+     */
+    @Transactional
     public RefreshToken validateAndRotate(String token) {
         long start = System.currentTimeMillis();
-        RefreshToken existing = refreshTokenRepository.findByToken(token)
-                .orElseThrow(() -> new BadRequestException("Invalid refresh token"));
+        Instant now = Instant.now();
+        String newToken = generateToken();
 
-        if (existing.isRevoked()) {
-            throw new BadRequestException("Refresh token revoked");
-        }
-
-        if (existing.getExpiresAt().isBefore(Instant.now())) {
+        int consumed = refreshTokenRepository.consumeForRotation(token, newToken, now);
+        if (consumed == 0) {
+            // The atomic gate rejected the token (missing, expired, revoked, or already
+            // consumed by a concurrent request). Re-read ONLY to pick a consistent,
+            // non-leaky error message - the CAS above is the real guard, this read is not
+            // used to decide success.
+            RefreshToken existing = refreshTokenRepository.findByToken(token).orElse(null);
+            if (existing == null) {
+                throw new BadRequestException("Invalid refresh token");
+            }
+            if (existing.isRevoked()) {
+                throw new BadRequestException("Refresh token revoked");
+            }
             throw new BadRequestException("Refresh token expired");
         }
+
+        // This request won the CAS - it is the sole consumer. Load to build the rotated token.
+        RefreshToken existing = refreshTokenRepository.findByToken(token)
+                .orElseThrow(() -> new BadRequestException("Invalid refresh token"));
 
         long validationDuration = System.currentTimeMillis() - start;
         performanceLogger.log("BUSINESS", "refresh.token.validation", validationDuration,
                 Map.of("customerId", existing.getCustomer().getId()));
 
-        // Rotation: create new token, mark old as revoked and link rotatedTo
-        String newToken = generateToken();
-        Instant now = Instant.now();
         RefreshToken rotated = RefreshToken.builder()
                 .token(newToken)
                 .customer(existing.getCustomer())
@@ -107,19 +133,6 @@ public class RefreshTokenService {
         saveDetails.put("executionTimeMs", saveDuration);
         eventLogger.logDatabaseEvent("customer-service", "customer-service", saveDuration, saveDetails);
         performanceLogger.log("REPOSITORY", "repository.refresh-token.save", saveDuration,
-                Map.of("customerId", existing.getCustomer().getId()));
-
-        existing.setRevoked(true);
-        existing.setRotatedTo(saved.getToken());
-        long revokeStart = System.currentTimeMillis();
-        refreshTokenRepository.save(existing);
-        long revokeDuration = System.currentTimeMillis() - revokeStart;
-        Map<String,Object> revokeDetails = new java.util.HashMap<>();
-        revokeDetails.put("event", "REFRESH_TOKEN_REVOKED");
-        revokeDetails.put("customerId", existing.getCustomer().getId());
-        revokeDetails.put("executionTimeMs", revokeDuration);
-        eventLogger.logDatabaseEvent("customer-service", "customer-service", revokeDuration, revokeDetails);
-        performanceLogger.log("REPOSITORY", "repository.refresh-token.revoke", revokeDuration,
                 Map.of("customerId", existing.getCustomer().getId()));
 
          long totalDuration = System.currentTimeMillis() - start;

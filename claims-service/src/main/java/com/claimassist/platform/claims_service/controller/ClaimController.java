@@ -4,6 +4,7 @@ import com.claimassist.platform.claims_service.dto.claim.ClaimRequest;
 import com.claimassist.platform.claims_service.dto.claim.ClaimResponse;
 import com.claimassist.platform.claims_service.dto.claim.ClaimSummaryResponse;
 import com.claimassist.platform.claims_service.dto.claim.UpdateClaimStatusRequest;
+import com.claimassist.platform.claims_service.entity.Claim;
 import com.claimassist.platform.claims_service.service.command.ClaimCommandService;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.SubmitClaimCommand;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.UpdateClaimStatusCommand;
@@ -65,7 +66,10 @@ public class ClaimController {
         UpdateClaimStatusCommand command = new UpdateClaimStatusCommand(
                 id, request.status(), request.note(), currentUserProvider.getCurrentUserId().toString());
 
-        claimCommandService.applyStatusChange(command);
-        return ResponseEntity.ok(claimQueryService.getClaimById(id));
+        // applyStatusChange already loads and returns the updated Claim; reuse it
+        // to build the response instead of re-fetching it via getClaimById (avoids
+        // a duplicate findById per request).
+        Claim updated = claimCommandService.applyStatusChange(command);
+        return ResponseEntity.ok(claimQueryService.toClaimSummary(updated, currentUserProvider.getCurrentUserId()));
     }
 }

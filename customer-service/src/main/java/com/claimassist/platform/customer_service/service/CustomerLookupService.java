@@ -9,6 +9,7 @@ import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -21,6 +22,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@Slf4j
 public class CustomerLookupService {
 
     private final CustomerRepository customerRepository;
@@ -32,7 +34,13 @@ public class CustomerLookupService {
         long start = System.currentTimeMillis();
         Cache cache = cacheManager.getCache(RedisCacheConfig.CUSTOMER_LOOKUP_CACHE);
         if (cache != null) {
-            Cache.ValueWrapper wrapper = cache.get(username);
+            Cache.ValueWrapper wrapper;
+            try {
+                wrapper = cache.get(username);
+            } catch (RuntimeException e) {
+                log.warn("customerLookup cache GET failed for username={} - falling back to DB", username, e);
+                wrapper = null;
+            }
             if (wrapper != null) {
                 long duration = System.currentTimeMillis() - start;
                 Map<String,Object> hit = new java.util.HashMap<>();
@@ -68,7 +76,11 @@ public class CustomerLookupService {
 
         // populate cache when present
         if (cache != null && found.isPresent()) {
-            cache.put(username, found.get());
+            try {
+                cache.put(username, found.get());
+            } catch (RuntimeException e) {
+                log.warn("customerLookup cache PUT failed for username={} - DB result returned without caching", username, e);
+            }
             Map<String,Object> evict = new java.util.HashMap<>();
             evict.put("cacheKey", username);
             evict.put("event", "CACHE_MISS_POPULATED");
@@ -82,7 +94,11 @@ public class CustomerLookupService {
         Cache cache = cacheManager.getCache(RedisCacheConfig.CUSTOMER_LOOKUP_CACHE);
         if (cache != null) {
             long start = System.currentTimeMillis();
-            cache.evict(username);
+            try {
+                cache.evict(username);
+            } catch (RuntimeException e) {
+                log.warn("customerLookup cache EVICT failed for username={} - stale entry bounded by TTL", username, e);
+            }
             long duration = System.currentTimeMillis() - start;
             Map<String,Object> details = new java.util.HashMap<>();
             details.put("cacheKey", "customer:" + username);

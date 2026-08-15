@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -24,8 +25,12 @@ public class RedisHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         try {
-            // Attempt a simple PING command
-            var pong = redisTemplate.getConnectionFactory().getConnection().ping();
+            // Acquire and release the connection via RedisTemplate.execute (RedisConnectionUtils),
+            // so a Lettuce-pooled connection is returned to the pool. A connection obtained with
+            // getConnectionFactory().getConnection() must be closed by the caller; leaking it from
+            // the configured pool (spring.data.redis.lettuce.pool.max-active) would exhaust the pool
+            // under repeated health polling.
+            String pong = redisTemplate.execute((RedisCallback<String>) connection -> connection.ping());
             if ("PONG".equalsIgnoreCase(pong)) {
                 return Health.up()
                         .withDetail("redis", "Connected")

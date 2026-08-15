@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import com.claimassist.platform.common_lib.observability.LoggingConstants;
 import com.claimassist.platform.common_lib.observability.MDCUtility;
 import com.claimassist.platform.common_lib.observability.event.EventLogger;
+import com.claimassist.platform.common_lib.messaging.AckUtils;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.kafka.support.KafkaHeaders;
@@ -109,8 +110,11 @@ public class AgentSagaResponseHandler {
 
             MDCUtility.clearAll();
 
-            // Manual acknowledgement after successful processing
-            ack.acknowledge();
+            // Manual acknowledgement after successful processing. Registered as an
+            // after-commit callback: the @Transactional boundary commits when this method
+            // returns, so acknowledging only after commit guarantees a DB rollback leaves
+            // the offset uncommitted and Kafka redelivers per at-least-once semantics.
+            AckUtils.acknowledgeAfterCommit(ack);
             log.debug("Message acknowledged - topic: {}, partition: {}, offset: {}", topic, partition, offset);
 
         } catch (Exception e) {

@@ -2,6 +2,8 @@ package com.claimassist.platform.claims_service.saga;
 
 import com.claimassist.platform.claims_service.dto.claim.ClaimResponse;
 import com.claimassist.platform.claims_service.entity.Claim;
+import com.claimassist.platform.claims_service.entity.SagaProcessedMessage;
+import com.claimassist.platform.claims_service.repository.SagaProcessedMessageRepository;
 import com.claimassist.platform.claims_service.service.command.ClaimCommandService;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.SubmitClaimCommand;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.UpdateClaimStatusCommand;
@@ -25,10 +27,23 @@ public class ClaimSagaStepProcessorService {
 
     private final ClaimCommandService claimCommandService;
     private final SagaOutboxPublisher sagaOutboxPublisher;
+    private final SagaProcessedMessageRepository processedMessageRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional
     public void processStep(ClaimSagaStepCommandEvent command) {
+        // Idempotency: Kafka at-least-once delivery can redeliver the same step command
+        // (e.g. after a crash before ack, or a rebalance). Dedup by the command's messageId
+        // within the SAME transaction as the business state change, so a duplicate delivery
+        // never re-executes the command (duplicate claim creation / status transition /
+        // outbox event). Mirrors ClaimSagaOrchestratorService.startOrchestration.
+        String messageId = command.messageId();
+        if (messageId == null || messageId.isBlank() || processedMessageRepository.existsById(messageId)) {
+            log.info("Saga step command {} already processed (idempotent dedup) - skipping", messageId);
+            return;
+        }
+        processedMessageRepository.save(new SagaProcessedMessage(messageId, Instant.now()));
+
         try {
             ClaimSagaStepResultEvent result = execute(command);
             publishResult(command.sagaId(), result);

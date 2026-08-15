@@ -27,7 +27,27 @@ public class WebClientCorrelationFilter {
         InvocationHandler handler = new InvocationHandler() {
             @Override
             public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                // method is 'filter(ClientRequest, ExchangeFunction)'
+                // Route Object methods (e.g. hashCode/toString called by Spring during
+                // bean lifecycle) to their default implementations so they do not
+                // dereference a null argument array.
+                switch (method.getName()) {
+                    case "toString":
+                        return "WebClientCorrelationFilter ExchangeFilterFunction";
+                    case "hashCode":
+                        return System.identityHashCode(proxy);
+                    case "equals":
+                        return proxy == args[0];
+                    default:
+                        break;
+                }
+
+                // Only the functional method 'filter(ClientRequest, ExchangeFunction)'
+                // carries the (request, exchangeFunction) arguments.
+                if (!"filter".equals(method.getName()) || args == null || args.length < 2) {
+                    throw new UnsupportedOperationException(
+                            "Unsupported method on WebClientCorrelationFilter proxy: " + method.getName());
+                }
+
                 Object request = args[0];
                 Object exchangeFunction = args[1];
 

@@ -4,10 +4,12 @@ import com.claimassist.platform.claims_service.dto.claim.ClaimResponse;
 import com.claimassist.platform.claims_service.repository.ClaimRepository;
 import com.claimassist.platform.claims_service.cache.CacheService;
 import com.claimassist.platform.common_lib.event.ClaimUpdateResponseEvent;
+import com.claimassist.platform.common_lib.messaging.AckUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,20 +39,21 @@ public class CqrsReadModelSynchronizer {
             topics = "claim-update-response-event",
             groupId = "cqrs-read-model-sync-group",
             containerFactory = "stringKafkaListenerContainerFactory")
-    public void synchronizeClaimReadModelOnUpdate(String rawMessage) throws Exception {
+    public void synchronizeClaimReadModelOnUpdate(String rawMessage, Acknowledgment ack) throws Exception {
         try {
             ClaimUpdateResponseEvent event = objectMapper.readValue(rawMessage, ClaimUpdateResponseEvent.class);
 
             if (!event.success() || event.claimId() == null) {
                 log.debug("Skipping read model sync for failed or incomplete event: {}", event.sagaId());
-                return;
+            } else {
+                // Invalidate claim cache to force refresh on next read
+                cacheService.invalidateClaimCache(event.claimId());
+                log.info("CQRS: Invalidated read model cache for claim {}", event.claimId());
             }
 
-            // Invalidate claim cache to force refresh on next read
-            cacheService.invalidateClaimCache(event.claimId());
-
-            log.info("CQRS: Invalidated read model cache for claim {}", event.claimId());
-
+            // Cache invalidation is idempotent (Redis DEL). Acknowledge only after the
+            // transaction commits so a rollback leaves the offset uncommitted for redelivery.
+            AckUtils.acknowledgeAfterCommit(ack);
         } catch (Exception e) {
             log.error("Error synchronizing read model for claim update response", e);
             throw e;
@@ -66,7 +69,7 @@ public class CqrsReadModelSynchronizer {
             topics = "claim-saga-orchestration-result-event",
             groupId = "cqrs-read-model-sync-group",
             containerFactory = "stringKafkaListenerContainerFactory")
-    public void synchronizeClaimReadModelOnSagaCompletion(String rawMessage) throws Exception {
+    public void synchronizeClaimReadModelOnSagaCompletion(String rawMessage, Acknowledgment ack) throws Exception {
         try {
             // Parse the orchestration result event
             var result = objectMapper.readValue(rawMessage, OrchestrationResultDTO.class);
@@ -78,6 +81,9 @@ public class CqrsReadModelSynchronizer {
                         result.claimId(), result.status());
             }
 
+            // Cache invalidation is idempotent (Redis DEL). Acknowledge only after the
+            // transaction commits so a rollback leaves the offset uncommitted for redelivery.
+            AckUtils.acknowledgeAfterCommit(ack);
         } catch (Exception e) {
             log.error("Error synchronizing read model for saga orchestration result", e);
             throw e;

@@ -6,19 +6,29 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 public interface ClaimRepository extends JpaRepository<Claim, Long> {
 
+    /**
+     * "My claims" listing. Uses a constructor projection ({@link ClaimSummaryRow}) that selects
+     * only the columns needed to build {@code ClaimSummaryResponse}, rather than hydrating full
+     * {@link Claim} entities (version/updatedAt/deletedAt are not needed for the summary). This is
+     * a pure read-only reduction in data loaded and entity materialization; the WHERE/JOIN/ORDER BY
+     * (and thus the {@code idx_claim_parties_user_id} usage) are unchanged.
+     */
     @Query("""
-        SELECT c AS claim, cp.claimRole AS role
+        SELECT new com.claimassist.platform.claims_service.repository.ClaimSummaryRow(
+            c.id, c.claimNumber, c.policyId, c.incidentType, c.status,
+            c.estimatedAmountCents, c.approvedAmountCents, c.incidentDate, c.createdAt, cp.claimRole)
         FROM Claim c
         JOIN ClaimParty cp ON cp.claim.id = c.id
         WHERE cp.id.userId = :userId AND c.deletedAt IS NULL
         ORDER BY c.createdAt DESC
         """)
-    List<ClaimWithRoleProjection> findAllAccessibleByUser(@Param("userId") Long userId);
+    List<ClaimSummaryRow> findAllAccessibleByUser(@Param("userId") Long userId);
 
     @Query("""
         SELECT c FROM Claim c

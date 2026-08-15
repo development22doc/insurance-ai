@@ -117,38 +117,73 @@ public class ClaimSagaOrchestratorService {
     @Transactional
     @Scheduled(fixedDelayString = "${saga.orchestrator.timeout-scan-ms:5000}")
     public void handleTimedOutSagas() {
-        List<ClaimSagaOrchestration> timedOutSagas = sagaRepository.findTimedOutSagas(
-                Set.of(SagaOrchestrationStatus.IN_PROGRESS, SagaOrchestrationStatus.COMPENSATING),
-                Instant.now());
+        Instant now = Instant.now();
+        Set<SagaOrchestrationStatus> activeStatuses = Set.of(
+                SagaOrchestrationStatus.IN_PROGRESS, SagaOrchestrationStatus.COMPENSATING);
+        List<ClaimSagaOrchestration> timedOutSagas = sagaRepository.findTimedOutSagas(activeStatuses, now);
 
         for (ClaimSagaOrchestration saga : timedOutSagas) {
-            saga.setStatus(SagaOrchestrationStatus.TIMED_OUT);
-            saga.setLastError("Timed out while waiting for saga step completion");
-            sagaMetricsService.incrementTimedOut();
-            publishFinalResult(saga, "Saga timed out");
+            // Atomic guarded transition: mark this saga TIMED_OUT only if it is STILL in an
+            // active status and STILL expired at this instant. A concurrent step-result (or
+            // recovery) may have already moved it (e.g. COMPLETED) since the scan read it; the
+            // guarded UPDATE then affects 0 rows and we skip it. This prevents the timeout scan
+            // from silently overwriting a newer terminal state, and it never emits a timed-out
+            // event for a transition that did not actually commit.
+            int updated = sagaRepository.markTimedOutIfStillActive(
+                    saga.getId(),
+                    SagaOrchestrationStatus.TIMED_OUT,
+                    "Timed out while waiting for saga step completion",
+                    activeStatuses,
+                    now);
+            if (updated == 1) {
+                saga.setStatus(SagaOrchestrationStatus.TIMED_OUT);
+                saga.setLastError("Timed out while waiting for saga step completion");
+                sagaMetricsService.incrementTimedOut();
+                publishFinalResult(saga, "Saga timed out");
+            }
         }
-        sagaRepository.saveAll(timedOutSagas);
+        // No saveAll: each transition is persisted by the guarded UPDATE above; a row skipped
+        // (updated == 0) preserves whatever newer state another writer committed.
     }
 
     @Transactional
     @Scheduled(fixedDelayString = "${saga.orchestrator.recovery.scan-ms:15000}")
     public void recoverFailedSagas() {
+        Instant now = Instant.now();
+        Instant eligibleBefore = now.minusSeconds(recoveryRetryDelaySeconds);
         List<ClaimSagaOrchestration> recoverable = sagaRepository.findRecoverableSagas(
                 SagaOrchestrationStatus.FAILED,
-                Instant.now().minusSeconds(recoveryRetryDelaySeconds));
+                eligibleBefore);
 
         for (ClaimSagaOrchestration saga : recoverable) {
             if (saga.getCurrentStep() == null || saga.getAttempts() >= maxRecoveryAttempts) {
                 continue;
             }
-            int nextAttempt = saga.getAttempts() + 1;
-            saga.setStatus(SagaOrchestrationStatus.IN_PROGRESS);
-            saga.setAttempts(nextAttempt);
-            saga.setExpiresAt(Instant.now().plusSeconds(timeoutSeconds));
-            sagaMetricsService.incrementRecoveryRetry();
-            dispatchStep(saga, saga.getCurrentStep(), nextAttempt);
+            // Atomic guarded claim: this saga may have been picked up concurrently by another
+            // recovery writer (SagaFailureRecoveryService scan or a manual trigger). Only the
+            // caller that wins the DB-side claim (1 row updated) transitions it to IN_PROGRESS,
+            // increments attempts, resets the expiry, and dispatches the retry. A claim of 0 rows
+            // means another writer already claimed it (or it is no longer eligible), so we must NOT
+            // mutate it here. This removes the bulk saveAll that could otherwise let a stale
+            // snapshot overwrite a newer state committed by another writer.
+            int claimed = sagaRepository.claimRecoveryForOrchestrator(
+                    saga.getId(),
+                    SagaOrchestrationStatus.FAILED,
+                    SagaOrchestrationStatus.IN_PROGRESS,
+                    now.plusSeconds(timeoutSeconds),
+                    now,
+                    eligibleBefore,
+                    maxRecoveryAttempts);
+            if (claimed == 1) {
+                saga.setStatus(SagaOrchestrationStatus.IN_PROGRESS);
+                saga.setAttempts(saga.getAttempts() + 1);
+                saga.setExpiresAt(now.plusSeconds(timeoutSeconds));
+                sagaMetricsService.incrementRecoveryRetry();
+                dispatchStep(saga, saga.getCurrentStep(), saga.getAttempts());
+            }
         }
-        sagaRepository.saveAll(recoverable);
+        // No saveAll: each transition is persisted by the guarded claim UPDATE above; a row skipped
+        // (claimed == 0) preserves whatever newer state another writer committed.
     }
 
     private ClaimSagaOrchestration createSaga(ClaimSagaOrchestrationRequestEvent request, String sagaId) {

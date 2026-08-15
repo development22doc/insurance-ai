@@ -13,6 +13,7 @@ import com.claimassist.platform.common_lib.error.ClaimStateTransitionException;
 import com.claimassist.platform.common_lib.event.ClaimUpdateRequestEvent;
 import com.claimassist.platform.common_lib.event.ClaimUpdateResponseEvent;
 import com.claimassist.platform.common_lib.observability.LoggingConstants;
+import com.claimassist.platform.common_lib.messaging.AckUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -93,7 +94,12 @@ public class ClaimUpdateConsumer {
             MDCUtility.putSpanId(spanId);
         }
 
-        long startNanos = System.nanoTime();
+        // Acknowledge the offset only after the transaction commits. The @Transactional
+        // boundary commits when this method returns; acknowledging here (before the try,
+        // inside the transaction) registers an afterCommit callback so a DB rollback leaves
+        // the offset uncommitted and Kafka redelivers per at-least-once semantics.
+        AckUtils.acknowledgeAfterCommit(ack);
+
         try {
             // Emit a lightweight Kafka receive event for observability.
             try {
@@ -137,10 +143,17 @@ public class ClaimUpdateConsumer {
                  log.info("Saga {} rejected by state machine: {}", request.sagaId(), e.getMessage());
                  processedEventRepository.save(new ProcessedEvent(request.sagaId(), LocalDateTime.now()));
                  enqueueResponse(request, false, e.getMessage());
+             } catch (org.springframework.dao.OptimisticLockingFailureException e) {
+                 // Concurrent claim update detected (JPA @Version on Claim). The
+                 // transaction rolled back, so nothing was overwritten. Mark this
+                 // saga handled and answer with a conflict so the change is not
+                 // silently lost AND is not infinitely redelivered/re-queued - the
+                 // same pattern as the state-machine rejection above.
+                 log.warn("Saga {} rejected - concurrent claim update conflict: {}", request.sagaId(), e.getMessage());
+                 processedEventRepository.save(new ProcessedEvent(request.sagaId(), LocalDateTime.now()));
+                 enqueueResponse(request, false, "This claim was updated concurrently - please retry with the latest version");
              }
          } finally {
-             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
-             ack.acknowledge();
              MDCUtility.clearAll();
          }
     }
