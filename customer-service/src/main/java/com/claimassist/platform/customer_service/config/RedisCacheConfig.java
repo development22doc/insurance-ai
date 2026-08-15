@@ -1,6 +1,8 @@
 package com.claimassist.platform.customer_service.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.cache.RedisCacheManagerBuilderCustomizer;
 import org.springframework.cache.annotation.EnableCaching;
@@ -34,8 +36,18 @@ public class RedisCacheConfig {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
+        JsonMapper.Builder mapperBuilder = JsonMapper.builder()
+                .addModule(new JavaTimeModule());
+
+        ObjectMapper objectMapper = mapperBuilder.build();
+        objectMapper = objectMapper.copy()
+                .activateDefaultTyping(
+                    objectMapper.getPolymorphicTypeValidator(),
+                    ObjectMapper.DefaultTyping.NON_FINAL
+                );
+
         GenericJackson2JsonRedisSerializer serializer =
-            new GenericJackson2JsonRedisSerializer();
+            new GenericJackson2JsonRedisSerializer(objectMapper);
 
         template.setKeySerializer(new StringRedisSerializer());
         template.setHashKeySerializer(new StringRedisSerializer());
@@ -50,8 +62,18 @@ public class RedisCacheConfig {
     @Bean
     public RedisCacheManagerBuilderCustomizer cacheManagerCustomizer() {
 
+        JsonMapper.Builder mapperBuilder = JsonMapper.builder()
+                .addModule(new JavaTimeModule());
+
+        ObjectMapper objectMapper = mapperBuilder.build();
+        objectMapper = objectMapper.copy()
+                .activateDefaultTyping(
+                    objectMapper.getPolymorphicTypeValidator(),
+                    ObjectMapper.DefaultTyping.NON_FINAL
+                );
+
         GenericJackson2JsonRedisSerializer serializer =
-            new GenericJackson2JsonRedisSerializer();
+            new GenericJackson2JsonRedisSerializer(objectMapper);
 
         RedisCacheConfiguration defaultConfig =
             RedisCacheConfiguration.defaultCacheConfig()
