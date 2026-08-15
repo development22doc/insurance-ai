@@ -26,6 +26,9 @@ jobs:
     - name: Run Maven dependency check
       run: mvn dependency-check:check -DskipTests || true
     
+    - name: Resolve Maven dependencies (warm ~/.m2 for Trivy)
+      run: mvn -B dependency:resolve -DskipTests
+    
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
@@ -35,14 +38,14 @@ jobs:
         output: 'trivy-results.sarif'
     
     - name: Upload Trivy results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      if: hashFiles('trivy-results.sarif') != ''
       with:
         sarif_file: 'trivy-results.sarif'
         category: 'trivy'
     
     - name: Run CodeQL analysis
-      uses: github/codeql-action/init@v2
+      uses: github/codeql-action/init@v3
       with:
         languages: 'java'
     
@@ -50,5 +53,5 @@ jobs:
       run: mvn clean package -DskipTests
     
     - name: Perform CodeQL analysis
-      uses: github/codeql-action/analyze@v2
+      uses: github/codeql-action/analyze@v3
 
