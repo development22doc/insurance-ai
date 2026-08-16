@@ -24,6 +24,7 @@
         <spring-cloud.version>2025.0.0</spring-cloud.version>
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
         <testcontainers.version>1.20.0</testcontainers.version>
+        <tomcat.version>10.1.57</tomcat.version>
     </properties>
 
     <dependencies>

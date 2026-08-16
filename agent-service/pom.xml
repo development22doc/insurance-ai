@@ -20,6 +20,7 @@
         <spring-ai.version>2.0.0-M2</spring-ai.version>
         <spring-cloud.version>2025.0.0</spring-cloud.version>
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
+        <tomcat.version>10.1.57</tomcat.version>
     </properties>
 
     <dependencies>
