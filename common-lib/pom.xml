@@ -103,6 +103,14 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Test-only: WebClientCorrelationFilter reflects against Spring WebFlux types to
+		     propagate correlation/trace headers on outbound requests. Production common-lib
+		     intentionally has NO WebFlux dependency; only tests need it. -->
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-webflux</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<dependencyManagement>
