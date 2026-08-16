@@ -39,11 +39,13 @@ spring:
     listener:
       observation-enabled: ${KAFKA_LISTENER_OBSERVATION_ENABLED:true}
   ai:
-    openai:
-      api-key: ${AI_API_KEY}
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
         options:
-          model: gpt-4o-mini
+          model: ${OLLAMA_MODEL:MadhuryaPasan/Qwen3-ExpertTools:1.7b-q4_K_M}
+          temperature: 0.2
+          num-ctx: 8192
   security:
     oauth2:
       client:
@@ -64,4 +66,10 @@ spring:
 security:
   service-client:
     registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+    # F-1 (Phase 1 shared-foundation fix): align with claims/customer so the
+    # internal service client is always registered and client-credentials is
+    # enabled for service-to-service calls.
+    client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+    client-secret: ${SERVICE_CLIENT_SECRET:}
+    token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
 

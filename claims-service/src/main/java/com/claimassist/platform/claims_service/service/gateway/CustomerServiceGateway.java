@@ -48,12 +48,12 @@ public class CustomerServiceGateway {
     // check in ClaimCommandServiceImpl.submitClaim still runs BEFORE this call is reached on the
     // fresh path, and replays return the cached response without invoking getPolicyCoverage.
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public PolicyCoverageDto getPolicyCoverage(Long policyId) {
-        return customerClient.getPolicyCoverage(policyId);
+    public PolicyCoverageDto getPolicyCoverage(Long policyId, Long targetUserId) {
+        return customerClient.getPolicyCoverage(policyId, targetUserId);
     }
 
     @SuppressWarnings("unused")
-    private PolicyCoverageDto policyFallback(Long policyId, Throwable t) {
+    private PolicyCoverageDto policyFallback(Long policyId, Long targetUserId, Throwable t) {
         log.error("customer-service unavailable while verifying policy {}: {}", policyId, t.getMessage());
         try {
             eventLogger.logBusinessEvent(null, null, java.util.Map.of(

@@ -1,0 +1,12 @@
+-- V6: Drop the redundant index on refresh_tokens.token.
+--
+-- V3 created refresh_tokens.token as "VARCHAR(512) NOT NULL UNIQUE". The UNIQUE
+-- constraint already materializes a unique B-tree index on token, so the
+-- explicit CREATE INDEX idx_refresh_tokens_token in V3 is a duplicate index.
+-- Both indexes serve the same "WHERE token = ?" predicate used by
+-- RefreshTokenRepository.findByToken and consumeForRotation, so the extra one
+-- adds only write overhead and storage with no query benefit.
+--
+-- Dropping it is backward compatible: PostgreSQL drops only the redundant index
+-- and the UNIQUE constraint index (idx_refresh_tokens_token_key) remains.
+DROP INDEX IF EXISTS idx_refresh_tokens_token;

@@ -27,7 +27,15 @@ public class RedisCacheConfig {
     public static final String POLICY_COVERAGE_CACHE = "policyCoverage";
     public static final String MY_POLICIES_CACHE = "myPolicies";
     public static final String CUSTOMER_LOOKUP_CACHE = "customerLookup";
-    public static final String REFERENCE_DATA_CACHE = "referenceData";
+
+    /** POLICY_COVERAGE_CACHE TTL: hottest read path; correctness-sensitive enough that staleness must stay bounded. */
+    private static final Duration POLICY_COVERAGE_TTL = Duration.ofMinutes(10);
+    /** MY_POLICIES_CACHE TTL: the user's policy list is moderately volatile (create/update/delete), keep it short. */
+    private static final Duration MY_POLICIES_TTL = Duration.ofMinutes(5);
+    /** CUSTOMER_LOOKUP_CACHE TTL: identity record; username/fullName rarely change but are user-facing. */
+    private static final Duration CUSTOMER_LOOKUP_TTL = Duration.ofMinutes(10);
+    /** Fallback TTL for any cache with no explicit config. */
+    private static final Duration DEFAULT_TTL = Duration.ofMinutes(10);
 
     @Bean
     public RedisTemplate<String, Object> redisTemplate(
@@ -43,7 +51,14 @@ public class RedisCacheConfig {
         objectMapper = objectMapper.copy()
                 .activateDefaultTyping(
                     objectMapper.getPolymorphicTypeValidator(),
-                    ObjectMapper.DefaultTyping.NON_FINAL
+                    // F-3 (Phase 2): use EVERYTHING (not NON_FINAL) so final
+                    // `record` DTOs (PolicyCoverageDto, PolicyResponse,
+                    // CoveragePlanSnapshot) get @class type metadata. NON_FINAL
+                    // omits type info for final types, so records could never be
+                    // deserialized back out of Redis. EVERYTHING is the same
+                    // default Spring Data Redis's own GenericJackson2JsonRedisSerializer
+                    // uses; the (non-final) Customer entity is unaffected.
+                    ObjectMapper.DefaultTyping.EVERYTHING
                 );
 
         GenericJackson2JsonRedisSerializer serializer =
@@ -69,7 +84,9 @@ public class RedisCacheConfig {
         objectMapper = objectMapper.copy()
                 .activateDefaultTyping(
                     objectMapper.getPolymorphicTypeValidator(),
-                    ObjectMapper.DefaultTyping.NON_FINAL
+                    // F-3 (Phase 2): EVERYTHING typing so final records round-trip
+                    // (see redisTemplate bean above).
+                    ObjectMapper.DefaultTyping.EVERYTHING
                 );
 
         GenericJackson2JsonRedisSerializer serializer =
@@ -77,7 +94,7 @@ public class RedisCacheConfig {
 
         RedisCacheConfiguration defaultConfig =
             RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(Duration.ofMinutes(10))
+                .entryTtl(DEFAULT_TTL)
                 .serializeKeysWith(
                     RedisSerializationContext.SerializationPair
                         .fromSerializer(new StringRedisSerializer()))
@@ -89,8 +106,13 @@ public class RedisCacheConfig {
             .cacheDefaults(defaultConfig)
             .withCacheConfiguration(
                 POLICY_COVERAGE_CACHE,
-                defaultConfig.entryTtl(Duration.ofMinutes(10))
-            );
+                defaultConfig.entryTtl(POLICY_COVERAGE_TTL))
+            .withCacheConfiguration(
+                MY_POLICIES_CACHE,
+                defaultConfig.entryTtl(MY_POLICIES_TTL))
+            .withCacheConfiguration(
+                CUSTOMER_LOOKUP_CACHE,
+                defaultConfig.entryTtl(CUSTOMER_LOOKUP_TTL));
     }
 
     /**

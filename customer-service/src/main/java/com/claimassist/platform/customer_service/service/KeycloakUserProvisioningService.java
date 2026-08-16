@@ -45,7 +45,7 @@ import java.util.Map;
 public class KeycloakUserProvisioningService {
 
     private final KeycloakProperties keycloakProperties;
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
     private final EventLogger eventLogger;
     private final PerformanceLogger performanceLogger;
 
