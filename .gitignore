@@ -19,6 +19,20 @@ failsafe-reports/
 *.ipr
 
 # ============================================================
+# Eclipse
+# ============================================================
+
+.classpath
+.project
+.settings/
+
+# ============================================================
+# VS Code
+# ============================================================
+
+.vscode/
+
+# ============================================================
 # Logs / Runtime output
 # ============================================================
 
@@ -31,6 +45,8 @@ startup-log.txt
 final-build.log
 build-*.log
 *build-*.txt
+
+# Permanently deleted project file
 master_change_log.md
 
 # ============================================================
@@ -42,6 +58,8 @@ master_change_log.md
 !.env.example
 
 # Local Spring configuration containing secrets
+# Uncomment these if application-local files contain
+# machine-specific credentials/secrets.
 #application-local.yml
 #application-local.yaml
 
@@ -75,4 +93,15 @@ Thumbs.db
 
 test-output/
 coverage/
-doc
+
+# ============================================================
+# Local phase progress files
+# ============================================================
+
+phase1_task*_progress.md
+
+# ============================================================
+# Documentation/tool-generated local files
+# ============================================================
+
+doc/
