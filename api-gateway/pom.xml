@@ -127,6 +127,21 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
+			<dependency>
+				<groupId>org.springframework.cloud</groupId>
+				<artifactId>spring-cloud-config-client</artifactId>
+				<version>4.3.3</version>
+			</dependency>
+			<!-- Netty 4.1.135.Final fixed by 4.1.136.Final (CVE-2026-56817 / 56745 /
+			     56820 / 59901 / 55851). Imported BOM overrides the Spring Boot BOM's
+			     4.1.135 pin so reactor-netty netty artifacts align on the secure line. -->
+			<dependency>
+				<groupId>io.netty</groupId>
+				<artifactId>netty-bom</artifactId>
+				<version>4.1.136.Final</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 

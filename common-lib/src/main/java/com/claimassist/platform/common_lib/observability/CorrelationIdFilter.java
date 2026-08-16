@@ -196,21 +196,36 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         return value == null || value.isBlank() ? "-" : value;
     }
 
+    /**
+     * Escape a value for safe inclusion in a structured (JSON) log line.
+     * Backslash and double-quote are escaped for JSON correctness; CR/LF/TAB and
+     * other control characters (which may arrive in attacker-controlled request
+     * headers such as the correlation-id) are neutralized so they cannot inject
+     * forged log lines or break log structure (CWE-117 / CWE-93).
+     */
     private String escape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    // helper to read MDC values using the existing utility without exposing MDC
-    private String MDCUtilityRead(String key) {
-        // try the known constants
-        switch (key) {
-            case "traceId":
-                return org.slf4j.MDC.get(LoggingConstants.MDC_TRACE_ID);
-            case "spanId":
-                return org.slf4j.MDC.get(LoggingConstants.MDC_SPAN_ID);
-            default:
-                return org.slf4j.MDC.get(key);
+        if (value == null) {
+            return "";
         }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20 || c == 0x7f) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     // Attempt to resolve traceId using available tracer when MDC is blank.
