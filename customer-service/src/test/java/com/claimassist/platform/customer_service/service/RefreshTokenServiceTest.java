@@ -1,17 +1,13 @@
 package com.claimassist.platform.customer_service.service;
 
 import com.claimassist.platform.common_lib.error.BadRequestException;
-import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.claimassist.platform.common_lib.observability.PerformanceLogger;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.claimassist.platform.customer_service.entity.Customer;
 import com.claimassist.platform.customer_service.entity.RefreshToken;
 import com.claimassist.platform.customer_service.repository.RefreshTokenRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -19,353 +15,120 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.util.ReflectionTestUtils.setField;
 
-@ExtendWith(MockitoExtension.class)
+/**
+ * Phase 2 refresh-token lifecycle tests: the locally stored token IS the Keycloak
+ * token value, rotation is atomic (single-use), and revocation/expiry are enforced.
+ */
 class RefreshTokenServiceTest {
 
-    @Mock
-    private RefreshTokenRepository refreshTokenRepository;
-
-    @Mock
-    private EventLogger eventLogger;
-
-    @Mock
-    private PerformanceLogger performanceLogger;
-
-    @InjectMocks
-    private RefreshTokenService refreshTokenService;
-
-    private Customer testCustomer;
-    private RefreshToken testRefreshToken;
+    private RefreshTokenRepository repo;
+    private RefreshTokenService service;
+    private Customer customer;
 
     @BeforeEach
     void setUp() {
-        testCustomer = Customer.builder()
-                .id(1L)
-                .username("testuser@example.com")
-                .fullName("Test User")
-                .keycloakId("keycloak-123")
-                .build();
-
-        Instant now = Instant.now();
-        testRefreshToken = RefreshToken.builder()
-                .id(1L)
-                .token("existing-token")
-                .customer(testCustomer)
-                .issuedAt(now)
-                .expiresAt(now.plusSeconds(1209600)) // 14 days
-                .revoked(false)
-                .build();
+        repo = mock(RefreshTokenRepository.class);
+        service = new RefreshTokenService(repo, mock(EventLogger.class), mock(PerformanceLogger.class));
+        setField(service, "refreshTtlSeconds", 1209600L);
+        customer = Customer.builder().id(1L).username("alice").fullName("Alice").build();
     }
 
     @Test
-    void createRefreshToken_WithValidCustomer_ShouldCreateAndSaveToken() {
-        // Given
-        RefreshToken savedToken = RefreshToken.builder()
-                .id(1L)
-                .token("generated-token")
-                .customer(testCustomer)
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(1209600))
-                .revoked(false)
-                .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(savedToken);
+    void createStoresTheActualKeycloakTokenValue() {
+        Instant now = Instant.parse("2026-08-16T00:00:00Z");
+        RefreshToken built = RefreshToken.builder().token("KEYCLOAK-RT").customer(customer)
+                .issuedAt(now).expiresAt(now.plusSeconds(300)).revoked(false).build();
+        when(repo.save(any(RefreshToken.class))).thenReturn(built);
 
-        // When
-        RefreshToken result = refreshTokenService.createRefreshToken(testCustomer);
+        RefreshToken saved = service.createRefreshToken(customer, "KEYCLOAK-RT", now, now.plusSeconds(300));
 
-        // Then
-        assertThat(result).isNotNull();
-        assertThat(result.getToken()).isNotEmpty();
-        assertThat(result.getCustomer()).isEqualTo(testCustomer);
-        assertThat(result.isRevoked()).isFalse();
-        assertThat(result.getIssuedAt()).isNotNull();
-        assertThat(result.getExpiresAt()).isAfter(result.getIssuedAt());
-        verify(refreshTokenRepository).save(any(RefreshToken.class));
-        verify(eventLogger).logDatabaseEvent(anyString(), anyString(), anyLong(), any());
-        verify(performanceLogger).log(eq("REPOSITORY"), eq("repository.refresh-token.save"), anyLong(), any());
+        assertThat(saved.getToken()).isEqualTo("KEYCLOAK-RT");
+        assertThat(saved.getCustomer().getId()).isEqualTo(1L);
     }
 
     @Test
-    void createRefreshToken_ShouldGenerateUniqueTokens() {
-        // Given
-        when(refreshTokenRepository.save(any(RefreshToken.class)))
-                .thenAnswer(invocation -> {
-                    RefreshToken token = invocation.getArgument(0);
-                    token.setId(1L);
-                    return token;
-                });
-
-        // When
-        RefreshToken token1 = refreshTokenService.createRefreshToken(testCustomer);
-        RefreshToken token2 = refreshTokenService.createRefreshToken(testCustomer);
-
-        // Then
-        assertThat(token1.getToken()).isNotEqualTo(token2.getToken());
-        verify(refreshTokenRepository, times(2)).save(any(RefreshToken.class));
+    void createRejectsBlankTokenSoNoDisconnectedTokenIsStored() {
+        assertThatThrownBy(() -> service.createRefreshToken(customer, "  ", Instant.now(), null))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(repo, never()).save(any());
     }
 
     @Test
-    void createRefreshToken_ShouldSetCorrectExpirationTime() {
-        // Given
-        RefreshToken savedToken = RefreshToken.builder()
-                .id(1L)
-                .token("generated-token")
-                .customer(testCustomer)
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(1209600))
-                .revoked(false)
-                .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(savedToken);
+    void revokeMarksTheMatchingTokenRevoked() {
+        RefreshToken rt = RefreshToken.builder().id(9L).token("KEYCLOAK-RT")
+                .customer(customer).revoked(false).build();
+        when(repo.findByToken("KEYCLOAK-RT")).thenReturn(Optional.of(rt));
+        when(repo.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // When
-        RefreshToken result = refreshTokenService.createRefreshToken(testCustomer);
+        service.revoke("KEYCLOAK-RT");
 
-        // Then
-        assertThat(result.getIssuedAt()).isNotNull();
-        assertThat(result.getExpiresAt()).isNotNull();
-        assertThat(result.getExpiresAt()).isAfter(result.getIssuedAt());
+        assertThat(rt.isRevoked()).isTrue();
     }
 
     @Test
-    void revoke_WithValidToken_ShouldRevokeToken() {
-        // Given
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(testRefreshToken);
+    void rotateIfPresentRotatesOldKeycloakTokenToNewKeycloakToken() {
+        Instant now = Instant.parse("2026-08-16T00:00:00Z");
+        RefreshToken old = RefreshToken.builder().id(1L).token("OLD-KEYCLOAK-RT")
+                .customer(customer).revoked(false).expiresAt(now.plusSeconds(300)).build();
+        when(repo.findByToken("OLD-KEYCLOAK-RT")).thenReturn(Optional.of(old));
+        when(repo.consumeForRotation("OLD-KEYCLOAK-RT", "NEW-KEYCLOAK-RT", now)).thenReturn(1);
+        when(repo.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // When
-        refreshTokenService.revoke("existing-token");
+        Optional<RefreshToken> rotated = service.rotateIfPresent(
+                "OLD-KEYCLOAK-RT", "NEW-KEYCLOAK-RT", now, now.plusSeconds(600));
 
-        // Then
-        assertThat(testRefreshToken.isRevoked()).isTrue();
-        verify(refreshTokenRepository).findByToken("existing-token");
-        verify(refreshTokenRepository).save(testRefreshToken);
-        verify(eventLogger).logDatabaseEvent(anyString(), anyString(), anyLong(), any());
-        verify(performanceLogger).log(eq("REPOSITORY"), eq("repository.refresh-token.revoke"), anyLong(), any());
+        assertThat(rotated).isPresent();
+        assertThat(rotated.get().getToken()).isEqualTo("NEW-KEYCLOAK-RT");
+        assertThat(rotated.get().getCustomer().getId()).isEqualTo(1L);
+        verify(repo).consumeForRotation("OLD-KEYCLOAK-RT", "NEW-KEYCLOAK-RT", now);
     }
 
     @Test
-    void revoke_WithNonExistentToken_ShouldDoNothing() {
-        // Given
-        when(refreshTokenRepository.findByToken("non-existent-token")).thenReturn(Optional.empty());
+    void rotateIfPresentRejectsRevokedLocalRecord() {
+        Instant now = Instant.parse("2026-08-16T00:00:00Z");
+        RefreshToken revoked = RefreshToken.builder().id(1L).token("USED")
+                .customer(customer).revoked(true).build();
+        when(repo.findByToken("USED")).thenReturn(Optional.of(revoked));
+        when(repo.consumeForRotation(any(), any(), any())).thenReturn(0);
 
-        // When
-        refreshTokenService.revoke("non-existent-token");
-
-        // Then
-        verify(refreshTokenRepository).findByToken("non-existent-token");
-        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
-        verify(eventLogger, never()).logDatabaseEvent(anyString(), anyString(), anyLong(), any());
-        verify(performanceLogger, never()).log(anyString(), anyString(), anyLong(), any());
-    }
-
-    @Test
-    void validateAndRotate_WithValidToken_ShouldRotateSuccessfully() {
-        // Given
-        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
-        RefreshToken newToken = RefreshToken.builder()
-                .id(2L)
-                .token("new-rotated-token")
-                .customer(testCustomer)
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(1209600))
-                .revoked(false)
-                .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(newToken);
-
-        // When
-        RefreshToken result = refreshTokenService.validateAndRotate("existing-token");
-
-        // Then
-        assertThat(result).isNotNull();
-        assertThat(result.getToken()).isNotEqualTo("existing-token");
-        assertThat(result.isRevoked()).isFalse();
-        assertThat(result.getCustomer()).isEqualTo(testCustomer);
-        verify(refreshTokenRepository).consumeForRotation(eq("existing-token"), anyString(), any());
-        verify(refreshTokenRepository).findByToken("existing-token");
-        verify(refreshTokenRepository, times(1)).save(any(RefreshToken.class));
-        verify(eventLogger, times(1)).logDatabaseEvent(anyString(), anyString(), anyLong(), any());
-        verify(eventLogger).logBusinessEvent(anyString(), anyString(), any());
-        verify(performanceLogger, times(3)).log(anyString(), anyString(), anyLong(), any());
-    }
-
-    @Test
-    void validateAndRotate_ShouldMarkOldTokenAsRevoked() {
-        // Given: the CAS consumeForRotation returns 1, signalling this caller won the race.
-        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
-        RefreshToken newToken = RefreshToken.builder()
-                .id(2L)
-                .token("new-rotated-token")
-                .customer(testCustomer)
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(1209600))
-                .revoked(false)
-                .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(newToken);
-
-        // When
-        RefreshToken result = refreshTokenService.validateAndRotate("existing-token");
-
-        // Then
-        // The old token is consumed/revoked atomically by the CAS UPDATE rather than a save.
-        verify(refreshTokenRepository).consumeForRotation(eq("existing-token"), anyString(), any());
-        assertThat(result).isNotNull();
-        assertThat(result.getToken()).isEqualTo("new-rotated-token");
-        verify(refreshTokenRepository, never()).save(eq(testRefreshToken));
-    }
-
-    @Test
-    void validateAndRotate_WithNonExistentToken_ShouldThrowBadRequestException() {
-        // Given
-        when(refreshTokenRepository.findByToken("non-existent-token")).thenReturn(Optional.empty());
-
-        // When & Then
-        assertThatThrownBy(() -> refreshTokenService.validateAndRotate("non-existent-token"))
+        assertThatThrownBy(() -> service.rotateIfPresent("USED", "NEW", now, now.plusSeconds(600)))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("Invalid refresh token");
-
-        verify(refreshTokenRepository).findByToken("non-existent-token");
-        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+                .hasMessageContaining("revoked");
     }
 
     @Test
-    void validateAndRotate_WithRevokedToken_ShouldThrowBadRequestException() {
-        // Given
-        testRefreshToken.setRevoked(true);
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
+    void rotateIfPresentRejectsExpiredLocalRecord() {
+        Instant now = Instant.parse("2026-08-16T00:00:00Z");
+        RefreshToken expired = RefreshToken.builder().id(1L).token("EXPIRED")
+                .customer(customer).revoked(false).expiresAt(now.minusSeconds(1)).build();
+        when(repo.findByToken("EXPIRED")).thenReturn(Optional.of(expired));
+        when(repo.consumeForRotation(any(), any(), any())).thenReturn(0);
 
-        // When & Then
-        assertThatThrownBy(() -> refreshTokenService.validateAndRotate("existing-token"))
+        assertThatThrownBy(() -> service.rotateIfPresent("EXPIRED", "NEW", now, now.plusSeconds(600)))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("Refresh token revoked");
-
-        verify(refreshTokenRepository).findByToken("existing-token");
-        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+                .hasMessageContaining("expired");
     }
 
     @Test
-    void validateAndRotate_WithExpiredToken_ShouldThrowBadRequestException() {
-        // Given
-        Instant past = Instant.now().minusSeconds(3600); // 1 hour ago
-        testRefreshToken.setIssuedAt(past.minusSeconds(1209600));
-        testRefreshToken.setExpiresAt(past);
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
+    void rotateIfPresentIsEmptyWhenNoLocalRecord() {
+        when(repo.findByToken("UNKNOWN")).thenReturn(Optional.empty());
 
-        // When & Then
-        assertThatThrownBy(() -> refreshTokenService.validateAndRotate("existing-token"))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessage("Refresh token expired");
-
-        verify(refreshTokenRepository).findByToken("existing-token");
-        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+        assertThat(service.rotateIfPresent("UNKNOWN", "NEW", Instant.now(), null)).isEmpty();
+        verify(repo, never()).consumeForRotation(any(), any(), any());
     }
 
     @Test
-    void validateAndRotate_ShouldGenerateNewTokenWithNewExpiration() {
-        // Given
-        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
-        RefreshToken newToken = RefreshToken.builder()
-                .id(2L)
-                .token("new-rotated-token")
-                .customer(testCustomer)
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(1209600))
-                .revoked(false)
-                .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(newToken);
-
-        // When
-        RefreshToken result = refreshTokenService.validateAndRotate("existing-token");
-
-        // Then
-        assertThat(result.getToken()).isNotEqualTo("existing-token");
-        assertThat(result.getIssuedAt()).isNotNull();
-        assertThat(result.getExpiresAt()).isNotNull();
-        assertThat(result.getExpiresAt()).isAfter(result.getIssuedAt());
-    }
-
-    @Test
-    void validateAndRotate_ShouldLogPerformanceMetrics() {
-        // Given
-        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
-        RefreshToken newToken = RefreshToken.builder()
-                .id(2L)
-                .token("new-rotated-token")
-                .customer(testCustomer)
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(1209600))
-                .revoked(false)
-                .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(newToken);
-
-        // When
-        refreshTokenService.validateAndRotate("existing-token");
-
-        // Then
-        verify(performanceLogger).log(eq("BUSINESS"), eq("refresh.token.validation"), anyLong(), any());
-        verify(performanceLogger).log(eq("REPOSITORY"), eq("repository.refresh-token.save"), anyLong(), any());
-        verify(performanceLogger).log(eq("BUSINESS"), eq("refresh.token.rotation"), anyLong(), any());
-    }
-
-    @Test
-    void validateAndRotate_ShouldLogBusinessEvent() {
-        // Given
-        when(refreshTokenRepository.consumeForRotation(anyString(), anyString(), any())).thenReturn(1);
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
-        RefreshToken newToken = RefreshToken.builder()
-                .id(2L)
-                .token("new-rotated-token")
-                .customer(testCustomer)
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(1209600))
-                .revoked(false)
-                .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(newToken);
-
-        // When
-        refreshTokenService.validateAndRotate("existing-token");
-
-        // Then
-        verify(eventLogger).logBusinessEvent(eq("customer-service"), eq("customer-service"), any());
-    }
-
-    @Test
-    void createRefreshToken_ShouldLogDatabaseEvent() {
-        // Given
-        RefreshToken savedToken = RefreshToken.builder()
-                .id(1L)
-                .token("generated-token")
-                .customer(testCustomer)
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(1209600))
-                .revoked(false)
-                .build();
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(savedToken);
-
-        // When
-        refreshTokenService.createRefreshToken(testCustomer);
-
-        // Then
-        verify(eventLogger).logDatabaseEvent(eq("customer-service"), eq("customer-service"), anyLong(), any());
-    }
-
-    @Test
-    void revoke_ShouldLogDatabaseEvent() {
-        // Given
-        when(refreshTokenRepository.findByToken("existing-token")).thenReturn(Optional.of(testRefreshToken));
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(testRefreshToken);
-
-        // When
-        refreshTokenService.revoke("existing-token");
-
-        // Then
-        verify(eventLogger).logDatabaseEvent(eq("customer-service"), eq("customer-service"), anyLong(), any());
+    void rotateIfPresentIsEmptyWhenKeycloakDoesNotRotate() {
+        Instant now = Instant.parse("2026-08-16T00:00:00Z");
+        // Same token back from Keycloak = no rotation; never consume locally.
+        assertThat(service.rotateIfPresent("SAME", "SAME", now, now.plusSeconds(300))).isEmpty();
+        verify(repo, never()).findByToken(any());
+        verify(repo, never()).consumeForRotation(any(), any(), any());
     }
 }

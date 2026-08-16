@@ -82,7 +82,7 @@ public class ClaimCommandServiceImpl implements ClaimCommandService {
         // customer-service considers this policy valid, which is the closest this
         // system gets to "does this policy belong to this caller" without
         // duplicating customer-service's own ownership table here.
-        PolicyCoverageDto policy = customerServiceGateway.getPolicyCoverage(command.policyId());
+        PolicyCoverageDto policy = customerServiceGateway.getPolicyCoverage(command.policyId(), command.submittedByUserId());
         if (!"ACTIVE".equals(policy.status())) {
             throw new BadRequestException("Cannot file a claim against a policy that is not ACTIVE (current status: " + policy.status() + ")");
         }

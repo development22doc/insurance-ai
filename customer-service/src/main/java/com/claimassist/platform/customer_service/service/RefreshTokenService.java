@@ -13,11 +13,28 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Map;
+import java.util.Optional;
 
+/**
+ * Persists and rotates the Keycloak-issued refresh token lifecycle.
+ *
+ * <p>Phase 2 fixed a critical disconnect: previously a <em>locally generated</em>
+ * random token was stored, while the client kept the Keycloak token, so local
+ * validation/rotation/revocation could never match the presented token and
+ * {@code /auth/refresh} always failed. Keycloak is authoritative for the OAuth2
+ * lifecycle, so this service now persists and rotates the <b>actual Keycloak
+ * refresh token value</b>.
+ *
+ * <p>Rotation is enforced by the atomic compare-and-set (CAS) in
+ * {@link RefreshTokenRepository#consumeForRotation}: a single conditional UPDATE
+ * revokes the old token only if still valid, so a given refresh token can be
+ * consumed exactly once (replay protection / concurrent-refresh guard). The
+ * CAS and creation of the rotated token run in ONE transaction; no external
+ * (Keycloak) call happens inside it - the caller performs the Keycloak exchange
+ * first, then invokes this service. Refresh tokens are never logged.
+ */
 @Service
 @RequiredArgsConstructor
 public class RefreshTokenService {
@@ -26,26 +43,33 @@ public class RefreshTokenService {
     private final EventLogger eventLogger;
     private final PerformanceLogger performanceLogger;
 
-    private final SecureRandom secureRandom = new SecureRandom();
-
     @Value("${security.refresh-token.ttl-seconds:1209600}") // 14 days default
     private long refreshTtlSeconds;
 
-    public RefreshToken createRefreshToken(Customer customer) {
-        String token = generateToken();
-        Instant now = Instant.now();
+    /**
+     * Persists a Keycloak-issued refresh token (the exact value the client will
+     * present on refresh/logout). A null/blank value is rejected rather than
+     * silently stored, so a disconnected local token can never be created.
+     */
+    public RefreshToken createRefreshToken(Customer customer, String tokenValue,
+                                           Instant issuedAt, Instant expiresAt) {
+        if (tokenValue == null || tokenValue.isBlank()) {
+            throw new IllegalArgumentException("Cannot persist a blank Keycloak refresh token");
+        }
+        Instant now = issuedAt != null ? issuedAt : Instant.now();
+        Instant exp = expiresAt != null ? expiresAt : now.plusSeconds(refreshTtlSeconds);
         RefreshToken rt = RefreshToken.builder()
-                .token(token)
+                .token(tokenValue)
                 .customer(customer)
                 .issuedAt(now)
-                .expiresAt(now.plusSeconds(refreshTtlSeconds))
+                .expiresAt(exp)
                 .revoked(false)
                 .build();
 
         long start = System.currentTimeMillis();
         RefreshToken saved = refreshTokenRepository.save(rt);
         long duration = System.currentTimeMillis() - start;
-        Map<String,Object> details = new java.util.HashMap<>();
+        Map<String, Object> details = new java.util.HashMap<>();
         details.put("event", "REFRESH_TOKEN_SAVED");
         details.put("customerId", customer.getId());
         details.put("executionTimeMs", duration);
@@ -61,73 +85,63 @@ public class RefreshTokenService {
             long start = System.currentTimeMillis();
             refreshTokenRepository.save(rt);
             long duration = System.currentTimeMillis() - start;
-            Map<String,Object> details = new java.util.HashMap<>();
-            details.put("event","REFRESH_TOKEN_REVOKED");
+            Map<String, Object> details = new java.util.HashMap<>();
+            details.put("event", "REFRESH_TOKEN_REVOKED");
             details.put("customerId", rt.getCustomer().getId());
             details.put("executionTimeMs", duration);
             eventLogger.logDatabaseEvent("customer-service", "customer-service", duration, details);
-            performanceLogger.log("REPOSITORY","repository.refresh-token.revoke",duration,
-                    Map.of("customerId",rt.getCustomer().getId()));
+            performanceLogger.log("REPOSITORY", "repository.refresh-token.revoke", duration,
+                    Map.of("customerId", rt.getCustomer().getId()));
         });
     }
 
     /**
-     * Validates and rotates a refresh token using an atomic compare-and-set (CAS).
+     * Atomically rotates the <b>old</b> Keycloak refresh token to the <b>new</b>
+     * Keycloak refresh token Keycloak issued, using the single conditional UPDATE
+     * as the authoritative concurrency gate.
      *
-     * <p>The single conditional UPDATE ({@link RefreshTokenRepository#consumeForRotation})
-     * is the authoritative concurrency gate: it revokes the token only if it is still
-     * valid (not revoked, not expired). Exactly one concurrent request can affect 1 row;
-     * every other concurrent request affects 0 rows and is rejected below. This closes the
-     * double-rotation race where two requests could both pass a read-then-check and both
-     * rotate the same token.
-     *
-     * <p>The CAS + creation of the rotated token run in ONE transaction, so if creating the
-     * new token fails the whole transaction rolls back (the old token is not left revoked
-     * with no replacement). No pessimistic lock is held and no external network call happens
-     * inside this transaction.
+     * <p>Call AFTER the Keycloak exchange (never inside the DB transaction). The
+     * returned Optional is empty when there is no local record for the token
+     * (e.g. a token minted before persistence was added) - Keycloak remains
+     * authoritative in that case and the refresh is allowed. When a local record
+     * <em>does</em> exist but is already revoked/expired/used, this throws, which
+     * is the local single-use/expiry guard on top of Keycloak's own rotation.
      */
     @Transactional
-    public RefreshToken validateAndRotate(String token) {
+    public Optional<RefreshToken> rotateIfPresent(String oldToken, String newToken,
+                                                  Instant now, Instant newExpiresAt) {
+        if (newToken == null || newToken.isBlank() || newToken.equals(oldToken)) {
+            return Optional.empty();
+        }
         long start = System.currentTimeMillis();
-        Instant now = Instant.now();
-        String newToken = generateToken();
 
-        int consumed = refreshTokenRepository.consumeForRotation(token, newToken, now);
+        RefreshToken existing = refreshTokenRepository.findByToken(oldToken).orElse(null);
+        if (existing == null) {
+            // No local record - Keycloak is authoritative; nothing to rotate locally.
+            return Optional.empty();
+        }
+
+        int consumed = refreshTokenRepository.consumeForRotation(oldToken, newToken, now);
         if (consumed == 0) {
-            // The atomic gate rejected the token (missing, expired, revoked, or already
-            // consumed by a concurrent request). Re-read ONLY to pick a consistent,
-            // non-leaky error message - the CAS above is the real guard, this read is not
-            // used to decide success.
-            RefreshToken existing = refreshTokenRepository.findByToken(token).orElse(null);
-            if (existing == null) {
-                throw new BadRequestException("Invalid refresh token");
-            }
             if (existing.isRevoked()) {
                 throw new BadRequestException("Refresh token revoked");
             }
             throw new BadRequestException("Refresh token expired");
         }
 
-        // This request won the CAS - it is the sole consumer. Load to build the rotated token.
-        RefreshToken existing = refreshTokenRepository.findByToken(token)
-                .orElseThrow(() -> new BadRequestException("Invalid refresh token"));
-
-        long validationDuration = System.currentTimeMillis() - start;
-        performanceLogger.log("BUSINESS", "refresh.token.validation", validationDuration,
-                Map.of("customerId", existing.getCustomer().getId()));
-
+        Instant exp = newExpiresAt != null ? newExpiresAt : now.plusSeconds(refreshTtlSeconds);
         RefreshToken rotated = RefreshToken.builder()
                 .token(newToken)
                 .customer(existing.getCustomer())
                 .issuedAt(now)
-                .expiresAt(now.plusSeconds(refreshTtlSeconds))
+                .expiresAt(exp)
                 .revoked(false)
                 .build();
 
         long saveStart = System.currentTimeMillis();
         RefreshToken saved = refreshTokenRepository.save(rotated);
         long saveDuration = System.currentTimeMillis() - saveStart;
-        Map<String,Object> saveDetails = new java.util.HashMap<>();
+        Map<String, Object> saveDetails = new java.util.HashMap<>();
         saveDetails.put("event", "REFRESH_TOKEN_SAVED");
         saveDetails.put("customerId", existing.getCustomer().getId());
         saveDetails.put("executionTimeMs", saveDuration);
@@ -135,24 +149,17 @@ public class RefreshTokenService {
         performanceLogger.log("REPOSITORY", "repository.refresh-token.save", saveDuration,
                 Map.of("customerId", existing.getCustomer().getId()));
 
-         long totalDuration = System.currentTimeMillis() - start;
-         Map<String,Object> rotatedDetails = new java.util.HashMap<>();
-         rotatedDetails.put("event","TOKEN_ROTATED");
-         rotatedDetails.put("customerId", existing.getCustomer().getId());
-         rotatedDetails.put("executionTimeMs", totalDuration);
-         rotatedDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-         eventLogger.logBusinessEvent("customer-service","customer-service",rotatedDetails);
-        performanceLogger.log("BUSINESS","refresh.token.rotation", totalDuration, Map.of("customerId", existing.getCustomer().getId()));
+        long totalDuration = System.currentTimeMillis() - start;
+        Map<String, Object> rotatedDetails = new java.util.HashMap<>();
+        rotatedDetails.put("event", "TOKEN_ROTATED");
+        rotatedDetails.put("customerId", existing.getCustomer().getId());
+        rotatedDetails.put("executionTimeMs", totalDuration);
+        rotatedDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
+        eventLogger.logBusinessEvent("customer-service", "customer-service", rotatedDetails);
+        performanceLogger.log("BUSINESS", "refresh.token.rotation", totalDuration,
+                Map.of("customerId", existing.getCustomer().getId()));
 
-        return saved;
-    }
-
-
-    private String generateToken() {
-        byte[] bytes = new byte[64];
-        secureRandom.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        return Optional.of(saved);
     }
 
 }
-

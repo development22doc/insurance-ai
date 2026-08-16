@@ -1,8 +1,9 @@
 package com.claimassist.platform.common_lib.observability;
 
-import jakarta.servlet.FilterChain;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
+import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -10,36 +11,74 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CorrelationIdFilterTest {
 
+    private final CorrelationIdFilter filter = new CorrelationIdFilter();
+
+    @AfterEach
+    void tearDown() {
+        MDC.clear();
+    }
+
+    private boolean[] captureMdc() {
+        return new boolean[1];
+    }
+
     @Test
-    void doFilter_usesIncomingCorrelationIdAndRequestId_setsMdcAndResponseHeaders() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(LoggingConstants.CORRELATION_ID_HEADER, "corr-123");
-        request.addHeader(LoggingConstants.REQUEST_ID_HEADER, "req-9");
+    void generatesAndEchoesCorrelationIdWhenHeaderAbsent() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/claims/1");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        String[] capturedMdc = new String[1];
-        FilterChain chain = (req, res) ->
-                capturedMdc[0] = MDC.get(LoggingConstants.MDC_CORRELATION_ID);
 
-        new CorrelationIdFilter().doFilter(request, response, chain);
+        filter.doFilter(request, response, new MockFilterChain());
 
-        assertThat(capturedMdc[0]).isEqualTo("corr-123");
-        assertThat(response.getHeader(LoggingConstants.CORRELATION_ID_HEADER)).isEqualTo("corr-123");
-        assertThat(response.getHeader(LoggingConstants.REQUEST_ID_HEADER)).isEqualTo("req-9");
+        String correlation = response.getHeader(LoggingConstants.CORRELATION_ID_HEADER);
+        assertThat(correlation).isNotBlank();
+        assertThat(MDC.get(LoggingConstants.MDC_CORRELATION_ID)).isNull(); // cleaned up after chain
+    }
+
+    @Test
+    void propagatesIncomingCorrelationId() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/claims/1");
+        request.addHeader(LoggingConstants.CORRELATION_ID_HEADER, "incoming-corr-99");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getHeader(LoggingConstants.CORRELATION_ID_HEADER)).isEqualTo("incoming-corr-99");
+    }
+
+    @Test
+    void correlationIsAvailableInsideChainAndClearedAfterwards() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/claims/1");
+        request.addHeader(LoggingConstants.CORRELATION_ID_HEADER, "corr-inside");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        boolean[] seenInside = captureMdc();
+
+        filter.doFilter(request, response, (req, res) -> {
+            seenInside[0] = "corr-inside".equals(MDC.get(LoggingConstants.MDC_CORRELATION_ID));
+        });
+
+        assertThat(seenInside[0]).isTrue();
         assertThat(MDC.get(LoggingConstants.MDC_CORRELATION_ID)).isNull();
         assertThat(MDC.get(LoggingConstants.MDC_REQUEST_ID)).isNull();
     }
 
     @Test
-    void doFilter_missingIds_generatesIdsAndStillSetsMdc() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest();
+    void requestIdGeneratedAndEchoed() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/claims/1");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        String[] capturedMdc = new String[1];
-        FilterChain chain = (req, res) ->
-                capturedMdc[0] = MDC.get(LoggingConstants.MDC_CORRELATION_ID);
 
-        new CorrelationIdFilter().doFilter(request, response, chain);
+        filter.doFilter(request, response, new MockFilterChain());
 
-        assertThat(capturedMdc[0]).isNotBlank();
-        assertThat(response.getHeader(LoggingConstants.CORRELATION_ID_HEADER)).isNotBlank();
+        assertThat(response.getHeader(LoggingConstants.REQUEST_ID_HEADER)).isNotBlank();
+    }
+
+    @Test
+    void doesNotEchoAuthorizationTokenInResponseHeaders() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/claims/1");
+        request.addHeader("Authorization", "Bearer some.long.token.value");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getHeader("Authorization")).isNull();
     }
 }

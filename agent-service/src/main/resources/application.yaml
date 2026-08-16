@@ -21,16 +21,27 @@ spring:
   config:
     # Make config server import optional so service can start when config server is unavailable
     import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
-  # Disable Spring AI auto-configurations that require extra dependencies not present locally
-  autoconfigure:
-    exclude:
-      - org.springframework.ai.retry.autoconfigure.SpringAiRetryAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiTextAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
   main:
     allow-bean-definition-overriding: true
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${OLLAMA_MODEL:MadhuryaPasan/Qwen3-ExpertTools:1.7b-q4_K_M}
+          temperature: 0.2
+          num-ctx: 8192
   datasource:
     # Default to an in-memory H2 datasource for local developer startup when no profile is active
     url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:agentdb;DB_CLOSE_DELAY=-1}
@@ -43,7 +54,21 @@ spring:
     enabled: false
   lifecycle:
     timeout-per-shutdown-phase: 25s
-  # spring.ai disabled for local startup; detailed AI settings are provided in environment-specific files
+  # spring.ai runtime + guard limits for the agent's LLM/tool loop
+agent:
+  ai:
+    max-tool-calls: ${AGENT_AI_MAX_TOOL_CALLS:10}
+    tool-timeout-ms: ${AGENT_AI_TOOL_TIMEOUT_MS:15000}
+    agent-timeout-ms: ${AGENT_AI_AGENT_TIMEOUT_MS:60000}
+    ollama-connect-timeout-ms: ${AGENT_AI_OLLAMA_CONNECT_TIMEOUT_MS:5000}
+    ollama-read-timeout-ms: ${AGENT_AI_OLLAMA_READ_TIMEOUT_MS:60000}
+    max-tool-result-chars: ${AGENT_AI_MAX_TOOL_RESULT_CHARS:10000}
+  cache:
+    enabled: ${AGENT_CACHE_ENABLED:true}
+    version: ${AGENT_CACHE_VERSION:v1}
+    claim-status-ttl: ${AGENT_CACHE_CLAIM_STATUS_TTL:30s}
+    policy-coverage-ttl: ${AGENT_CACHE_POLICY_COVERAGE_TTL:5m}
+    claim-documents-ttl: ${AGENT_CACHE_CLAIM_DOCUMENTS_TTL:2m}
 
 server:
   port: 8083
@@ -90,10 +115,36 @@ resilience4j:
     instances:
       claimsService:
         sliding-window-size: 20
+        sliding-window-type: COUNT_BASED
         minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
       customerService:
         sliding-window-size: 20
+        sliding-window-type: COUNT_BASED
         minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  bulkhead:
+    instances:
+      claimsService:
+        max-concurrent-calls: 20
+        max-wait-duration: 500ms
+      customerService:
+        max-concurrent-calls: 20
+        max-wait-duration: 500ms
+  ratelimiter:
+    instances:
+      claimsService:
+        limit-for-period: 100
+        limit-refresh-period: 1s
+        timeout-duration: 0s
+      customerService:
+        limit-for-period: 100
+        limit-refresh-period: 1s
+        timeout-duration: 0s
   retry:
     instances:
       claimsService:
