@@ -55,16 +55,26 @@ public class WebClientCorrelationFilter {
                 Method fromMethod = clientRequestClass.getMethod("from", clientRequestClass);
                 Object builder = fromMethod.invoke(null, request);
 
-                // builder.header(String, String)
-                Method headerMethod = builder.getClass().getMethod("header", String.class, String.class);
+                // ClientRequest.Builder.header(String, String...) is a varargs method, so it must
+                // be resolved with the String[] component type, not a second String (that exact-arity
+                // lookup would throw NoSuchMethodException). Invoked with a one-element array below.
+                Method headerMethod = builder.getClass().getMethod("header", String.class, String[].class);
+                // DefaultClientRequestBuilder is package-private, so its public methods are not
+                // callable across packages unless explicitly unlocked.
+                headerMethod.setAccessible(true);
 
                 String correlation = MDC.get(LoggingConstants.MDC_CORRELATION_ID);
-                if (correlation != null) headerMethod.invoke(builder, LoggingConstants.CORRELATION_ID_HEADER, correlation);
+                if (correlation != null) {
+                    headerMethod.invoke(builder, LoggingConstants.CORRELATION_ID_HEADER, new String[]{correlation});
+                }
                 String trace = MDC.get(LoggingConstants.MDC_TRACE_ID);
-                if (trace != null) headerMethod.invoke(builder, LoggingConstants.TRACE_ID_HEADER, trace);
+                if (trace != null) {
+                    headerMethod.invoke(builder, LoggingConstants.TRACE_ID_HEADER, new String[]{trace});
+                }
 
                 // builder.build()
                 Method buildMethod = builder.getClass().getMethod("build");
+                buildMethod.setAccessible(true);
                 Object newRequest = buildMethod.invoke(builder);
 
                 // exchangeFunction.exchange(newRequest)
