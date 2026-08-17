@@ -177,8 +177,17 @@ jobs:
           -DdataDirectory=${{ env.DC_DATA_DIR }} \
           -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
 
+    # Warm ~/.m2 with the full dependency set for Trivy. Uses a lifecycle phase
+    # (test-compile) instead of the bare `dependency:resolve` goal: a bare goal on
+    # the root aggregator never runs the compile/package phases, so common-lib's
+    # jar is never produced and discovery-service cannot resolve the internal
+    # common-lib module from the reactor (it falls back to Maven Central and
+    # fails). test-compile compiles common-lib in the same reactor, so every
+    # module resolves common-lib from the reactor, and main+test dependencies are
+    # downloaded into ~/.m2 exactly as `dependency:resolve` did. -DskipTests
+    # (no tests run here); the Test job owns the test gate.
     - name: Resolve Maven dependencies (warm ~/.m2 for Trivy)
-      run: mvn -B dependency:resolve -DskipTests
+      run: mvn -B test-compile -DskipTests
 
     # ---------------- Trivy ----------------
     # Pinned to an immutable commit SHA (no mutable tag) to avoid a re-pointing
