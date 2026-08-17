@@ -159,6 +159,48 @@ class QwenToolCallingManagerTest {
     }
 
     @Test
+    void plannedToolCallExecutesThroughGuardedCallback() {
+        List<ToolCallback> callbacks = guardedCallbacks();
+        var result = manager.executePlannedToolCall(
+                promptWith(callbacks, "which documents have I submitted?"),
+                new QwenToolCall("get_claim_documents", java.util.Map.of()));
+
+        assertThat(tools.getDocumentsBackendInvoked()).isTrue();
+        assertThat(result.conversationHistory()).hasSize(3);
+        // The planned call still flowed through the ToolExecutionGuard.
+        assertThat(executions).anyMatch(e -> "get_claim_documents".equals(e.toolName())
+                && ToolExecutionMetadata.STATUS_SUCCESS.equals(e.status()));
+        ToolResponseMessage trm = (ToolResponseMessage) result.conversationHistory().get(2);
+        assertThat(trm.getResponses().get(0).name()).isEqualTo("get_claim_documents");
+    }
+
+    @Test
+    void plannedToolCallRejectsUnregisteredNameAndNeverExecutes() {
+        List<ToolCallback> callbacks = guardedCallbacks();
+        assertThatThrownBy(() -> manager.executePlannedToolCall(
+                promptWith(callbacks, "status"),
+                new QwenToolCall("java.lang.Runtime.exec", java.util.Map.of())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not a registered/guarded callback");
+        assertThat(executions).isEmpty();
+    }
+
+    @Test
+    void plannedToolCallRouteThroughGuardCountedAgainstBudget() {
+        List<ToolCallback> callbacks = guardedCallbacks();
+        manager.executePlannedToolCall(
+                promptWith(callbacks, "status"),
+                new QwenToolCall("get_claim_status", java.util.Map.of()));
+        manager.executePlannedToolCall(
+                promptWith(callbacks, "documents"),
+                new QwenToolCall("get_claim_documents", java.util.Map.of()));
+
+        assertThat(executions).hasSize(2);
+        assertThat(tools.getClaimStatusInvoked()).isTrue();
+        assertThat(tools.getDocumentsBackendInvoked()).isTrue();
+    }
+
+    @Test
     void multipleSequentialToolCallsWork() {
         List<ToolCallback> callbacks = guardedCallbacks();
         var first = manager.executeToolCalls(

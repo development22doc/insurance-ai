@@ -110,6 +110,59 @@ public class QwenToolCallingManager implements ToolCallingManager {
                 .build();
     }
 
+    /**
+     * Execute a planner-supplied {@link QwenToolCall} through the same guarded
+     * {@link ToolCallback} path as a model-emitted call. Used by the streaming
+     * model to complete the READ-only plan for a multi-part request when an
+     * unreliable model stops short of emitting every needed tool.
+     * <p>
+     * Resolution is limited to the request's registered, guarded callbacks only
+     * - the same set Spring AI already received (wrapped by
+     * {@link ToolExecutionGuard}) - so a planned call can never bypass the guard.
+     * The result is returned as ordinary conversation history so the model can
+     * ground its final answer in the freshly fetched data.
+     */
+    public ToolExecutionResult executePlannedToolCall(Prompt prompt, QwenToolCall toolCall) {
+        List<ToolCallback> callbacks = toolCallbacks(prompt);
+        String name = toolCall.name();
+        ToolCallback callback = callbacks.stream()
+                .filter(cb -> cb.getToolDefinition().name().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Planned tool '" + name + "' is not a registered/guarded callback; refusing to execute."));
+
+        String argumentsJson = toArgumentsJson(toolCall.arguments());
+        String toolId = "qwen-planned-" + UUID.randomUUID();
+        ToolContext toolContext = new ToolContext(Map.of());
+
+        String result = callback.call(argumentsJson, toolContext);
+
+        AssistantMessage assistantMessage = new AssistantMessage(renderToolCallJson(toolCall));
+        ToolResponseMessage toolResponseMessage = ToolResponseMessage.builder()
+                .responses(List.of(new ToolResponseMessage.ToolResponse(toolId, name, result)))
+                .build();
+
+        List<Message> history = new java.util.ArrayList<>(prompt.getInstructions());
+        history.add(assistantMessage);
+        history.add(toolResponseMessage);
+
+        return ToolExecutionResult.builder()
+                .conversationHistory(history)
+                .returnDirect(false)
+                .build();
+    }
+
+    private static String renderToolCallJson(QwenToolCall toolCall) {
+        try {
+            Map<String, Object> call = new java.util.LinkedHashMap<>();
+            call.put("name", toolCall.name());
+            call.put("arguments", toolCall.arguments());
+            return SERIALIZER.writeValueAsString(call);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Unable to render planned tool call", e);
+        }
+    }
+
     private static String assistantText(ChatResponse chatResponse) {
         if (chatResponse.getResults() == null) {
             return null;

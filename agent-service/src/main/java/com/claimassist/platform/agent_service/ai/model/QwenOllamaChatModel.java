@@ -1,7 +1,9 @@
 package com.claimassist.platform.agent_service.ai.model;
 
+import com.claimassist.platform.agent_service.ai.tool.QwenToolCall;
 import com.claimassist.platform.agent_service.ai.tool.QwenToolCallParser;
 import com.claimassist.platform.agent_service.ai.tool.QwenToolCallingManager;
+import com.claimassist.platform.agent_service.ai.tool.ToolPlanner;
 import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +12,8 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -27,7 +31,9 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -100,13 +106,59 @@ public class QwenOllamaChatModel extends OllamaChatModel {
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
         Prompt requestPrompt = mergeOptions(prompt);
-        return streamWithToolExecution(requestPrompt, 0, new LoopGuard());
+        Set<String> registeredNames = registeredToolNames(requestPrompt);
+        List<String> plan = ToolPlanner.plan(userText(requestPrompt), registeredNames);
+        return streamWithToolExecution(requestPrompt, 0, new LoopGuard(), new PlanState(plan));
     }
 
-    /** Mutable, recursion-scoped state used to detect a consecutive identical-call loop. */
+    /**
+     * Mutable, recursion-scoped state used to detect a consecutive identical-call loop.
+     */
     private static final class LoopGuard {
         String lastCallSignature;
         int consecutiveIdentical;
+    }
+
+    /**
+     * Mutable, request-scoped state for deterministic completion of the READ-only
+     * tool plan for a multi-part request. Created once per stream (from the first
+     * user message) and threaded through every {@link #streamWithToolExecution}
+     * recursion so that deferred prose and executed-tool bookkeeping survive
+     * across turns without ever reaching another request.
+     */
+    private static final class PlanState {
+        final List<String> planned;
+        final Set<String> executed = new HashSet<>();
+        final StringBuilder heldProse = new StringBuilder();
+
+        PlanState(List<String> planned) {
+            this.planned = planned;
+        }
+
+        boolean complete() {
+            return planned.isEmpty() || executed.containsAll(planned);
+        }
+
+        String nextPending() {
+            for (String tool : planned) {
+                if (!executed.contains(tool)) {
+                    return tool;
+                }
+            }
+            return null;
+        }
+    }
+
+    /** The last user message in the prompt, used to derive the tool plan. */
+    private static String userText(Prompt prompt) {
+        List<Message> instructions = prompt.getInstructions();
+        for (int i = instructions.size() - 1; i >= 0; i--) {
+            Message message = instructions.get(i);
+            if (message instanceof UserMessage userMessage && StringUtils.hasText(userMessage.getText())) {
+                return userMessage.getText();
+            }
+        }
+        return "";
     }
 
     /**
@@ -115,7 +167,21 @@ public class QwenOllamaChatModel extends OllamaChatModel {
      * executed. Native tool calls are handled entirely inside {@code super.stream}
      * and are relayed unchanged.
      */
-    private Flux<ChatResponse> streamWithToolExecution(Prompt requestPrompt, int round, LoopGuard loopGuard) {
+    private Flux<ChatResponse> streamWithToolExecution(Prompt requestPrompt, int round, LoopGuard loopGuard,
+                                                       PlanState planState) {
+        // Once the request's read-tool plan is complete, any prose that had been
+        // held back while completing the plan is flushed FIRST so nothing the model
+        // already drafted is lost. This runs at the start of the first turn where
+        // the plan is satisfied (heldProse is cleared after the single flush).
+        Flux<ChatResponse> prefix = Flux.empty();
+        if (planState.complete() && planState.heldProse.length() > 0) {
+            String held = planState.heldProse.toString();
+            planState.heldProse.setLength(0);
+            prefix = Flux.just(ChatResponse.builder()
+                    .generations(List.of(new Generation(new AssistantMessage(held))))
+                    .build());
+        }
+
         AtomicReference<StringBuilder> accumulator = new AtomicReference<>(new StringBuilder());
         AtomicReference<List<ChatResponse>> buffer = new AtomicReference<>(new ArrayList<>());
         AtomicBoolean passthrough = new AtomicBoolean(false);
@@ -154,7 +220,16 @@ public class QwenOllamaChatModel extends OllamaChatModel {
                         }
                         default -> { // NOT_A_TOOL_CALL
                             // This content is normal assistant text (or a non-tool JSON
-                            // value): flush anything buffered and switch to live streaming.
+                            // value). If the request's read-tool plan is not yet satisfied,
+                            // hold the prose and let the planner complete the missing tool(s)
+                            // before anything reaches the client. Otherwise flush anything
+                            // buffered and switch to live streaming.
+                            if (!planState.complete()) {
+                                if (StringUtils.hasText(delta)) {
+                                    planState.heldProse.append(delta);
+                                }
+                                return Flux.empty();
+                            }
                             passthrough.set(true);
                             List<ChatResponse> flushed = List.copyOf(buffer.get());
                             buffer.get().clear();
@@ -166,13 +241,41 @@ public class QwenOllamaChatModel extends OllamaChatModel {
         Flux<ChatResponse> continuation = Flux.defer(() -> {
             String accumulated = accumulator.get().toString();
             if (parser.classify(accumulated, registeredNames) != QwenToolCallParser.Classification.TOOL_CALL) {
-                // The stream ended without a complete tool call. If content was still being
-                // held as a possible-prefix (never flushed, never completed), emit it now so
-                // it is not silently dropped. Normal pass-through text already streamed live.
-                List<ChatResponse> held = List.copyOf(buffer.get());
+                // The turn ended without a complete model tool call.
+                // Any still-buffered possible-prefix content belongs to the prose we are
+                // about to either hold (plan incomplete) or emit (plan complete).
+                for (ChatResponse heldChunk : List.copyOf(buffer.get())) {
+                    String heldText = textOf(heldChunk);
+                    if (StringUtils.hasText(heldText)) {
+                        planState.heldProse.append(heldText);
+                    }
+                }
                 buffer.get().clear();
-                if (!held.isEmpty()) {
-                    return Flux.fromIterable(held);
+
+                // Deterministic completion: if the request still needs read tools the
+                // model did not emit, execute the next planned tool through the guarded
+                // callback path and stream another turn, so the final answer is grounded
+                // in ALL of the data the question asked for. Writes are never planned.
+                String pendingTool = planState.nextPending();
+                if (pendingTool != null && round < maxToolCalls
+                        && toolCallingManager instanceof QwenToolCallingManager qwenManager) {
+                    log.debug("Completing read-tool plan: executing planned tool '{}' (round {}).", pendingTool, round + 1);
+                    planState.executed.add(pendingTool);
+                    QwenToolCall plannedCall = new QwenToolCall(pendingTool, Map.of());
+                    ToolExecutionResult plannedResult = qwenManager.executePlannedToolCall(requestPrompt, plannedCall);
+                    return streamWithToolExecution(
+                            new Prompt(plannedResult.conversationHistory(), requestPrompt.getOptions()),
+                            round + 1, loopGuard, planState);
+                }
+
+                // Plan complete (or planner unavailable / budget exhausted): emit any
+                // content that was being held as a possible-prefix, so it is not dropped.
+                if (planState.heldProse.length() > 0) {
+                    String held = planState.heldProse.toString();
+                    planState.heldProse.setLength(0);
+                    return Flux.just(ChatResponse.builder()
+                            .generations(List.of(new Generation(new AssistantMessage(held))))
+                            .build());
                 }
                 return Flux.empty();
             }
@@ -194,6 +297,9 @@ public class QwenOllamaChatModel extends OllamaChatModel {
             }
             log.debug("Detected complete qwen text tool call after {} chunks; executing via manager.", round + 1);
             ChatResponse synthetic = new ChatResponse(List.of(new Generation(new AssistantMessage(accumulated))));
+            // Record the model-emitted tool so the read-tool plan can be marked satisfied.
+            parser.parse(accumulated, registeredNames)
+                    .ifPresent(call -> planState.executed.add(call.name()));
             return Mono.fromCallable(() -> toolCallingManager.executeToolCalls(requestPrompt, synthetic))
                     .subscribeOn(Schedulers.boundedElastic())
                     .flatMapMany(result -> {
@@ -204,11 +310,11 @@ public class QwenOllamaChatModel extends OllamaChatModel {
                         }
                         return streamWithToolExecution(
                                 new Prompt(result.conversationHistory(), requestPrompt.getOptions()), round + 1,
-                                loopGuard);
+                                loopGuard, planState);
                     });
         });
 
-        return Flux.concat(sanitized, continuation);
+        return Flux.concat(prefix, Flux.concat(sanitized, continuation));
     }
 
     /**
