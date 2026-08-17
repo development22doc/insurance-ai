@@ -227,16 +227,31 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    # Runs verify (executes tests + JaCoCo report) then Sonar with the quality
-    # gate in blocking mode. The job fails if the gate fails (genuine exit code).
-    # SonarQube Cloud drives servers/token itself; only the
-    # org/projectKey/qualitygate.wait/coverage paths are pinned here.
-    - name: Verify and run SonarQube Cloud analysis
+    # Runs the full verify lifecycle first (compiles, runs tests, then JaCoCo
+    # generates each module's target/site/jacoco/jacoco.xml during the verify
+    # phase). Sonar is then run as a SEPARATE invocation so it reads the XML
+    # coverage reports that verify already produced, in the required sequence:
+    # clean -> compile -> tests -> jacoco report (verify) -> sonar -> quality gate.
+    - name: Build, test, and generate JaCoCo coverage reports
+      run: mvn -B verify
+
+    # Diagnostic: proves the expected JaCoCo XML reports exist before Sonar starts.
+    - name: Verify JaCoCo reports
+      run: |
+        echo "JaCoCo reports:"
+        find . -path "*/target/site/jacoco/jacoco.xml" -print
+
+    # Runs SonarQube Cloud analysis with the quality gate in blocking mode. The job
+    # fails if the gate fails (genuine exit code). SonarQube Cloud drives the server
+    # URL and token (SONAR_TOKEN); org/projectKey/qualitygate.wait are pinned here
+    # because the root pom.xml does not define them. sonar.coverage.jacoco.xmlReportPaths
+    # is defined in the root pom.xml <properties> (the source of truth for the Maven
+    # scanner) as root-relative per-module reports, so it is not passed on the CLI.
+    - name: Run SonarQube Cloud analysis
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       run: |
-        mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
+        mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
           -Dsonar.organization=development22doc \
           -Dsonar.projectKey=development22doc_insurance-ai \
-          -Dsonar.qualitygate.wait=true \
-          -Dsonar.coverage.jacoco.xmlReportPaths="common-lib/target/site/jacoco/jacoco.xml,discovery-service/target/site/jacoco/jacoco.xml,config-service/target/site/jacoco/jacoco.xml,api-gateway/target/site/jacoco/jacoco.xml,customer-service/target/site/jacoco/jacoco.xml,claims-service/target/site/jacoco/jacoco.xml,agent-service/target/site/jacoco/jacoco.xml"
+          -Dsonar.qualitygate.wait=true

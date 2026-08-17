@@ -151,6 +151,38 @@
 					</annotationProcessorPaths>
 				</configuration>
 			</plugin>
+			<!-- JaCoCo code coverage, same version (0.8.11) and pattern as the other
+			     modules so common-lib's coverage is included in the Sonar analysis.
+			     prepare-agent attaches the agent for test execution; the report is
+			     generated in the verify phase (after all tests run) and written to
+			     target/site/jacoco/jacoco.xml as expected by sonar-project.properties. -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.11</version>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<argLine>${argLine}</argLine>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 </project>

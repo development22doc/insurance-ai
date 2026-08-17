@@ -32,6 +32,19 @@
         <!-- Common versions for child modules -->
         <lombok.version>1.18.28</lombok.version>
         <testcontainers.version>1.20.0</testcontainers.version>
+
+        <!--
+            JaCoCo XML report paths consumed by SonarScanner for Maven. Per the
+            SonarQube Cloud docs, the Maven scanner reads analysis properties from
+            pom.xml (not sonar-project.properties), so this is defined here as the
+            single source of truth. Paths are root-relative per-module reports
+            emitted into target/site/jacoco/ during the Maven verify phase.
+            Modules with zero test classes (discovery-service, config-service,
+            api-gateway) have no JaCoCo execution data and emit NO report; Sonar
+            tolerates a missing file and simply reports no coverage for them while
+            continuing to analyze every module. Nothing is fabricated.
+        -->
+        <sonar.coverage.jacoco.xmlReportPaths>common-lib/target/site/jacoco/jacoco.xml,discovery-service/target/site/jacoco/jacoco.xml,config-service/target/site/jacoco/jacoco.xml,api-gateway/target/site/jacoco/jacoco.xml,customer-service/target/site/jacoco/jacoco.xml,claims-service/target/site/jacoco/jacoco.xml,agent-service/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <build>
@@ -89,7 +102,7 @@
                     </execution>
                     <execution>
                         <id>report</id>
-                        <phase>test</phase>
+                        <phase>verify</phase>
                         <goals>
                             <goal>report</goal>
                         </goals>
