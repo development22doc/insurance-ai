@@ -11,6 +11,13 @@ spring:
     url: jdbc:postgresql://localhost:5432/claimassist_customer_local
     username: claimassist
     password: claimassist
+    hikari:
+      pool-name: customer-service-pool
+      # Phase 3: enable connection-leak detection so a leaked connection (one
+      # held longer than the threshold) is logged with a stack trace instead of
+      # silently exhausting the pool. This is diagnostic-only: it does not change
+      # pool size or reclamation semantics.
+      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_THRESHOLD_MS:60000}
 
   data:
     redis:
@@ -38,4 +45,33 @@ keycloak:
   redirect-uri: ${KEYCLOAK_REDIRECT_URI:http://localhost:8080/customer/auth/callback}
   admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:${SERVICE_CLIENT_ID:claimassist-admin-service}}
   admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:${SERVICE_CLIENT_SECRET:local-dev-admin-client-secret}}
+
+# Phase 2: bounded timeouts for all outbound Keycloak HTTP calls (token,
+# logout, admin provisioning). A hung Keycloak fails fast instead of stalling
+# a customer/signup request indefinitely.
+  http:
+    connect-timeout-ms: ${KEYCLOAK_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${KEYCLOAK_READ_TIMEOUT_MS:5000}
+
+# F-1 (Phase 1 shared-foundation fix): register the internal service client so
+# customer-service can mint a client-credentials token for service-to-service
+# calls (previously absent, so outbound Feign calls had no valid Bearer token).
+security:
+  service-client:
+    registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+    client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+    client-secret: ${SERVICE_CLIENT_SECRET:}
+    token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
+
+# Phase 2: PKCE authorization state lives in Redis with a TTL (see
+# OAuth2AuthorizationService). One-time consumption is enforced by Redis GETDEL.
+  pkce:
+    state-ttl-seconds: ${PKCE_STATE_TTL_SECONDS:600}
+
+# Phase 2 (F-2): explicit target-user identity for service callers. The internal
+# /internal/v1/** endpoints accept an X-User-Id header ONLY from a trusted
+# service client (identified by its azp/client_id in this allowlist). End-user
+# tokens are unaffected and always use their own authenticated userId.
+  internal:
+    trusted-service-client-ids: ${TRUSTED_SERVICE_CLIENT_IDS:claimassist-admin-service}
 

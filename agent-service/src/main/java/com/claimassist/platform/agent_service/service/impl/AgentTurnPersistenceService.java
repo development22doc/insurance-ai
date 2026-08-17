@@ -1,5 +1,6 @@
 package com.claimassist.platform.agent_service.service.impl;
 
+import com.claimassist.platform.agent_service.ai.tool.ToolExecutionMetadata;
 import com.claimassist.platform.agent_service.entity.AgentEvent;
 import com.claimassist.platform.agent_service.entity.AgentMessage;
 import com.claimassist.platform.agent_service.entity.AgentSession;
@@ -8,6 +9,7 @@ import com.claimassist.platform.agent_service.llm.InsuranceAgentTools.ProposedUp
 import com.claimassist.platform.agent_service.repository.AgentEventRepository;
 import com.claimassist.platform.agent_service.repository.AgentMessageRepository;
 import com.claimassist.platform.agent_service.repository.OutboxEventRepository;
+import com.claimassist.platform.agent_service.service.AgentTurnPersistence;
 import com.claimassist.platform.common_lib.enums.AgentEventStatus;
 import com.claimassist.platform.common_lib.enums.AgentEventType;
 import com.claimassist.platform.common_lib.enums.MessageRole;
@@ -42,7 +44,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class AgentTurnPersistenceService {
+public class AgentTurnPersistenceService implements AgentTurnPersistence {
 
     private static final String CLAIM_UPDATE_REQUEST_TOPIC = "claim-update-request-event";
 
@@ -53,9 +55,11 @@ public class AgentTurnPersistenceService {
     private final EventLogger eventLogger;
     private final PerformanceLogger performanceLogger;
 
+    @Override
     @Transactional
     public void finalizeTurn(String userMessage, AgentSession session, String fullText, long durationSeconds,
-                              Object usage, Long userId, List<ProposedUpdate> proposedUpdates) {
+                              Object usage, Long userId, List<ProposedUpdate> proposedUpdates,
+                              List<ToolExecutionMetadata> toolExecutions) {
 
         // If a concrete Usage object from spring-ai is provided at runtime, attempt to extract tokens
         int promptTokens = 0;
@@ -122,6 +126,22 @@ public class AgentTurnPersistenceService {
             events.add(proposalEvent);
 
             enqueueClaimUpdateRequest(session.getId().getClaimId(), sagaId, update, userId);
+        }
+
+        // Tool-result memory: persist a compact, bounded TOOL_LOG per executed
+        // tool (name + outcome). This preserves WHICH tools ran and their
+        // outcome for audit/reconstruction WITHOUT storing raw, oversized or
+        // sensitive payloads, stack traces or document contents.
+        if (toolExecutions != null) {
+            for (ToolExecutionMetadata execution : toolExecutions) {
+                events.add(AgentEvent.builder()
+                        .agentMessage(assistantMessage)
+                        .type(AgentEventType.TOOL_LOG)
+                        .status(AgentEventStatus.CONFIRMED)
+                        .sequenceOrder(seq++)
+                        .content(execution.toolName() + " -> " + execution.status())
+                        .build());
+            }
         }
 
             agentEventRepository.saveAll(events);

@@ -2,6 +2,7 @@ package com.claimassist.platform.agent_service.repository;
 
 import com.claimassist.platform.agent_service.entity.AgentMessage;
 import com.claimassist.platform.agent_service.entity.AgentSession;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,4 +20,18 @@ public interface AgentMessageRepository extends JpaRepository<AgentMessage, Long
         ORDER BY m.createdAt ASC, e.sequenceOrder ASC
         """)
     List<AgentMessage> findByAgentSessionWithEvents(@Param("agentSession") AgentSession agentSession);
+
+    /**
+     * Bounded retrieval of the most recent messages of a conversation, newest
+     * first (callers reverse to chronological order). Used by
+     * {@code ConversationMemoryService} so the LLM context never grows
+     * without limit. Deliberately does NOT join events - the context needs only
+     * the safe user/assistant text, not the full audit/event payload.
+     */
+    @Query("""
+        SELECT m FROM AgentMessage m
+        WHERE m.agentSession = :agentSession
+        ORDER BY m.id DESC
+        """)
+    List<AgentMessage> findRecentByAgentSession(@Param("agentSession") AgentSession agentSession, Pageable pageable);
 }
