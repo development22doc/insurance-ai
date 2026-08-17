@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+    <!--
+        FALSE POSITIVE - NOT APPLICABLE TO EMBEDDED TOMCAT.
+
+        CVE-2026-66299 (NVD, published 2026-07-28) is an Uncontrolled Resource
+        Consumption (CWE-400) denial of service in Apache Tomcat's "WebSocket chat
+        example" web application. That examples webapp is bundled ONLY in the full
+        Apache Tomcat binary distribution (the webapps/examples/ directory). It is
+        NOT shipped or deployed by Spring Boot's embedded server, which packages only
+        tomcat-embed-core / tomcat-embed-el / tomcat-embed-websocket. There is no
+        examples application on the runtime classpath, so the vulnerable component is
+        absent. NVD itself states: "Users who have followed the security guidance to
+        remove the examples web application are not affected by this issue."
+
+        The only patched release is 10.1.58 ("not yet released" per tomcat.apache.org
+        security-10.html). As of this writing 10.1.57 is the newest 10.1.x published to
+        Maven Central (10.1.58 returns 404), so no available version bump resolves the
+        advisory. This suppression is deliberately scoped to EXACTLY tomcat-embed-core
+        10.1.57 and EXACTLY CVE-2026-66299; it must be removed when a patched Tomcat
+        (10.1.58+) is released and the version is bumped. No other CVE is suppressed.
+    -->
+    <suppress>
+        <notes>
+            False positive: CVE-2026-66299 targets the Tomcat WebSocket chat EXAMPLES
+            web application, which is not present in Spring Boot's embedded Tomcat
+            (tomcat-embed-* jars). The patched release 10.1.58 is not yet on Maven
+            Central. Scoped to tomcat-embed-core 10.1.57 and this CVE only.
+        </notes>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat-embed-core@10\.1\.57$</packageUrl>
+        <cve>CVE-2026-66299</cve>
+    </suppress>
+
+</suppressions>

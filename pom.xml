@@ -67,6 +67,17 @@
                     <configuration>
                         <failBuildOnCVSS>8</failBuildOnCVSS>
                         <failOnError>true</failOnError>
+                        <!--
+                            Documented false-positive suppressions, single source of truth.
+                            ${maven.multiModuleProjectDirectory} is the repo root even when
+                            the plugin runs for a downstream reactor module. See
+                            dependency-check-suppressions.xml for the justification (only
+                            CVE-2026-66299 on tomcat-embed-core 10.1.57 is suppressed; it is
+                            not applicable to Spring Boot's embedded Tomcat).
+                        -->
+                        <suppressionFiles>
+                            <suppressionFile>${maven.multiModuleProjectDirectory}/dependency-check-suppressions.xml</suppressionFile>
+                        </suppressionFiles>
                     </configuration>
                 </plugin>
             </plugins>

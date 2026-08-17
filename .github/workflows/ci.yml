@@ -12,9 +12,15 @@ on:
 # holds is public data; never place secrets here.
 env:
   DC_DATA_DIR: /home/runner/odc-data
-  # Bump this when the OWASP dependency-check configuration/data layout changes
-  # to force a fresh cold-cache (full NVD) download. It is NOT derived from
-  # pom.xml because the NVD data is independent of the dependency set.
+  # Dependency-Check Maven plugin version. Single source of truth: used both for
+  # the mvn invocation below and in the cache key so an upgrade to the plugin
+  # (which can change the on-disk NVD database format) automatically invalidates
+  # the OWASP cache instead of silently reusing an incompatible database.
+  DC_PLUGIN_VERSION: 12.2.2
+  # Bump this only when the OWASP on-disk data layout changes in a way that is
+  # NOT captured by the plugin version (e.g. NVD data format shift), to force a
+  # fresh cold-cache (full NVD) download. It is NOT derived from pom.xml because
+  # the NVD data is independent of the dependency set.
   DC_CACHE_KEY: v1
 
 jobs:
@@ -140,9 +146,19 @@ jobs:
     - name: Cache OWASP Dependency-Check data
       uses: actions/cache@v4
       with:
+        # Only the vulnerability database/data directory is cached. No reports,
+        # no target/, no Maven build outputs.
         path: ${{ env.DC_DATA_DIR }}
-        key: ${{ runner.os }}-odc-${{ env.DC_CACHE_KEY }}
+        # Key = OS + plugin version + explicit data-layout bump. The plugin
+        # version is included so a plugin upgrade automatically invalidates an
+        # incompatible database. DC_CACHE_KEY is the manual escape hatch. github.sha
+        # is deliberately NOT used (would create a new cache on every commit).
+        key: ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-${{ env.DC_CACHE_KEY }}
+        # Fallback: if the exact key misses (e.g. DC_CACHE_KEY bump, or a previous
+        # run only wrote the pre-version key), reuse the closest compatible older
+        # cache for this OS/plugin, then any OWASP cache for this OS.
         restore-keys: |
+          ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-
           ${{ runner.os }}-odc-
 
     - name: Run Maven dependency check
@@ -153,7 +169,7 @@ jobs:
       # pluginManagement pick-up) make the run deterministic. No masking flags:
       # this must genuinely run and fail CI on a real error.
       run: |
-        mvn -B org.owasp:dependency-check-maven:12.2.2:check \
+        mvn -B org.owasp:dependency-check-maven:${{ env.DC_PLUGIN_VERSION }}:check \
           -DskipTests \
           -DfailBuildOnCVSS=8 \
           -DfailOnError=true \
