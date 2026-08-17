@@ -1,0 +1,114 @@
+#!/usr/bin/env pwsh
+# Detached local startup for ClaimAssist platform services.
+#
+# Non-blocking: each Spring Boot service is launched with Start-Process (returns
+# immediately) and its readiness is verified via port + /actuator/health with a
+# bounded timeout. Healthy services are reused (never restarted).
+#
+# Usage:
+#   powershell -File ./scripts/start-services-local.ps1 [-ServiceList discovery,config,gateway,customer,claims,agent]
+
+param(
+    [string]$ServiceList = "discovery,config,gateway,customer,claims,agent"
+)
+
+$ErrorActionPreference = "Continue"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$logDir = Join-Path $repoRoot "logs"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+
+function Test-PortListening {
+    param([int]$port)
+    $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+    return ($null -ne $conn)
+}
+
+function Get-HealthStatus {
+    param([int]$port)
+    try {
+        $r = Invoke-WebRequest -Uri "http://localhost:$port/actuator/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        $content = $r.Content
+        if ($content -is [byte[]]) {
+            $content = [System.Text.Encoding]::UTF8.GetString($content)
+        }
+        $j = $content | ConvertFrom-Json
+        return $j.status
+    } catch {
+        return $null
+    }
+}
+
+function Wait-Healthy {
+    param([int]$port, [int]$timeoutSec = 120)
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $timeoutSec) {
+        $status = Get-HealthStatus $port
+        if ($status -eq "UP") { return $true }
+        Start-Sleep -Seconds 3
+    }
+    return $false
+}
+
+# Ordered service definitions. NOTE: the parameter is named $ServiceList (not
+# $Services) to avoid a case-insensitive variable collision with this array.
+$services = @(
+    @{ Name = "discovery"; Jar = "discovery-service/target/discovery-service-1.0.0.jar"; Port = 8761; Profile = "" },
+    @{ Name = "config";    Jar = "config-service/target/config-service-1.0.0.jar";          Port = 8888; Profile = "native" },
+    @{ Name = "gateway";   Jar = "api-gateway/target/api-gateway-1.0.0.jar";                 Port = 8080; Profile = "local" },
+    @{ Name = "customer";  Jar = "customer-service/target/customer-service-1.0.0.jar";       Port = 8081; Profile = "local" },
+    @{ Name = "claims";    Jar = "claims-service/target/claims-service-1.0.0.jar";           Port = 8082; Profile = "local" },
+    @{ Name = "agent";     Jar = "agent-service/target/agent-service-1.0.0-exec.jar";        Port = 8083; Profile = "local" }
+)
+
+$selected = @()
+foreach ($token in ($ServiceList -split ",")) {
+    $name = $token.Trim().ToLower()
+    if ($name) { $selected += $name }
+}
+
+foreach ($svc in $services) {
+    if ($selected.Count -gt 0 -and ($svc.Name -notin $selected)) { continue }
+
+    $port = $svc.Port
+    Write-Host "======================================"
+    Write-Host "[$($svc.Name)] checking port $port"
+
+    if (Test-PortListening $port) {
+        $status = Get-HealthStatus $port
+        if ($status -eq "UP") {
+            Write-Host "[$($svc.Name)] ALREADY HEALTHY (port $port, /actuator/health=UP). Reusing. Not restarting."
+            continue
+        }
+        Write-Host "[$($svc.Name)] WARN port $port in use but health not UP."
+    }
+
+    $jar = Join-Path $repoRoot $svc.Jar
+    if (-not (Test-Path $jar)) {
+        Write-Host "[$($svc.Name)] ERROR jar not found: $jar"
+        continue
+    }
+
+    $logFile = Join-Path $logDir "$($svc.Name).log"
+    $startArgs = @("-Duser.timezone=Asia/Kolkata", "-jar", $jar)
+    if ($svc.Profile) {
+        $startArgs += "--spring.profiles.active=$($svc.Profile)"
+    }
+
+    Write-Host "[$($svc.Name)] starting detached, log=$logFile, args=$($startArgs -join ' ')"
+    $proc = Start-Process -FilePath "java" -ArgumentList $startArgs -WorkingDirectory $repoRoot -RedirectStandardOutput $logFile -RedirectStandardError "$logFile.err" -PassThru -WindowStyle Hidden
+    Write-Host "[$($svc.Name)] PID=$($proc.Id)"
+
+    $ok = Wait-Healthy $port 120
+    if ($ok) {
+        Write-Host "[$($svc.Name)] UP (port $port, /actuator/health=UP) PID=$($proc.Id)"
+    } else {
+        Write-Host "[$($svc.Name)] FAILED to become healthy within timeout. PID=$($proc.Id) port=$port"
+        Write-Host "--- last log lines ---"
+        if (Test-Path $logFile) { Get-Content $logFile -Tail 40 }
+        Write-Host "--- last err lines ---"
+        if (Test-Path "$logFile.err") { Get-Content "$logFile.err" -Tail 40 }
+    }
+}
+
+Write-Host "======================================"
+Write-Host "Startup pass complete."

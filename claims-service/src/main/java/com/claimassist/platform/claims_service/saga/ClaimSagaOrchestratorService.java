@@ -42,7 +42,6 @@ public class ClaimSagaOrchestratorService {
     private final SagaOutboxPublisher sagaOutboxPublisher;
     private final SagaMetricsService sagaMetricsService;
     private final SagaCompensationHandler compensationHandler;
-    private final SagaIdempotencyManager idempotencyManager;
     private final ObjectMapper objectMapper;
 
     @Value("${saga.orchestrator.timeout-seconds:180}")

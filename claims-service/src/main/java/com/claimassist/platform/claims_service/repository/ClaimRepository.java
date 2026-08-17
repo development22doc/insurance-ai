@@ -6,7 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -36,6 +35,25 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
         WHERE c.id = :claimId AND cp.id.userId = :userId AND c.deletedAt IS NULL
         """)
     Optional<Claim> findAccessibleClaimById(@Param("claimId") Long claimId, @Param("userId") Long userId);
+
+    /**
+     * Single round-trip for {@code GET /claims/{id}}: returns the claim together
+     * with the caller's {@link ClaimRole} in ONE query that enforces ownership at
+     * the data layer (the join on {@code claim_parties.user_id}). This removes the
+     * previous per-request {@code findById} + separate role lookup (two queries,
+     * neither of which validated the caller's party membership), and hardens IDOR
+     * protection: a caller who is not a party to the claim gets an empty result
+     * from the database itself, independent of (and as a fallback to) the
+     * {@code @PreAuthorize} gate. The interface projection {@link ClaimWithRoleProjection}
+     * selects the aggregate entity plus the {@link ClaimRole} enum in one statement.
+     */
+    @Query("""
+        SELECT cp.claim AS claim, cp.claimRole AS role
+        FROM ClaimParty cp
+        WHERE cp.claim.id = :claimId AND cp.id.userId = :userId AND cp.claim.deletedAt IS NULL
+        """)
+    Optional<ClaimWithRoleProjection> findAccessibleClaimWithRoleByClaimIdAndUserId(
+            @Param("claimId") Long claimId, @Param("userId") Long userId);
 
     Optional<Claim> findByClaimNumber(String claimNumber);
 

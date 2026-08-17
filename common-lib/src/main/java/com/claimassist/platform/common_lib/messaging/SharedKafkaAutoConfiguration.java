@@ -1,7 +1,9 @@
 package com.claimassist.platform.common_lib.messaging;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,7 +15,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.*;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
-import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.kafka.listener.ConsumerRecordRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
 
@@ -146,8 +148,11 @@ public class SharedKafkaAutoConfiguration {
     /**
      * CommonErrorHandler for outbox event processing errors.
      * <p>
-     * Uses DeadLetterPublishingRecoverer to publish failed messages to DLT topics.
-     * Implements exponential backoff with 4 attempts before giving up.
+     * Publishes failed messages to the {@code <topic>.DLT} dead-letter topic with
+     * {@link DeadLetterMetadata} headers (original topic/partition/offset, exception
+     * class/reason, failure timestamp and cumulative retry count) so a DLT record is
+     * diagnosable and safely replayable. Implements exponential backoff with 4 attempts
+     * before giving up.
      *
      * @param outboxKafkaTemplate The configured KafkaTemplate for DLT publishing
      * @return Configured CommonErrorHandler bean
@@ -155,7 +160,18 @@ public class SharedKafkaAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "outboxConsumerErrorHandler")
     public CommonErrorHandler outboxConsumerErrorHandler(KafkaTemplate<String, String> outboxKafkaTemplate) {
-        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(outboxKafkaTemplate);
+        ConsumerRecordRecoverer recoverer = (record, exception) -> {
+            @SuppressWarnings("unchecked")
+            String key = (String) record.key();
+            @SuppressWarnings("unchecked")
+            String value = (String) record.value();
+            ProducerRecord<String, String> dlqRecord = new ProducerRecord<>(
+                    record.topic() + ".DLT",
+                    key,
+                    value);
+            DeadLetterMetadata.addHeaders(record, exception, dlqRecord.headers());
+            outboxKafkaTemplate.send(dlqRecord);
+        };
         ExponentialBackOff backOff = new ExponentialBackOff(1000L, 2.0);
         backOff.setMaxAttempts(4);
         return new DefaultErrorHandler(recoverer, backOff);

@@ -5,10 +5,12 @@ spring:
   cloud:
     gateway:
       default-filters:
+        # No fallbackUri: there is no /fallback handler. When the circuit breaker
+        # opens, CallNotPermittedException propagates to GatewayExceptionHandler which
+        # returns a controlled 503 (not a misleading 404/loop to a non-existent route).
         - name: CircuitBreaker
           args:
             name: api-gateway
-            fallbackUri: forward:/fallback
 
   security:
     oauth2:

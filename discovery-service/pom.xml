@@ -48,6 +48,12 @@
 			<artifactId>common-lib</artifactId>
 			<version>1.0.0</version>
 		</dependency>
+		<!-- Phase 6: security/actuator/registry tests. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
