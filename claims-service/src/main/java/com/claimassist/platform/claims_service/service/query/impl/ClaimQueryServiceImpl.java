@@ -59,12 +59,15 @@ public class ClaimQueryServiceImpl implements ClaimQueryService {
     public ClaimSummaryResponse getClaimById(Long claimId) {
         long start = System.nanoTime();
         try {
-            Claim claim = claimRepository.findById(claimId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Claim", claimId.toString()));
             Long userId = currentUserProvider.getCurrentUserId();
-            ClaimRole role = claimPartyRepository.findRoleByClaimIdAndUserId(claimId, userId)
-                    .orElseThrow(() -> new BadRequestException("Not a party to this claim"));
-            return claimMapper.toClaimSummaryResponse(claim, role);
+            // Single round-trip that returns the claim AND the caller's role together,
+            // enforcing party ownership at the data layer (not only via @PreAuthorize).
+            // This both removes the previous findById + separate role lookup and adds a
+            // second IDOR defense-in-depth boundary - a non-party caller gets an empty
+            // result straight from the join, so no claim data is ever loaded for them.
+            var access = claimRepository.findAccessibleClaimWithRoleByClaimIdAndUserId(claimId, userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Claim", claimId.toString()));
+            return claimMapper.toClaimSummaryResponse(access.getClaim(), access.getRole());
         } finally {
             long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
             performanceLogger.log("BUSINESS", "claims.getClaimById", elapsedMs, java.util.Map.of("claimId", claimId));

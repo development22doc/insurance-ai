@@ -53,7 +53,8 @@
 			<artifactId>common-lib</artifactId>
 			<version>1.0.0</version>
 		</dependency>
-		<!-- Testing -->
+<!-- Phase 6: integration tests (lookup/profile/failure/actuator) against the
+		     native file repository - no Docker required. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>

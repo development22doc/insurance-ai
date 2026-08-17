@@ -168,6 +168,16 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Phase 5 Kafka integration testing: a disposable, real Kafka broker via
+             Testcontainers. Used to exercise the producer -> topic -> consumer -> DLT
+             reliability flow (and outbox publisher) against the actual message broker. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <dependencyManagement>

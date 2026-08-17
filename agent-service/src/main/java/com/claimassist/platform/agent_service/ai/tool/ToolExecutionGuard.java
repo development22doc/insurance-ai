@@ -8,10 +8,12 @@ import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.lang.Nullable;
 
 import java.util.Arrays;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -47,13 +49,27 @@ public class ToolExecutionGuard {
      * per-request counter (below) keeps any one request's budget isolated.
      * Daemon threads never prevent JVM shutdown, and the static hook below
      * drains the pool on exit so it is never left unmanaged.
+     * <p>
+     * The work queue is BOUNDED (Phase 7 hardening). {@code newFixedThreadPool}
+     * would use an unbounded queue, letting a burst of concurrent agent
+     * requests queue unbounded pending tool work. Here the queue has a finite
+     * capacity: once the pool AND the queue are saturated, further tool
+     * submissions are rejected fast (see {@link #execute}) and surface as a
+     * controlled transient tool failure - the agent degrades gracefully instead
+     * of building an ever-growing backlog of queued executions.
      */
+    private static final int TOOL_POOL_SIZE = 4;
+    private static final int TOOL_QUEUE_CAPACITY = 64;
     private static final ExecutorService TOOL_EXECUTOR =
-            Executors.newFixedThreadPool(4, r -> {
-                Thread t = new Thread(r, "agent-tool-executor");
-                t.setDaemon(true);
-                return t;
-            });
+            new ThreadPoolExecutor(
+                    TOOL_POOL_SIZE, TOOL_POOL_SIZE, 0L, TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(TOOL_QUEUE_CAPACITY),
+                    r -> {
+                        Thread t = new Thread(r, "agent-tool-executor");
+                        t.setDaemon(true);
+                        return t;
+                    },
+                    new ThreadPoolExecutor.AbortPolicy());
 
     static {
         Runtime.getRuntime().addShutdownHook(new Thread(
@@ -69,6 +85,7 @@ public class ToolExecutionGuard {
     private final Long conversationId;
     private final Long userId;
     private final String claimIdHash;
+    private final ExecutorService executor;
     private final AtomicInteger toolCalls = new AtomicInteger();
 
     /** Convenience constructor for tests that do not need execution metadata. */
@@ -87,6 +104,22 @@ public class ToolExecutionGuard {
                               Consumer<ToolExecutionMetadata> executionCollector,
                               @Nullable AgentTelemetry agentTelemetry,
                               Long conversationId, Long userId, String claimIdHash) {
+        this(properties, registry, requestId, correlationId, executionCollector,
+                agentTelemetry, conversationId, userId, claimIdHash, TOOL_EXECUTOR);
+    }
+
+    /**
+     * Full constructor that also accepts the {@link ExecutorService} used to
+     * run tool invocations. Production always uses the shared static
+     * {@link #TOOL_EXECUTOR}; tests supply a tiny, pre-saturated executor to
+     * exercise the rejection (bounded-queue) path deterministically.
+     */
+    ToolExecutionGuard(AgentAiProperties properties, ToolRegistry registry,
+                       String requestId, String correlationId,
+                       Consumer<ToolExecutionMetadata> executionCollector,
+                       @Nullable AgentTelemetry agentTelemetry,
+                       Long conversationId, Long userId, String claimIdHash,
+                       ExecutorService executor) {
         this.properties = properties;
         this.registry = registry;
         this.requestId = requestId == null ? "" : requestId;
@@ -96,6 +129,7 @@ public class ToolExecutionGuard {
         this.conversationId = conversationId;
         this.userId = userId;
         this.claimIdHash = claimIdHash == null ? "" : claimIdHash;
+        this.executor = executor;
     }
 
     /** Wrap every callback from the provider so each call is counted + time-bounded. */
@@ -127,7 +161,24 @@ public class ToolExecutionGuard {
         if (agentTelemetry != null) {
             agentTelemetry.toolStarted(requestId, correlationId, conversationId, userId, toolName, claimIdHash);
         }
-        Future<String> future = TOOL_EXECUTOR.submit(delegate::get);
+        Future<String> future;
+        try {
+            future = executor.submit(delegate::get);
+        } catch (RejectedExecutionException saturated) {
+            // Phase 7 hardening: the bounded tool pool AND its queue are full
+            // (an overload burst). Fail FAST with a controlled transient tool
+            // failure rather than queueing unbounded work; the agent reports it
+            // as a temporary unavailability and the caller is not held hostage
+            // by a growing backlog.
+            long durationMs = elapsedMs(start);
+            emit(toolName, ToolExecutionMetadata.STATUS_FAILED, durationMs);
+            if (agentTelemetry != null) {
+                agentTelemetry.toolFailed(requestId, correlationId, conversationId, userId,
+                        toolName, claimIdHash, durationMs, ToolExecutionMetadata.STATUS_FAILED,
+                        AgentErrorCategory.TOOL_ERROR);
+            }
+            throw new ToolExecutionException(toolName, saturated);
+        }
         try {
             String result = future.get(timeoutMs, TimeUnit.MILLISECONDS);
             long durationMs = elapsedMs(start);

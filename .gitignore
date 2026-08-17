@@ -42,11 +42,7 @@ logs/*
 !logs/.gitkeep
 
 startup-log.txt
-final-build.log
-build-*.log
-*build-*.txt
-
-# Permanently deleted project file
+.env
 master_change_log.md
 
 # ============================================================
@@ -78,20 +74,15 @@ master_change_log.md
 .DS_Store
 Thumbs.db
 
-<<<<<<< HEAD
 # ============================================================
 # Temporary files
 # ============================================================
-=======
-doc
->>>>>>> origin/enhancement
 
 *.tmp
 *.temp
 *.swp
 *.swo
 
-<<<<<<< HEAD
 # ============================================================
 # Local test/runtime files
 # ============================================================
@@ -110,5 +101,3 @@ phase1_task*_progress.md
 # ============================================================
 
 doc/
-=======
->>>>>>> origin/enhancement

@@ -114,10 +114,23 @@
 			<groupId>jakarta.servlet</groupId>
 			<artifactId>jakarta.servlet-api</artifactId>
 		</dependency>
-		<!-- Testing -->
+<!-- Phase 6: unit + slice + WebFlux security tests (JUnit 5, AssertJ, Mockito,
+		     WebTestClient, reactor-test). -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- For signing/validating JWTs; needed by main code (ReactiveJwtDecoder) and by the
+		     gateway security tests (local RSA key, no Keycloak). -->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-oauth2-jose</artifactId>
+		</dependency>
+		<!-- reactor-test (StepVerifier) for reactive filter unit tests. -->
+		<dependency>
+			<groupId>io.projectreactor</groupId>
+			<artifactId>reactor-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
