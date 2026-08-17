@@ -1,7 +1,12 @@
 
+# Deliberate: self-preservation is controlled per-profile, NOT overridden here.
+# This file previously forced `enable-self-preservation: false` for ALL profiles,
+# which silently disabled self-preservation even in prod (application-prod.yaml sets
+# it to true). Keeping it per-profile preserves fast eviction in local dev
+# (application-local.yaml: false) while retaining self-preservation in dev/prod.
 eureka:
   server:
-    enable-self-preservation: false
+    # per-profile only (see application-local.yaml / application-prod.yaml)
     use-read-only-response-cache: false
   client:
     register-with-eureka: false

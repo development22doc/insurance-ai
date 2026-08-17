@@ -139,6 +139,32 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            Phase 4 integration testing: a disposable, real PostgreSQL instance via
+            Testcontainers. Used by the @DataJpaTest repository tests so queries,
+            Flyway migrations, indexes and optimistic locking are exercised against
+            the actual production database engine rather than an emulation.
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            Phase 5 Kafka integration testing: a disposable, real Kafka broker via
+            Testcontainers. Used to exercise the producer -> topic -> consumer -> DLT
+            reliability flow (and outbox publisher) against the actual message broker.
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>

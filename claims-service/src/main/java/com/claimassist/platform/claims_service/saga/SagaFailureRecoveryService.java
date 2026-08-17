@@ -24,7 +24,6 @@ import java.util.List;
 public class SagaFailureRecoveryService {
 
     private final ClaimSagaOrchestrationRepository sagaRepository;
-    private final ClaimSagaOrchestratorService orchestratorService;
     private final SagaMetricsService metricsService;
 
     @Value("${saga.recovery.retry-delay-seconds:30}")

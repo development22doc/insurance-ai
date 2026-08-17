@@ -38,6 +38,10 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+        # A Config Server holds credentials in resolved property sources (DB passwords,
+        # Keycloak secrets). env/configprops would let a caller read them back - explicitly
+        # exclude even though the Config Server auto-exposes them by default.
+        exclude: env,configprops
 
   health:
     config:

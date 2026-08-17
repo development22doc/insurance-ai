@@ -45,25 +45,22 @@ public class GatewaySecurityConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}")
     private String jwkSetUri;
 
+    /**
+     * CORS allowed origins, comma-separated. Precedence:
+     * <ol>
+     *   <li>the {@code cors.allowed-origins} property (set from config-repo / env), then</li>
+     *   <li>the legacy {@code CORS_ALLOWED_ORIGINS} environment variable, then</li>
+     *   <li>local-development defaults.</li>
+     * </ol>
+     */
+    @Value("${cors.allowed-origins:}")
+    private String allowedOriginsProperty;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Get allowed origins from environment variable, with safe defaults
-        String allowedOriginsEnv = System.getenv("CORS_ALLOWED_ORIGINS");
-        List<String> allowedOrigins;
-
-        if (allowedOriginsEnv != null && !allowedOriginsEnv.trim().isEmpty()) {
-            allowedOrigins = Arrays.asList(allowedOriginsEnv.split(","));
-        } else {
-            // Local development defaults
-            allowedOrigins = Arrays.asList(
-                    "http://localhost:3000",   // React dev server
-                    "http://localhost:4200",   // Angular dev server
-                    "http://localhost:8080"    // Local gateway
-            );
-            log.warn("No CORS_ALLOWED_ORIGINS env var set. Using local development defaults.");
-        }
+        List<String> allowedOrigins = resolveAllowedOrigins();
 
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
@@ -80,7 +77,9 @@ public class GatewaySecurityConfig {
                 "Content-Type",
                 "Correlation-ID"
         ));
-        configuration.setAllowCredentials(true);
+        // Credentials are only meaningful (and safe) with explicit origins, never with "*".
+        boolean wildcard = allowedOrigins.stream().anyMatch("*"::equals);
+        configuration.setAllowCredentials(!wildcard);
         configuration.setMaxAge(3600L);  // 1 hour
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -88,6 +87,25 @@ public class GatewaySecurityConfig {
 
         log.debug("API Gateway CORS configuration initialized with allowed origins: {}", allowedOrigins);
         return source;
+    }
+
+    private List<String> resolveAllowedOrigins() {
+        if (allowedOriginsProperty != null && !allowedOriginsProperty.trim().isEmpty()) {
+            return Arrays.stream(allowedOriginsProperty.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+        }
+        String allowedOriginsEnv = System.getenv("CORS_ALLOWED_ORIGINS");
+        if (allowedOriginsEnv != null && !allowedOriginsEnv.trim().isEmpty()) {
+            return Arrays.asList(allowedOriginsEnv.split(","));
+        }
+        log.warn("Neither cors.allowed-origins nor CORS_ALLOWED_ORIGINS is set. Using local development defaults.");
+        return Arrays.asList(
+                "http://localhost:3000",   // React dev server
+                "http://localhost:4200",   // Angular dev server
+                "http://localhost:8080"    // Local gateway
+        );
     }
 
     @Bean
