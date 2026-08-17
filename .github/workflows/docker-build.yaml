@@ -1,63 +1,80 @@
-name: Build and Push Images
+# =============================================================================
+# ClaimAssist - Reusable container image build (Docker)
+# =============================================================================
+# Builds ONLY the affected application images as IMMUTABLE tags (git SHA) and
+# pushes them to the OCI Container Registry: `claimassist/<service>:<sha>`.
+# Invoked by .github/workflows/cd.yml (`build-images` job) so that a deployment
+# can never start before the exact immutable image for the commit exists.
+#
+# Context: the repository ROOT is the Docker build context (each service
+# Dockerfile does `COPY . .` then builds the reactor subset
+# `-pl <service> -am package`). Pushing to the registry gives Helm a concrete
+# immutable image tag to reference with NO "latest"-style supply-chain drift.
+#
+# Inputs:
+#   services  - JSON array of the services to build, e.g.
+#               '["api-gateway","customer-service"]'
+#   tag       - immutable tag to apply (the commit SHA, supplied by the caller)
+# =============================================================================
 
-# DEV-ONLY image build. Images are built once for the `dev` branch and pushed
-# tagged with the immutable Git SHA (claimassist/<service>:<git-sha>). The Deploy
-# workflow deploys this same SHA tag (image.tag=<git-sha>); nothing is rebuilt on deploy.
-#
-# Multi-arch (linux/amd64 + linux/arm64): the DEV K3s node is ARM64 (Oracle Linux
-# 9.8 aarch64), so every application image is built as a multi-platform manifest.
-# QEMU/binfmt emulation lets buildx produce the arm64 variant on the amd64 runner.
-#
-# Only the four application services in the Helm chart are built. config-service
-# and discovery-service are LOCAL/Docker-compose-only and are NOT deployed by the
-# chart, so they are not built here. No `main`/STAGE/PROD build path exists.
+name: docker-build
+
 on:
-  push:
-    branches:
-      - dev
-    paths:
-      - '**.java'
-      - '**.xml'
-      - 'Dockerfile*'
-      - '.github/workflows/docker-build.yaml'
+  workflow_call:
+    inputs:
+      services:
+        description: 'JSON array of services to build, e.g. ["api-gateway"]'
+        required: true
+        type: string
+      tag:
+        description: 'Immutable image tag to build and push (git SHA).'
+        required: true
+        type: string
+    secrets:
+      DOCKER_USERNAME:
+        required: true
+      DOCKER_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
 
 jobs:
-  build-images:
+  docker-build:
+    name: Build & Push ${{ matrix.service }}
     runs-on: ubuntu-latest
     strategy:
+      # Isolate failures: an independent service build failure must not cancel
+      # or skip its peers.
+      fail-fast: false
       matrix:
-        service: [claims-service, customer-service, agent-service, api-gateway]
-    permissions:
-      contents: read
-      packages: write
-
+        service: ${{ fromJSON(inputs.services) }}
     steps:
-      - uses: actions/checkout@v4
-
-      # QEMU/binfmt emulation: enables building the arm64 variant on the amd64
-      # ubuntu-latest runner (required before Buildx for multi-platform output).
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # Each Dockerfile builds from the repository root (reactor + common-lib),
+        # so a full checkout is required and `path:` context is not used.
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
+      - name: Log in to registry
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push immutable image (Git SHA tag)
+      - name: Build and push immutable image
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ${{ matrix.service }}/Dockerfile
           push: true
-          # Multi-platform manifest: amd64 + arm64. The DEV K3s node is ARM64;
-          # amd64 is preserved for portability/any x86 tooling. Both archs share
-          # the single immutable Git SHA tag below.
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:buildcache,mode=max
+          tags: >
+            ${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:${{ inputs.tag }}
+          # Buildx-local build cache (GHA cache backend) avoids re-downloading
+          # Maven dependencies on every run; keyed by service + tag + runner OS.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Never write the immutable SHA-tagged image without a clean tag-name
+          # guarantee; the tag IS the commit SHA, so no retag/alias step is needed.

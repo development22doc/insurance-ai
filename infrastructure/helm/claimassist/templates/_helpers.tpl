@@ -61,9 +61,15 @@ Context:
 {{- $svc := .svc -}}
 {{- $img := $svc.image | default .name -}}
 {{- $registry := $root.Values.image.registry | default "" -}}
+{{- /* Per-service immutable image tag. When set (services.<name>.imageTag),
+       only that service's pod template changes during a `helm upgrade`, which
+       is what enables SERVICE-WISE independent deployment on a single release.
+       When absent it falls back to the global image.tag, so untouched services
+       keep their already-deployed image and are not rolled out. */ -}}
+{{- $tag := $svc.imageTag | default $root.Values.image.tag -}}
 {{- if $registry -}}
-{{- printf "%s/%s/%s:%s" $registry $root.Values.image.repository $img $root.Values.image.tag -}}
+{{- printf "%s/%s/%s:%s" $registry $root.Values.image.repository $img $tag -}}
 {{- else -}}
-{{- printf "%s/%s:%s" $root.Values.image.repository $img $root.Values.image.tag -}}
+{{- printf "%s/%s:%s" $root.Values.image.repository $img $tag -}}
 {{- end -}}
 {{- end -}}

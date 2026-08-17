@@ -1,0 +1,571 @@
+# =============================================================================
+# ClaimAssist - Consolidated Continuous Delivery (CD)
+# =============================================================================
+# One CD workflow for the FOUR Kubernetes application services only:
+#     api-gateway, customer-service, claims-service, agent-service
+# discovery-service and config-service are LOCAL/Docker-compose only and are
+# NEVER deployed (or built) as Kubernetes workloads.
+#
+# ----------------------------- ARCHITECTURE ----------------------------------
+# * Deployment mechanism: ONE Helm release per environment
+#     claimassist-dev / claimassist-stage / claimassist-prod
+#   (chart infrastructure/helm/claimassist), which owns BOTH the shared
+#   infrastructure (PostgreSQL/Redis/Kafka/Keycloak/Flyway/ingress/networkpolicy)
+#   and the four application Deployments.
+#
+# * SERVICE-WISE INDEPENDENT DEPLOYMENT (NO Helm drift):
+#   The chart's image helper supports a PER-SERVICE tag (`services.<name>.imageTag`).
+#   Deploying one service runs:
+#       helm upgrade <release> <chart> -n <ns> \
+#         --set image.registry=<user> \
+#         --set services.<svc>.imageTag=<git-sha>
+#   Because `helm upgrade` merges over the previous release values, ONLY the
+#   targeted service's pod template changes -> only that Deployment rolls out.
+#   Untouched services keep their already-deployed immutable SHA tag (Helm state
+#   always equals live state => NO drift). Helm is the only mutator of the
+#   Deployments, so a later Helm operation can never "revert" a kubectl side-effect
+#   (there are none).
+#
+# * IMAGE -> CD ordering (no race):
+#   Image building lives in the reusable work flow .github/workflows/docker-build.yaml
+#   and is invoked by this workflow (job `build-images`). Automatic deploy jobs
+#   declare `needs: build-images`, so a deployment can never start before the
+#   immutable image for the commit SHA has been built AND pushed. Manual (workflow_dispatch)
+#   deploys skip building and instead verify the immutable SHA image already exists
+#   via `docker manifest inspect` before touching the cluster.
+#
+# * Infra synchronization:
+#   - application change                    -> service-wise helm upgrade (this service only)
+#   - common-lib/** or root pom.xml change   -> all four services (they all depend on it)
+#   - infrastructure/** chart change         -> a dedicated infra `helm upgrade`
+#                                              (no image tags -> applies the chart change,
+#                                              preserves every service's deployed SHA)
+#   The infra sync re-renders the whole chart from the SAVED release values so
+#   application images are NOT bumped.
+#
+# * Concurrency: namespace-level lock `cd-deploy-<env>` for every job that mutates
+#   that environment's single Helm release (deploy, infra-sync, rollback). Two
+#   different services are independent/serializable, "all" cannot race a service
+#   deploy, and two deploys of the same env can never last-writer-wins each other.
+#
+# * Failure isolation: all service matrices use `fail-fast: false`; an independent
+#   service failure does NOT cancel its peers. Each service job fails (and is
+#   reported) independently.
+#
+# * Environments: dev/stage/prod namespaces + env-scoped kubeconfig secrets:
+#     dev   -> claimassist-dev   (DEV_KUBE_CONFIG)
+#     stage -> claimassist-stage (STAGE_KUBE_CONFIG)
+#     prod  -> claimassist-prod  (PROD_KUBE_CONFIG)  [approval gate via `prod` env]
+# =============================================================================
+
+name: CD
+
+on:
+  # Automatic deployment on the repository's dev branch (change-detected).
+  push:
+    branches: [ dev ]
+  # Manual deployment: pick environment + service (independent, no "all-or-nothing").
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        type: choice
+        options:
+          - dev
+          - stage
+          - prod
+        default: dev
+        required: true
+      service:
+        description: 'Service to deploy'
+        type: choice
+        options:
+          - all
+          - api-gateway
+          - customer-service
+          - claims-service
+          - agent-service
+        default: all
+        required: true
+
+permissions:
+  contents: read
+
+# Generic no-op job anchors are avoided; each matrix deploy job below declares its
+# own environment-scoped, namespace-level concurrency lock.
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1 - Change detection (automatic push only)
+  # ---------------------------------------------------------------------------
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    outputs:
+      api-gateway: ${{ steps.filter.outputs.api-gateway }}
+      customer-service: ${{ steps.filter.outputs.customer-service }}
+      claims-service: ${{ steps.filter.outputs.claims-service }}
+      agent-service: ${{ steps.filter.outputs.agent-service }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect changed services
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          # Service filters fan out shared code:
+          #  - common-lib/** and pom.xml -> all four (all depend on them)
+          filters: |
+            api-gateway:
+              - 'api-gateway/**'
+              - 'common-lib/**'
+              - 'pom.xml'
+            customer-service:
+              - 'customer-service/**'
+              - 'common-lib/**'
+              - 'pom.xml'
+            claims-service:
+              - 'claims-service/**'
+              - 'common-lib/**'
+              - 'pom.xml'
+            agent-service:
+              - 'agent-service/**'
+              - 'common-lib/**'
+              - 'pom.xml'
+            # Chart / values / deployment-config changes need a Helm sync.
+            infra:
+              - 'infrastructure/**'
+
+  # ---------------------------------------------------------------------------
+  # Job 2 - Resolve deployment targets
+  # ---------------------------------------------------------------------------
+  resolve-targets:
+    name: Resolve Deployment Targets
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      app_services: ${{ steps.resolve.outputs.app_services }}
+      run_build: ${{ steps.resolve.outputs.run_build }}
+      run_infra_sync: ${{ steps.resolve.outputs.run_infra_sync }}
+      trigger_kind: ${{ steps.resolve.outputs.trigger_kind }}
+    steps:
+      - name: Compute deployment target
+        id: resolve
+        env:
+          DISPATCH_ENV: ${{ github.event.inputs.environment }}
+          DISPATCH_SERVICE: ${{ github.event.inputs.service }}
+          CH_API: ${{ needs.detect-changes.outputs.api-gateway }}
+          CH_CUSTOMER: ${{ needs.detect-changes.outputs.customer-service }}
+          CH_CLAIMS: ${{ needs.detect-changes.outputs.claims-service }}
+          CH_AGENT: ${{ needs.detect-changes.outputs.agent-service }}
+          CH_INFRA: ${{ needs.detect-changes.outputs.infra }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${DISPATCH_ENV:-dev}"
+            echo "environment=$ENV" >> "$GITHUB_OUTPUT"
+            echo "trigger_kind=manual" >> "$GITHUB_OUTPUT"
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+            echo "run_infra_sync=false" >> "$GITHUB_OUTPUT"
+            if [ "$DISPATCH_SERVICE" = "all" ]; then
+              echo 'app_services=["api-gateway","customer-service","claims-service","agent-service"]' >> "$GITHUB_OUTPUT"
+            else
+              echo "app_services=[\"$DISPATCH_SERVICE\"]" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          # Automatic push -> DEV only.
+          echo "environment=dev" >> "$GITHUB_OUTPUT"
+          echo "trigger_kind=auto" >> "$GITHUB_OUTPUT"
+          if [ "$CH_INFRA" = "true" ]; then
+            echo "run_infra_sync=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_infra_sync=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          ITEMS=""
+          for pair in "api-gateway:$CH_API" "customer-service:$CH_CUSTOMER" \
+                      "claims-service:$CH_CLAIMS" "agent-service:$CH_AGENT"; do
+            name="${pair%%:*}"; changed="${pair##*:}"
+            if [ "$changed" = "true" ]; then
+              ITEMS="$ITEMS${ITEMS:+,}\"$name\""
+            fi
+          done
+          if [ -n "$ITEMS" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "app_services=[$ITEMS]" >> "$GITHUB_OUTPUT"
+          echo "Detected app services: [$ITEMS]"
+
+  # ---------------------------------------------------------------------------
+  # Job 3 - Build only the affected immutable images (reusable workflow)
+  # ---------------------------------------------------------------------------
+  build-images:
+    name: Build Images
+    if: needs.resolve-targets.outputs.run_build == 'true'
+    needs: resolve-targets
+    uses: ./.github/workflows/docker-build.yaml
+    with:
+      services: ${{ needs.resolve-targets.outputs.app_services }}
+      tag: ${{ github.sha }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Job 4 - Infrastructure / Helm synchronization (automatic push only)
+  # ---------------------------------------------------------------------------
+  # Re-renders the chart from SAVED release values so the infrastructure change is
+  # actually applied while every service keeps its already-deployed SHA (no image
+  # bump => no application rollout).
+  infra-sync:
+    name: Sync Infrastructure DEV
+    runs-on: ubuntu-latest
+    needs: resolve-targets
+    if: needs.resolve-targets.outputs.run_infra_sync == 'true' && needs.resolve-targets.outputs.environment == 'dev'
+    environment: dev
+    concurrency:
+      group: cd-deploy-dev
+      cancel-in-progress: false
+    env:
+      CHART: infrastructure/helm/claimassist
+      NAMESPACE: claimassist-dev
+      RELEASE: claimassist-dev
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.27.0'
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.16.4'
+      - name: Configure kubectl (DEV credentials only)
+        env:
+          KUBE_CONFIG: ${{ secrets.DEV_KUBE_CONFIG }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KUBE_CONFIG" ]; then
+            echo "::error::DEV_KUBE_CONFIG secret is not set on the 'dev' environment."
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+      - name: Validate chart (helm lint + template)
+        run: |
+          set -euo pipefail
+          helm lint "$CHART"
+          helm template "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            --set image.registry="${{ secrets.DOCKER_USERNAME }}" > /dev/null
+      - name: Apply infrastructure change via Helm (DEV)
+        run: |
+          set -euo pipefail
+          # No image.tag / imageTag overrides -> helm re-renders the whole chart
+          # from saved release values, applying the changed chart/values, while
+          # every application keeps its already-deployed SHA (no rollout).
+          helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+            --wait \
+            --timeout 10m
+      - name: Verify rollout
+        run: kubectl rollout status deployment -n "$NAMESPACE" --timeout=5m
+
+  # ===========================================================================
+  # Per-environment, per-service deployment (SERVICE-WISE, parallel matrix)
+  # ===========================================================================
+  # Each matrix element runs ONE `helm upgrade` that bumps ONLY that service to
+  # the immutable SHA for the commit. `fail-fast: false` isolates failures, and
+  # a SINGLE namespace-level concurrency lock serializes every operation on the
+  # shared release so "all" and individual services can never race.
+
+  # ------------------------------- DEV ---------------------------------------
+  dev-deploy:
+    name: Deploy ${{ matrix.service }} DEV
+    runs-on: ubuntu-latest
+    needs: [resolve-targets, build-images]
+    if: needs.resolve-targets.outputs.environment == 'dev' && needs.resolve-targets.outputs.app_services != '[]'
+    environment: dev
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.resolve-targets.outputs.app_services) }}
+    concurrency:
+      group: cd-deploy-dev
+      cancel-in-progress: false
+    env:
+      NAMESPACE: claimassist-dev
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.27.0'
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.16.4'
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Verify immutable image exists
+        env:
+          IMAGE: ${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker manifest inspect "$IMAGE" > /dev/null
+          echo "Image verified: claimassist/${{ matrix.service }}:${{ github.sha }}"
+      - name: Configure kubectl (DEV credentials only)
+        env:
+          KUBE_CONFIG: ${{ secrets.DEV_KUBE_CONFIG }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KUBE_CONFIG" ]; then
+            echo "::error::DEV_KUBE_CONFIG secret is not set on the 'dev' environment."
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+      - name: Deploy ${{ matrix.service }} via Helm (immutable image)
+        run: |
+          set -euo pipefail
+          CHART=infrastructure/helm/claimassist
+          RELEASE=claimassist-dev
+          helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+            --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
+            --wait \
+            --timeout 10m
+      - name: Wait for rollout to complete
+        run: kubectl -n "$NAMESPACE" rollout status "deployment/claimassist-${{ matrix.service }}" --timeout=10m
+      - name: Verify deployment is healthy
+        run: |
+          set -euo pipefail
+          DEP="claimassist-${{ matrix.service }}"
+          AVAILABLE=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
+          READY=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.status.readyReplicas}')
+          DESIRED=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.spec.replicas}')
+          echo "Available condition: $AVAILABLE | readyReplicas: ${READY:-0} / desired: $DESIRED"
+          if [ "$AVAILABLE" != "True" ] || [ "${READY:-0}" -lt "${DESIRED:-1}" ]; then
+            echo "::error::$DEP did not become healthy after rollout."
+            kubectl -n "$NAMESPACE" get pods -l "app.kubernetes.io/component=${{ matrix.service }}"
+            exit 1
+          fi
+
+  dev-validation:
+    name: DEV Validation
+    runs-on: ubuntu-latest
+    needs: [resolve-targets, dev-deploy, infra-sync]
+    if: needs.resolve-targets.outputs.environment == 'dev'
+    steps:
+      - name: Validate DEV deployment result
+        run: |
+          echo "DEV services deployed: ${{ needs.resolve-targets.outputs.app_services }}"
+          echo "Infra sync triggered: ${{ needs.resolve-targets.outputs.run_infra_sync }}"
+          echo "DEV validation passed."
+
+  # ------------------------------- STAGE -------------------------------------
+  stage-deploy:
+    name: Deploy ${{ matrix.service }} STAGE
+    runs-on: ubuntu-latest
+    needs: resolve-targets
+    if: needs.resolve-targets.outputs.environment == 'stage' && needs.resolve-targets.outputs.app_services != '[]'
+    environment: stage
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.resolve-targets.outputs.app_services) }}
+    concurrency:
+      group: cd-deploy-stage
+      cancel-in-progress: false
+    env:
+      NAMESPACE: claimassist-stage
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.27.0'
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.16.4'
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Verify immutable image exists
+        env:
+          IMAGE: ${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker manifest inspect "$IMAGE" > /dev/null
+          echo "Image verified: claimassist/${{ matrix.service }}:${{ github.sha }}"
+      - name: Configure kubectl (STAGE credentials only)
+        env:
+          KUBE_CONFIG: ${{ secrets.STAGE_KUBE_CONFIG }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KUBE_CONFIG" ]; then
+            echo "::error::STAGE_KUBE_CONFIG secret is not set on the 'stage' environment."
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+      - name: Deploy ${{ matrix.service }} via Helm (immutable image)
+        run: |
+          set -euo pipefail
+          CHART=infrastructure/helm/claimassist
+          RELEASE=claimassist-stage
+          helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+            --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
+            --wait \
+            --timeout 10m
+      - name: Wait for rollout to complete
+        run: kubectl -n "$NAMESPACE" rollout status "deployment/claimassist-${{ matrix.service }}" --timeout=10m
+      - name: Verify deployment is healthy
+        run: |
+          set -euo pipefail
+          DEP="claimassist-${{ matrix.service }}"
+          AVAILABLE=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
+          READY=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.status.readyReplicas}')
+          DESIRED=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.spec.replicas}')
+          echo "Available condition: $AVAILABLE | readyReplicas: ${READY:-0} / desired: $DESIRED"
+          if [ "$AVAILABLE" != "True" ] || [ "${READY:-0}" -lt "${DESIRED:-1}" ]; then
+            echo "::error::$DEP did not become healthy after rollout."
+            kubectl -n "$NAMESPACE" get pods -l "app.kubernetes.io/component=${{ matrix.service }}"
+            exit 1
+          fi
+
+  stage-validation:
+    name: STAGE Validation
+    runs-on: ubuntu-latest
+    needs: [resolve-targets, stage-deploy]
+    if: needs.resolve-targets.outputs.environment == 'stage'
+    steps:
+      - name: Validate STAGE deployment result
+        run: |
+          echo "STAGE services deployed: ${{ needs.resolve-targets.outputs.app_services }}"
+          echo "STAGE validation passed."
+
+  # ------------------------------- PROD --------------------------------------
+  prod-deploy:
+    name: Deploy ${{ matrix.service }} PROD
+    runs-on: ubuntu-latest
+    needs: resolve-targets
+    if: needs.resolve-targets.outputs.environment == 'prod' && needs.resolve-targets.outputs.app_services != '[]'
+    environment: prod
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.resolve-targets.outputs.app_services) }}
+    concurrency:
+      group: cd-deploy-prod
+      cancel-in-progress: false
+    env:
+      NAMESPACE: claimassist-prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.27.0'
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.16.4'
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Verify immutable image exists
+        env:
+          IMAGE: ${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker manifest inspect "$IMAGE" > /dev/null
+          echo "Image verified: claimassist/${{ matrix.service }}:${{ github.sha }}"
+      - name: Configure kubectl (PROD credentials only)
+        env:
+          KUBE_CONFIG: ${{ secrets.PROD_KUBE_CONFIG }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KUBE_CONFIG" ]; then
+            echo "::error::PROD_KUBE_CONFIG secret is not set on the 'prod' environment."
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+      - name: Deploy ${{ matrix.service }} via Helm (immutable image)
+        run: |
+          set -euo pipefail
+          CHART=infrastructure/helm/claimassist
+          RELEASE=claimassist-prod
+          helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+            --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
+            --wait \
+            --timeout 10m
+      - name: Wait for rollout to complete
+        run: kubectl -n "$NAMESPACE" rollout status "deployment/claimassist-${{ matrix.service }}" --timeout=10m
+      - name: Verify deployment is healthy
+        run: |
+          set -euo pipefail
+          DEP="claimassist-${{ matrix.service }}"
+          AVAILABLE=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
+          READY=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.status.readyReplicas}')
+          DESIRED=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.spec.replicas}')
+          echo "Available condition: $AVAILABLE | readyReplicas: ${READY:-0} / desired: $DESIRED"
+          if [ "$AVAILABLE" != "True" ] || [ "${READY:-0}" -lt "${DESIRED:-1}" ]; then
+            echo "::error::$DEP did not become healthy after rollout."
+            kubectl -n "$NAMESPACE" get pods -l "app.kubernetes.io/component=${{ matrix.service }}"
+            exit 1
+          fi
+
+  prod-validation:
+    name: PROD Validation
+    runs-on: ubuntu-latest
+    needs: [resolve-targets, prod-deploy]
+    if: needs.resolve-targets.outputs.environment == 'prod'
+    steps:
+      - name: Validate PROD deployment result
+        run: |
+          echo "PROD services deployed: ${{ needs.resolve-targets.outputs.app_services }}"
+          echo "PROD validation passed."
+
+  # ---------------------------------------------------------------------------
+  # Deployment summary
+  # ---------------------------------------------------------------------------
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [resolve-targets, dev-validation, stage-validation, prod-validation]
+    steps:
+      - name: Print deployment summary
+        run: |
+          echo "Environment        : ${{ needs.resolve-targets.outputs.environment }}"
+          echo "Services deployed   : ${{ needs.resolve-targets.outputs.app_services }}"
+          echo "Trigger            : ${{ needs.resolve-targets.outputs.trigger_kind }} (${{ github.event_name }})"
+          echo "Build ran          : ${{ needs.resolve-targets.outputs.run_build }}"
+          echo "Infra sync ran     : ${{ needs.resolve-targets.outputs.run_infra_sync }}"
+          echo "Workflow run ID    : ${{ github.run_id }}"

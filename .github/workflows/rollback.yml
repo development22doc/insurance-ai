@@ -24,8 +24,11 @@ env:
   NAMESPACE: claimassist-dev
   RELEASE: claimassist-dev
 
+# Shared namespace-level lock with the CD deploy jobs (cd-deploy-dev): a rollback
+# and a deploy of the same env can never run concurrently against the single Helm
+# release, otherwise a rollback could be overwritten by an in-flight deploy.
 concurrency:
-  group: claimassist-dev-deploy
+  group: cd-deploy-dev
   cancel-in-progress: false
 
 jobs:
