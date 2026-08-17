@@ -43,7 +43,7 @@ spring:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
         options:
-          model: ${OLLAMA_MODEL:MadhuryaPasan/Qwen3-ExpertTools:1.7b-q4_K_M}
+          model: ${OLLAMA_MODEL:qwen2.5-coder:3b}
           temperature: 0.2
           num-ctx: 8192
   security:
