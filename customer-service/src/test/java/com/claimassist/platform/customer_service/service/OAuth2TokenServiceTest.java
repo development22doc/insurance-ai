@@ -20,19 +20,27 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Phase 2 refresh-token flow tests: Keycloak is authoritative for the OAuth2
+ * exchange (called FIRST), then the locally persisted Keycloak token is atomically
+ * rotated via {@link RefreshTokenService#rotateIfPresent} and the local revoked /
+ * expired guard can reject a presented token as defense-in-depth.
+ */
 @ExtendWith(MockitoExtension.class)
 class OAuth2TokenServiceTest {
 
@@ -107,54 +115,55 @@ class OAuth2TokenServiceTest {
 
         // Setup CustomerRepository
         lenient().when(customerRepository.findByUsername(TEST_USERNAME)).thenReturn(Optional.of(testCustomer));
-        lenient().when(customerRepository.findById(TEST_CUSTOMER_ID)).thenReturn(Optional.of(testCustomer));
-
-        // Setup RefreshTokenService
-        lenient().when(refreshTokenService.createRefreshToken(any(Customer.class))).thenReturn(mock(RefreshToken.class));
-        lenient().when(refreshTokenService.validateAndRotate(anyString())).thenReturn(mock(RefreshToken.class));
     }
 
+    /**
+     * KEYCLOAK FIRST: Keycloak is authoritative for validating and rotating the old
+     * token. When Keycloak returns a NEW refresh token, we then atomically rotate the
+     * local record. If that local record is revoked, the defense-in-depth guard throws.
+     */
     @Test
-    void refreshToken_WithInvalidToken_ShouldThrowBadRequestException() {
-        // Given
-        when(refreshTokenService.validateAndRotate(TEST_REFRESH_TOKEN))
-                .thenThrow(new BadRequestException("Invalid refresh token"));
+    void refreshToken_WhenLocalRecordRevoked_ShouldThrowBadRequestException() {
+        // Given: Keycloak rotates with a NEW token, customer is found, but the local
+        // record is revoked -> the local guard rejects it.
+        String oldRefreshToken = "revoked-local-token";
+        String newRefreshToken = "new-token-from-keycloak";
+        Map<String, Object> rotatedResponse = new HashMap<>(successfulTokenResponse);
+        rotatedResponse.put("refresh_token", newRefreshToken);
+
+        mockKeycloakTokenExchange(rotatedResponse);
+
+        when(refreshTokenService.rotateIfPresent(
+                eq(oldRefreshToken), eq(newRefreshToken), any(Instant.class), any()))
+                .thenThrow(new BadRequestException("Refresh token revoked"));
 
         // When/Then
-        assertThatThrownBy(() -> oauth2TokenService.refreshToken(TEST_REFRESH_TOKEN))
+        assertThatThrownBy(() -> oauth2TokenService.refreshToken(oldRefreshToken))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("Invalid refresh token");
+                .hasMessage("Refresh token revoked");
 
-        // Verify token validation was attempted
-        verify(refreshTokenService).validateAndRotate(TEST_REFRESH_TOKEN);
-
-        // Verify RestClient was NOT called
-        verify(restClient, never()).post();
+        // Keycloak was consulted FIRST (authoritative)
+        verify(restClient).post();
+        // Local atomic rotation was attempted on the presented old token
+        verify(refreshTokenService).rotateIfPresent(
+                eq(oldRefreshToken), eq(newRefreshToken), any(Instant.class), any());
     }
 
     @Test
     void refreshToken_WithValidToken_ShouldReturnAuthResponse() {
-        // Given
-        String validRefreshToken = "valid-refresh-token";
-        RefreshToken mockRefreshToken = mock(RefreshToken.class);
-        when(refreshTokenService.validateAndRotate(validRefreshToken)).thenReturn(mockRefreshToken);
+        // Given: Keycloak returns a successful response with a NEW refresh token and
+        // the customer is found; rotation of the local record succeeds.
+        String oldRefreshToken = "valid-refresh-token";
+        String newRefreshToken = TEST_REFRESH_TOKEN;
 
-        // Mock RestClient chain: post().uri().contentType().body().retrieve().body()
-        // After .uri() the chain is RequestBodySpec throughout (body() returns
-        // RequestBodySpec, not RequestHeadersSpec), then retrieve() -> ResponseSpec.
-        RestClient.RequestBodyUriSpec requestBodyUriSpec = mock(RestClient.RequestBodyUriSpec.class);
-        RestClient.RequestBodySpec requestBodySpec = mock(RestClient.RequestBodySpec.class);
-        RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
+        mockKeycloakTokenExchange(successfulTokenResponse);
 
-        when(restClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(TEST_TOKEN_URI)).thenReturn(requestBodySpec);
-        when(requestBodySpec.contentType(MediaType.APPLICATION_FORM_URLENCODED)).thenReturn(requestBodySpec);
-        when(requestBodySpec.body(any(LinkedMultiValueMap.class))).thenReturn(requestBodySpec);
-        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.body(Map.class)).thenReturn(successfulTokenResponse);
+        when(refreshTokenService.rotateIfPresent(
+                eq(oldRefreshToken), eq(newRefreshToken), any(Instant.class), any()))
+                .thenReturn(Optional.of(mock(RefreshToken.class)));
 
         // When
-        AuthResponse response = oauth2TokenService.refreshToken(validRefreshToken);
+        AuthResponse response = oauth2TokenService.refreshToken(oldRefreshToken);
 
         // Then
         assertThat(response).isNotNull();
@@ -168,45 +177,23 @@ class OAuth2TokenServiceTest {
         assertThat(response.customerId()).isEqualTo(TEST_CUSTOMER_ID);
         assertThat(response.fullName()).isEqualTo(TEST_FULL_NAME);
 
-        // Verify token validation was called
-        verify(refreshTokenService).validateAndRotate(validRefreshToken);
-
-        // Verify RestClient chain was called
+        // Verify Keycloak exchange was performed
         verify(restClient).post();
-        verify(requestBodyUriSpec).uri(TEST_TOKEN_URI);
-        verify(requestBodySpec).contentType(MediaType.APPLICATION_FORM_URLENCODED);
-        verify(requestBodySpec).body(any(LinkedMultiValueMap.class));
-        verify(requestBodySpec).retrieve();
-        verify(responseSpec).body(Map.class);
-
         // Verify customer lookup
         verify(customerRepository).findByUsername(TEST_USERNAME);
-
-        // Verify refresh token creation for rotation
-        verify(refreshTokenService).createRefreshToken(testCustomer);
+        // Verify atomic local rotation old -> new Keycloak token
+        verify(refreshTokenService).rotateIfPresent(
+                eq(oldRefreshToken), eq(newRefreshToken), any(Instant.class), any());
     }
 
     @Test
     void refreshToken_WhenCustomerNotFound_ShouldReturnResponseWithoutCustomer() {
-        // Given
+        // Given: Keycloak returns tokens, but no customer matches the validated ID token.
         String validRefreshToken = "valid-refresh-token-user-missing";
-        RefreshToken mockRefreshToken = mock(RefreshToken.class);
-        when(refreshTokenService.validateAndRotate(validRefreshToken)).thenReturn(mockRefreshToken);
 
-        // Customer not found by the username carried in the validated ID token
+        mockKeycloakTokenExchange(successfulTokenResponse);
+
         when(customerRepository.findByUsername(TEST_USERNAME)).thenReturn(Optional.empty());
-
-        // Mock RestClient chain: post().uri().contentType().body().retrieve().body()
-        RestClient.RequestBodyUriSpec requestBodyUriSpec = mock(RestClient.RequestBodyUriSpec.class);
-        RestClient.RequestBodySpec requestBodySpec = mock(RestClient.RequestBodySpec.class);
-        RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
-
-        when(restClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(TEST_TOKEN_URI)).thenReturn(requestBodySpec);
-        when(requestBodySpec.contentType(MediaType.APPLICATION_FORM_URLENCODED)).thenReturn(requestBodySpec);
-        when(requestBodySpec.body(any(LinkedMultiValueMap.class))).thenReturn(requestBodySpec);
-        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.body(Map.class)).thenReturn(successfulTokenResponse);
 
         // When
         AuthResponse response = oauth2TokenService.refreshToken(validRefreshToken);
@@ -222,7 +209,21 @@ class OAuth2TokenServiceTest {
 
         // Customer was looked up but not found
         verify(customerRepository).findByUsername(TEST_USERNAME);
-        // No rotation record created because no customer id is known
-        verify(refreshTokenService, never()).createRefreshToken(any(Customer.class));
+        // No local rotation performed when no customer id is known
+        verify(refreshTokenService, never()).rotateIfPresent(any(), any(), any(), any());
+    }
+
+    private void mockKeycloakTokenExchange(Map<String, Object> response) {
+        // Mock RestClient chain: post().uri().contentType().body().retrieve().body()
+        RestClient.RequestBodyUriSpec requestBodyUriSpec = mock(RestClient.RequestBodyUriSpec.class);
+        RestClient.RequestBodySpec requestBodySpec = mock(RestClient.RequestBodySpec.class);
+        RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
+
+        when(restClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(TEST_TOKEN_URI)).thenReturn(requestBodySpec);
+        when(requestBodySpec.contentType(MediaType.APPLICATION_FORM_URLENCODED)).thenReturn(requestBodySpec);
+        when(requestBodySpec.body(any(LinkedMultiValueMap.class))).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(Map.class)).thenReturn(response);
     }
 }

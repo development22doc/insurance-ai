@@ -89,7 +89,7 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     @Test
     void submitClaim_WithActivePolicy_ShouldSubmitClaimSuccess() {
         // Given
-        when(customerServiceGateway.getPolicyCoverage(1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
+        when(customerServiceGateway.getPolicyCoverage(1L, 1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
                 1L, "POL-001", "ACTIVE", "Plan Type A", "Health", 1000L, 100000L, null));
 
         when(claimRepository.save(any(Claim.class))).thenAnswer(invocation -> {
@@ -124,7 +124,7 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     @Test
     void submitClaim_WithInactivePolicy_ShouldThrowBadRequestException() {
         // Given
-        when(customerServiceGateway.getPolicyCoverage(1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
+        when(customerServiceGateway.getPolicyCoverage(1L, 1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
                 1L, "POL-001", "EXPIRED", "Plan Type A", "Health", 1000L, 100000L, null));
 
         when(idempotencyService.execute(
