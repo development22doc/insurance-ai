@@ -179,12 +179,22 @@ jobs:
       # rely on Maven prefix discovery. Explicit -D flags (rather than relying on
       # pluginManagement pick-up) make the run deterministic. No masking flags:
       # this must genuinely run and fail CI on a real error.
+      #
+      # nvdApiDelay (ms): on a cold OWASP cache the goal must download the full
+      # NVD database (378k+ records, ~190 API pages). Without throttling the NVD
+      # API client fires requests as fast as possible, exceeds NVD's rate limit and
+      # receives HTTP 503 -> "NVD Returned Status Code: 503" -> NoDataException.
+      # This delay keeps the cold download within NVD's rate limits (the OWASP
+      # data directory is cached, so this only slows the first/seeded run, never a
+      # warmed cache). It does not weaken the scan: failBuildOnCVSS/failOnError
+      # still apply and real vulnerabilities still fail the build.
       run: |
         mvn -B org.owasp:dependency-check-maven:${{ env.DC_PLUGIN_VERSION }}:check \
           -DskipTests \
           -DfailBuildOnCVSS=8 \
           -DfailOnError=true \
           -DautoUpdate=true \
+          -DnvdApiDelay=2000 \
           -DdataDirectory=${{ env.DC_DATA_DIR }} \
           -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
 
