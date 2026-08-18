@@ -18,7 +18,7 @@
 
 	<properties>
 		<java.version>21</java.version>
-		<spring-cloud.version>2025.0.0</spring-cloud.version>
+		<spring-cloud.version>2025.0.3</spring-cloud.version>
 		<tomcat.version>10.1.57</tomcat.version>
 		<!-- Security-fix alignment: Jackson 2.21.4 -> 2.21.6, Log4j 2.24.3 -> 2.26.1.
 		     Netty is already pinned to 4.1.136.Final via netty-bom import below. -->
@@ -144,18 +144,13 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<dependency>
-				<groupId>org.springframework.cloud</groupId>
-				<artifactId>spring-cloud-config-client</artifactId>
-				<version>4.3.3</version>
-			</dependency>
-			<!-- Netty 4.1.135.Final fixed by 4.1.136.Final (CVE-2026-56817 / 56745 /
-			     56820 / 59901 / 55851). Imported BOM overrides the Spring Boot BOM's
-			     4.1.135 pin so reactor-netty netty artifacts align on the secure line. -->
+			<!-- Netty 4.1.135.Final fixed by 4.1.137.Final. Imported BOM overrides the
+			     Spring Boot BOM's 4.1.135 pin so reactor-netty netty artifacts align
+			     on the secure line (4.1.137 fixes CVE-2026-59903; 4.1.136 is vulnerable). -->
 			<dependency>
 				<groupId>io.netty</groupId>
 				<artifactId>netty-bom</artifactId>
-				<version>4.1.136.Final</version>
+				<version>4.1.137.Final</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>

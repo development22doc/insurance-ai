@@ -1,0 +1,1 @@
+com.claimassist.platform:claimassist-ai-platform:pom:1.0.0

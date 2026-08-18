@@ -17,15 +17,16 @@
 
     <properties>
         <java.version>21</java.version>
-        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
-        <testcontainers.version>1.20.0</testcontainers.version>
         <tomcat.version>10.1.57</tomcat.version>
-        <!-- Security-fix alignment: Netty 4.1.135.Final (Boot default) -> 4.1.136.Final,
-             Jackson 2.21.4 -> 2.21.6, Log4j 2.24.3 -> 2.26.1 (see api-gateway CVE notes). -->
-        <netty.version>4.1.136.Final</netty.version>
+        <!-- Security-fix alignment: Netty 4.1.135.Final (Boot default) -> 4.1.137.Final
+             (4.1.137 fixes CVE-2026-59903 in netty-codec-http; 4.1.136 is vulnerable),
+             Jackson 2.21.4 -> 2.21.6, Log4j 2.24.3 -> 2.26.1. -->
+        <netty.version>4.1.137.Final</netty.version>
         <jackson-bom.version>2.21.6</jackson-bom.version>
         <log4j2.version>2.26.1</log4j2.version>
+        <postgresql.version>42.7.13</postgresql.version>
     </properties>
 
     <dependencies>
@@ -150,21 +151,18 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>postgresql</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>jdbc</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -174,7 +172,6 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>kafka</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
 
