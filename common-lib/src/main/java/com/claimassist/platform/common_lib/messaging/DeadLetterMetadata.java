@@ -3,6 +3,8 @@ package com.claimassist.platform.common_lib.messaging;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
+import org.springframework.kafka.listener.ListenerExecutionFailedException;
+import org.springframework.kafka.listener.TimestampedException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -53,15 +55,38 @@ public final class DeadLetterMetadata {
         headers.add(ORIGINAL_OFFSET_HEADER, toBytes(Long.toString(record.offset())));
         headers.add(FAILURE_TIMESTAMP_HEADER, toBytes(Instant.now().toString()));
 
-        if (exception != null) {
-            headers.add(EXCEPTION_CLASS_HEADER, toBytes(exception.getClass().getName()));
-            String message = exception.getMessage();
+        Exception effective = rootCause(exception);
+        if (effective != null) {
+            headers.add(EXCEPTION_CLASS_HEADER, toBytes(effective.getClass().getName()));
+            String message = effective.getMessage();
             if (message != null && !message.isBlank()) {
                 headers.add(EXCEPTION_MESSAGE_HEADER, toBytes(message));
             }
         }
 
         headers.add(RETRY_COUNT_HEADER, toBytes(Integer.toString(incrementRetryCount(record))));
+    }
+
+    /**
+     * Resolves the actual cause behind the Spring Kafka transport wrappers
+     * ({@link ListenerExecutionFailedException} / {@link TimestampedException}) so the DLT
+     * metadata records the real business exception rather than the framework-created wrapper.
+     * Wrappers are repeatedly unwrapped to their cause; a non-wrapper exception is returned as-is.
+     *
+     * @param exception the exception supplied by the error handler (may be {@code null})
+     * @return the effective root cause exception, or {@code null} if none is available
+     */
+    private static Exception rootCause(Exception exception) {
+        Exception current = exception;
+        while (current instanceof ListenerExecutionFailedException
+                || current instanceof TimestampedException) {
+            Throwable cause = current.getCause();
+            if (!(cause instanceof Exception)) {
+                break;
+            }
+            current = (Exception) cause;
+        }
+        return current;
     }
 
     private static int incrementRetryCount(ConsumerRecord<?, ?> record) {

@@ -3,6 +3,7 @@ package com.claimassist.platform.agent_service.ai.model;
 import com.claimassist.platform.agent_service.ai.tool.QwenToolCall;
 import com.claimassist.platform.agent_service.ai.tool.QwenToolCallParser;
 import com.claimassist.platform.agent_service.ai.tool.QwenToolCallingManager;
+import com.claimassist.platform.agent_service.ai.tool.ToolCallLoopTracker;
 import com.claimassist.platform.agent_service.ai.tool.ToolPlanner;
 import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
@@ -34,6 +35,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -66,13 +68,12 @@ public class QwenOllamaChatModel extends OllamaChatModel {
     private static final Logger log = LoggerFactory.getLogger(QwenOllamaChatModel.class);
 
     /**
-     * Consecutive repeats of an identical Qwen text tool call (same tool name and
-     * same rendered arguments, back to back) are treated as a pathological loop and
-     * terminated with a controlled response rather than being re-executed until the
-     * {@code maxToolCalls} hard limit. A legitimate sequence (e.g. get_claim_status
-     * then propose_claim_update) changes the signature and is never affected.
+     * Pathological tool-calling loops are detected and aborted by the request-scoped
+     * {@link ToolCallLoopTracker} rather than running until the {@code maxToolCalls}
+     * hard limit. It terminates both a back-to-back identical call and an alternating
+     * loop in which the model re-invokes a tool already completed this turn. Legitimate
+     * sequences (e.g. get_claim_status then propose_claim_update) are never affected.
      */
-    private static final int CONSECUTIVE_IDENTICAL_CALL_LIMIT = 3;
 
     private final ToolCallingManager toolCallingManager;
     private final OllamaChatOptions defaultOptions;
@@ -108,15 +109,7 @@ public class QwenOllamaChatModel extends OllamaChatModel {
         Prompt requestPrompt = mergeOptions(prompt);
         Set<String> registeredNames = registeredToolNames(requestPrompt);
         List<String> plan = ToolPlanner.plan(userText(requestPrompt), registeredNames);
-        return streamWithToolExecution(requestPrompt, 0, new LoopGuard(), new PlanState(plan));
-    }
-
-    /**
-     * Mutable, recursion-scoped state used to detect a consecutive identical-call loop.
-     */
-    private static final class LoopGuard {
-        String lastCallSignature;
-        int consecutiveIdentical;
+        return streamWithToolExecution(requestPrompt, 0, new ToolCallLoopTracker(), new PlanState(plan));
     }
 
     /**
@@ -167,7 +160,7 @@ public class QwenOllamaChatModel extends OllamaChatModel {
      * executed. Native tool calls are handled entirely inside {@code super.stream}
      * and are relayed unchanged.
      */
-    private Flux<ChatResponse> streamWithToolExecution(Prompt requestPrompt, int round, LoopGuard loopGuard,
+    private Flux<ChatResponse> streamWithToolExecution(Prompt requestPrompt, int round, ToolCallLoopTracker loopGuard,
                                                        PlanState planState) {
         // Once the request's read-tool plan is complete, any prose that had been
         // held back while completing the plan is flushed FIRST so nothing the model
@@ -283,23 +276,25 @@ public class QwenOllamaChatModel extends OllamaChatModel {
                 return Flux.error(new IllegalStateException(
                         "Qwen model exceeded the maximum of " + maxToolCalls + " sequential tool calls."));
             }
-            if (loopGuard.lastCallSignature != null && loopGuard.lastCallSignature.equals(accumulated.trim())) {
-                loopGuard.consecutiveIdentical++;
-            }
-            else {
-                loopGuard.consecutiveIdentical = 1;
-            }
-            loopGuard.lastCallSignature = accumulated.trim();
-            if (loopGuard.consecutiveIdentical >= CONSECUTIVE_IDENTICAL_CALL_LIMIT) {
-                log.warn("Aborting tool loop: model repeated the identical tool call {} consecutive times; "
-                        + "terminating with a controlled response.", loopGuard.consecutiveIdentical);
-                return Flux.just(controlledTerminationChatResponse(accumulated));
+            // Controlled loop detection. The request-scoped tracker catches both a
+            // back-to-back identical signature and an alternating loop in which the
+            // model re-invokes a tool that has already completed this turn - both
+            // prohibited by the agent's system prompt. Either aborts safely rather
+            // than exhausting the maxToolCalls budget.
+            Optional<QwenToolCall> emittedCall = parser.parse(accumulated, registeredNames);
+            String emittedName = emittedCall.map(QwenToolCall::name).orElse(null);
+            if (loopGuard.register(accumulated.trim(), emittedName, planState.executed)
+                    == ToolCallLoopTracker.Verdict.TERMINATE) {
+                log.warn("Aborting tool loop after round {}: model repeated a completed or identical tool call; "
+                        + "terminating with a controlled response.", round + 1);
+                return Flux.just(controlledTerminationChatResponse());
             }
             log.debug("Detected complete qwen text tool call after {} chunks; executing via manager.", round + 1);
             ChatResponse synthetic = new ChatResponse(List.of(new Generation(new AssistantMessage(accumulated))));
             // Record the model-emitted tool so the read-tool plan can be marked satisfied.
-            parser.parse(accumulated, registeredNames)
-                    .ifPresent(call -> planState.executed.add(call.name()));
+            if (emittedCall.isPresent()) {
+                planState.executed.add(emittedName);
+            }
             return Mono.fromCallable(() -> toolCallingManager.executeToolCalls(requestPrompt, synthetic))
                     .subscribeOn(Schedulers.boundedElastic())
                     .flatMapMany(result -> {
@@ -323,10 +318,16 @@ public class QwenOllamaChatModel extends OllamaChatModel {
      * fallback that contains no tool-call JSON, does not fake a second tool call,
      * and never executes anything.
      */
-    private static ChatResponse controlledTerminationChatResponse(String accumulated) {
-        AssistantMessage message = new AssistantMessage(
-                "I wasn't able to resolve that request — the tool lookup stalled before returning a result. "
-                        + "Please rephrase or ask for the information again.");
+    /**
+     * The plain natural-language fallback returned when a tool loop is aborted.
+     * Package-visible so tests can assert it contains no tool-call JSON.
+     */
+    static final String CONTROLLED_TERMINATION_MESSAGE =
+            "I wasn't able to resolve that request — the tool lookup stalled before returning a result. "
+                    + "Please rephrase or ask for the information again.";
+
+    static ChatResponse controlledTerminationChatResponse() {
+        AssistantMessage message = new AssistantMessage(CONTROLLED_TERMINATION_MESSAGE);
         return ChatResponse.builder().generations(List.of(new Generation(message))).build();
     }
 

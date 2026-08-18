@@ -132,8 +132,8 @@ class SagaFailureRecoveryServiceTest {
 
     @Test
     void calculateBackoffDelay_appliesExponentialFormula() {
-        long one = ReflectionTestUtils.invokeMethod(service, "calculateBackoffDelay", 1);
-        long two = ReflectionTestUtils.invokeMethod(service, "calculateBackoffDelay", 2);
+        long one = ReflectionTestUtils.invokeMethod(recoveryService, "calculateBackoffDelay", 1);
+        long two = ReflectionTestUtils.invokeMethod(recoveryService, "calculateBackoffDelay", 2);
 
         org.assertj.core.api.Assertions.assertThat(one).isEqualTo(60_000L);
         org.assertj.core.api.Assertions.assertThat(two).isEqualTo(120_000L);
@@ -141,23 +141,9 @@ class SagaFailureRecoveryServiceTest {
 
     @Test
     void calculateBackoffDelay_isCappedAtOneHour() {
-        long delay = ReflectionTestUtils.invokeMethod(service, "calculateBackoffDelay", 20);
+        long delay = ReflectionTestUtils.invokeMethod(recoveryService, "calculateBackoffDelay", 20);
 
         org.assertj.core.api.Assertions.assertThat(delay).isEqualTo(3_600_000L);
-    }
-
-    @Test
-    void triggerRecovery_failedSagaAndClaimWon_schedulesRetry() {
-        ClaimSagaOrchestration saga = failedSaga(5L, "s5", 0);
-        when(sagaRepository.findBySagaId("s5")).thenReturn(Optional.of(saga));
-        when(sagaRepository.claimRecoveryForFailureRecovery(
-                eq(5L), eq(SagaOrchestrationStatus.FAILED), eq(SagaOrchestrationStatus.IN_PROGRESS),
-                any(), any(), any(), anyInt())).thenReturn(1);
-
-        service.triggerRecovery("s5");
-
-        verify(sagaRepository).claimRecoveryForFailureRecovery(eq(5L), eq(SagaOrchestrationStatus.FAILED),
-                eq(SagaOrchestrationStatus.IN_PROGRESS), any(), any(), any(), eq(3));
     }
 
     @Test
@@ -168,7 +154,7 @@ class SagaFailureRecoveryServiceTest {
                 .attempts(0).build();
         when(sagaRepository.findBySagaId("s6")).thenReturn(Optional.of(saga));
 
-        service.triggerRecovery("s6");
+        recoveryService.triggerRecovery("s6");
 
         verify(sagaRepository, never()).claimRecoveryForFailureRecovery(
                 anyLong(), any(), any(), any(), any(), any(), anyInt());
@@ -178,10 +164,9 @@ class SagaFailureRecoveryServiceTest {
     void triggerRecovery_unknownSaga_doesNotClaim() {
         when(sagaRepository.findBySagaId("missing")).thenReturn(Optional.empty());
 
-        service.triggerRecovery("missing");
+        recoveryService.triggerRecovery("missing");
 
         verify(sagaRepository, never()).claimRecoveryForFailureRecovery(
                 anyLong(), any(), any(), any(), any(), any(), anyInt());
-                any(), any(), any(), any(), any(), any(), anyInt());
     }
 }

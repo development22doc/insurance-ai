@@ -57,6 +57,12 @@ class OutboxAtomicityIntegrationTest {
         requiredNew = new TransactionTemplate(transactionManager);
         requiredNew.setPropagationBehavior(
                 org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        // Each test must start from an empty outbox table. The committed test commits via
+        // REQUIRES_NEW (outside the @DataJpaTest rollback scope), so a committed row would leak
+        // into the rollback test's count assertion. Deleting in a committed REQUIRES_NEW
+        // transaction gives every test method deterministic isolation.
+        requiredNew.executeWithoutResult(status -> outboxEventRepository.deleteAll());
     }
 
     private OutboxEvent pendingEvent() {
