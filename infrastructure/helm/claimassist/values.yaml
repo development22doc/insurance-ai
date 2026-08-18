@@ -53,10 +53,10 @@ global:
 # -----------------------------------------------------------------------------
 # Image - OCI Container Registry (locked decision). Placeholders only.
 # Task 6A-3 built images: claimassist/<service>:1.0.0 (locally verified).
-# Actual OCIR coordinates are configured at deploy time; never hardcoded here.
+# Actual Docker Hub coordinates are configured at deploy time; never hardcoded here.
 # -----------------------------------------------------------------------------
 image:
-  registry: ""              # e.g. <namespace>.ocir.io/<tenancy>/... (set later)
+  registry: ""              # e.g. <username>.docker.io (set later)
   repository: claimassist
   tag: "1.0.0"              # matches the Task 6A-3 built images; overridden per env
   pullPolicy: IfNotPresent

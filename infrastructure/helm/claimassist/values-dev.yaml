@@ -9,7 +9,7 @@ global:
   managedBy: helm
 
 image:
-  registry: ""              # OCIR placeholder - set at deploy time
+  registry: ""              # Docker Hub registry - set at deploy time
   repository: claimassist
   tag: "1.0.0"              # matches Task 6A-3 built images (dev tag convention later)
   pullPolicy: Always

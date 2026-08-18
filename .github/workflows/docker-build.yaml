@@ -2,7 +2,7 @@
 # ClaimAssist - Reusable container image build (Docker)
 # =============================================================================
 # Builds ONLY the affected application images as IMMUTABLE tags (git SHA) and
-# pushes them to the OCI Container Registry: `claimassist/<service>:<sha>`.
+# pushes them to Docker Hub: `claimassist/<service>:<sha>`.
 # Invoked by .github/workflows/cd.yml (`build-images` job) so that a deployment
 # can never start before the exact immutable image for the commit exists.
 #

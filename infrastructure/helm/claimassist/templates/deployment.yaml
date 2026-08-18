@@ -46,7 +46,7 @@ spec:
       serviceAccountName: {{ $name }}-sa
       {{- /* Task 6A-3 / IMAGE PULL: every application Deployment must actually
           consume the image pull credentials. The global image.pullSecret (created
-          out-of-band via `kubectl create secret docker-registry` for the OCI
+          out-of-band via `kubectl create secret docker-registry` for the Docker Hub
           Registry) is wired in here so it is USED, not merely defined. Per-service
           imagePullSecrets (values.services.<name>.imagePullSecrets) are merged on
           top for any additional registries. */}}

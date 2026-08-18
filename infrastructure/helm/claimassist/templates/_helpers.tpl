@@ -50,7 +50,7 @@ Helper for the chart namespace: prefer the release namespace, else a value.
 
 {{/*
 Image reference. Handles optional (empty) registry so the rendered reference is
-valid when OCI registry is not yet configured (Task 6A-6: registry placeholder).
+valid when Docker Hub registry is not yet configured (Task 6A-6: registry placeholder).
 Context:
   .root    = chart root context
   .name    = service key (e.g. "customer-service")
