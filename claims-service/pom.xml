@@ -231,6 +231,24 @@
                 <artifactId>httpcore5-h2</artifactId>
                 <version>5.4.3</version>
             </dependency>
+            <!--
+                CVE-2026-15075 (CVSS 8.2) and CVE-2026-15076 (CVSS 8.2) in Vert.x 4.5.14
+                (fixed in 4.5.30+), pulled transitively via io.fabric8:kubernetes-client:7.1.0
+                -> kubernetes-httpclient-vertx:7.3.1. Pin vertx-core + vertx-web-client to the
+                current 4.5.x maintenance 4.5.32 and keep the Vert.x modules aligned
+                (web-common/auth-common follow transitively from web-client). Does not change
+                fabric8 and does not weaken any security gate.
+            -->
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-core</artifactId>
+                <version>4.5.32</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-web-client</artifactId>
+                <version>4.5.32</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
