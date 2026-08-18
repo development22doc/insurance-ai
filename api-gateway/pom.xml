@@ -149,6 +149,17 @@
 				<artifactId>spring-cloud-config-client</artifactId>
 				<version>4.3.3</version>
 			</dependency>
+			<!--
+				CVE-2026-40982 (CVSS 9.1) and CVE-2026-41002 (CVSS 8.1) in Spring Cloud Config
+				4.3.0-4.3.2. spring-cloud-starter-config is BOM-managed to 4.3.0; pin it to the
+				OSS fixed 4.3.3. config-client is already pinned to 4.3.3 above. Does not change
+				the release train (2025.0.0) and does not weaken any security gate.
+			-->
+			<dependency>
+				<groupId>org.springframework.cloud</groupId>
+				<artifactId>spring-cloud-starter-config</artifactId>
+				<version>4.3.3</version>
+			</dependency>
 			<!-- Netty 4.1.135.Final fixed by 4.1.136.Final (CVE-2026-56817 / 56745 /
 			     56820 / 59901 / 55851). Imported BOM overrides the Spring Boot BOM's
 			     4.1.135 pin so reactor-netty netty artifacts align on the secure line. -->

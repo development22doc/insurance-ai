@@ -190,6 +190,22 @@
                 <scope>import</scope>
             </dependency>
             <!--
+                CVE-2026-40982 (CVSS 9.1) and CVE-2026-41002 (CVSS 8.1) in Spring Cloud
+                Config 4.3.0-4.3.2. spring-cloud-starter-config + spring-cloud-config-client
+                are BOM-managed to 4.3.0; pin both to the OSS fixed 4.3.3. Does not change
+                the release train (2025.0.0) and does not weaken any security gate.
+            -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-starter-config</artifactId>
+                <version>4.3.3</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-config-client</artifactId>
+                <version>4.3.3</version>
+            </dependency>
+            <!--
                 CVE-2026-71290 (CVSS 9.1) in httpclient5 5.5.2, pulled transitively via
                 com.netflix.eureka:eureka-client:2.0.4 (Spring Cloud Netflix Eureka 4.3.0).
                 Override to non-vulnerable 5.6.4 and align companion httpcore5/httpcore5-h2
