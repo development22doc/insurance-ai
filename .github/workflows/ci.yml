@@ -21,7 +21,11 @@ env:
   # NOT captured by the plugin version (e.g. NVD data format shift), to force a
   # fresh cold-cache (full NVD) download. It is NOT derived from pom.xml because
   # the NVD data is independent of the dependency set.
-  DC_CACHE_KEY: v1
+  # v1->v2: escape any cache entry that was persisted empty/stale under the old
+  # static key (combined actions/cache only saves on a primary-key MISS, so a
+  # static key can pin an unusable entry forever). v2 forces a re-seed; restore
+  # below still reuses the older cache via restore-keys when it is usable.
+  DC_CACHE_KEY: v2
 
 jobs:
   build:
@@ -145,11 +149,12 @@ jobs:
           exit 1
         fi
 
-    - name: Cache OWASP Dependency-Check data
-      uses: actions/cache@v4
+    - name: Restore OWASP Dependency-Check data
+      uses: actions/cache/restore@v4
       with:
         # Only the vulnerability database/data directory is cached. No reports,
-        # no target/, no Maven build outputs.
+        # no target/, no Maven build outputs. path MUST equal -DdataDirectory so
+        # the restored H2 DB (odc.mv.db) is exactly what Dependency-Check opens.
         path: ${{ env.DC_DATA_DIR }}
         # Key = OS + plugin version + explicit data-layout bump. The plugin
         # version is included so a plugin upgrade automatically invalidates an
@@ -178,6 +183,21 @@ jobs:
           -DautoUpdate=true \
           -DdataDirectory=${{ env.DC_DATA_DIR }} \
           -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
+
+    # Persist the (autoUpdate=true) updated ODC database AFTER the scan so the
+    # next run restores a warm DB and only does incremental NVD updates. Runs
+    # unconditionally (if: always()) because the scan above exits non-zero when
+    # a CVSS>=8 issue is found (the security gate is NOT disabled); the updated
+    # odc.mv.db must still be saved so the cache does not stay cold forever.
+    # The combined actions/cache@v4 action only saves on a primary-key MISS, so
+    # it could never re-seed a cache whose key was already a HIT on a bad entry;
+    # an explicit save-after-scan avoids that. The restored path == dataDirectory.
+    - name: Save OWASP Dependency-Check data
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ env.DC_DATA_DIR }}
+        key: ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-${{ env.DC_CACHE_KEY }}
 
     # Warm ~/.m2 with the full dependency set for Trivy. Uses a lifecycle phase
     # (test-compile) instead of the bare `dependency:resolve` goal: a bare goal on
