@@ -39,7 +39,7 @@ class RedisHealthIndicatorTest {
         Health health = new RedisHealthIndicator(template).health();
 
         assertThat(health.getStatus()).isEqualTo(Status.DOWN);
-        assertThat(health.getDetails()).containsEntry("issue", "Failed to connect to Redis");
+        assertThat(health.getDetails()).containsEntry("redis", "Unexpected response from PING");
     }
 
     @Test

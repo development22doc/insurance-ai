@@ -60,7 +60,7 @@ class CacheServiceTest {
     void getReturnsNullAndDeletesOnTypeMismatch() {
         when(provider.getIfAvailable()).thenReturn(template);
         ValueOperations<String, Object> ops = valueOps();
-        when(ops.get("k")).thenReturn(123L);
+        when(ops.get("k")).thenReturn("123");
 
         Long result = service().get("k", Long.class);
 
