@@ -102,3 +102,6 @@ phase1_task*_progress.md
 
 doc/
 opencode.json
+dependency_tree_out.txt
+dt.txt
+verify_out.txt
