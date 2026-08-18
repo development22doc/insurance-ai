@@ -21,7 +21,11 @@ env:
   # NOT captured by the plugin version (e.g. NVD data format shift), to force a
   # fresh cold-cache (full NVD) download. It is NOT derived from pom.xml because
   # the NVD data is independent of the dependency set.
-  DC_CACHE_KEY: v1
+  # v1->v2: escape any cache entry that was persisted empty/stale under the old
+  # static key (combined actions/cache only saves on a primary-key MISS, so a
+  # static key can pin an unusable entry forever). v2 forces a re-seed; restore
+  # below still reuses the older cache via restore-keys when it is usable.
+  DC_CACHE_KEY: v2
 
 jobs:
   build:
@@ -58,6 +62,7 @@ jobs:
 
   test:
     name: Test
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -104,6 +109,7 @@ jobs:
 
   security-scan:
     name: Security Scan
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -143,11 +149,12 @@ jobs:
           exit 1
         fi
 
-    - name: Cache OWASP Dependency-Check data
-      uses: actions/cache@v4
+    - name: Restore OWASP Dependency-Check data
+      uses: actions/cache/restore@v4
       with:
         # Only the vulnerability database/data directory is cached. No reports,
-        # no target/, no Maven build outputs.
+        # no target/, no Maven build outputs. path MUST equal -DdataDirectory so
+        # the restored H2 DB (odc.mv.db) is exactly what Dependency-Check opens.
         path: ${{ env.DC_DATA_DIR }}
         # Key = OS + plugin version + explicit data-layout bump. The plugin
         # version is included so a plugin upgrade automatically invalidates an
@@ -161,17 +168,6 @@ jobs:
           ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-
           ${{ runner.os }}-odc-
 
-    # dependency-check is a BARE goal (no lifecycle phase): it does not package
-    # or install reactor modules. On a cold ~/.m2 the internal common-lib module
-    # is therefore unavailable, so when the goal processes discovery-service it
-    # cannot resolve the compile-scope com.claimassist.platform:common-lib
-    # dependency and falls back to Maven Central -> "Could not find artifact ...
-    # in central". Installing the internal module into ~/.m2 first lets the goal
-    # resolve it from the local repository. This builds ONLY common-lib (its only
-    # reactor sibling via -am); it does NOT skip or weaken the OWASP check.
-    - name: Install internal common-lib for dependency-check
-      run: mvn -B -pl common-lib -am install -DskipTests
-
     - name: Run Maven dependency check
       env:
         NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
@@ -179,24 +175,29 @@ jobs:
       # rely on Maven prefix discovery. Explicit -D flags (rather than relying on
       # pluginManagement pick-up) make the run deterministic. No masking flags:
       # this must genuinely run and fail CI on a real error.
-      #
-      # nvdApiDelay (ms): on a cold OWASP cache the goal must download the full
-      # NVD database (378k+ records, ~190 API pages). Without throttling the NVD
-      # API client fires requests as fast as possible, exceeds NVD's rate limit and
-      # receives HTTP 503 -> "NVD Returned Status Code: 503" -> NoDataException.
-      # This delay keeps the cold download within NVD's rate limits (the OWASP
-      # data directory is cached, so this only slows the first/seeded run, never a
-      # warmed cache). It does not weaken the scan: failBuildOnCVSS/failOnError
-      # still apply and real vulnerabilities still fail the build.
       run: |
         mvn -B org.owasp:dependency-check-maven:${{ env.DC_PLUGIN_VERSION }}:check \
           -DskipTests \
           -DfailBuildOnCVSS=8 \
           -DfailOnError=true \
           -DautoUpdate=true \
-          -DnvdApiDelay=2000 \
           -DdataDirectory=${{ env.DC_DATA_DIR }} \
           -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
+
+    # Persist the (autoUpdate=true) updated ODC database AFTER the scan so the
+    # next run restores a warm DB and only does incremental NVD updates. Runs
+    # unconditionally (if: always()) because the scan above exits non-zero when
+    # a CVSS>=8 issue is found (the security gate is NOT disabled); the updated
+    # odc.mv.db must still be saved so the cache does not stay cold forever.
+    # The combined actions/cache@v4 action only saves on a primary-key MISS, so
+    # it could never re-seed a cache whose key was already a HIT on a bad entry;
+    # an explicit save-after-scan avoids that. The restored path == dataDirectory.
+    - name: Save OWASP Dependency-Check data
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ env.DC_DATA_DIR }}
+        key: ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-${{ env.DC_CACHE_KEY }}
 
     # Warm ~/.m2 with the full dependency set for Trivy. Uses a lifecycle phase
     # (test-compile) instead of the bare `dependency:resolve` goal: a bare goal on
@@ -254,6 +255,7 @@ jobs:
 
   sonar:
     name: SonarQube Cloud
+    needs: [ build, test, security-scan ]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -301,3 +303,47 @@ jobs:
           -Dsonar.organization=development22doc \
           -Dsonar.projectKey=development22doc_insurance-ai \
           -Dsonar.qualitygate.wait=true
+
+  # ---------------------------------------------------------------------------
+  # Quality Gate - the pipeline's blocking final gate. It is NOT a hardcoded
+  # success: it depends on every upstream CI job and fails the workflow whenever
+  # any of them did not succeed. Sonar additionally enforces the SonarQube Cloud
+  # quality gate natively (-Dsonar.qualitygate.wait=true makes its Maven
+  # invocation exit non-zero on a failed gate, which itself fails the sonar job).
+  # GitHub Actions also automatically skips this job when a needed job fails, so
+  # the run can never be reported green while a predecessor is red.
+  # ---------------------------------------------------------------------------
+  quality-gate:
+    name: Quality Gate
+    needs: [ build, test, security-scan, sonar ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Aggregate upstream CI status
+      env:
+        BUILD_STATUS: ${{ needs.build.result }}
+        TEST_STATUS: ${{ needs.test.result }}
+        SECURITY_STATUS: ${{ needs.security-scan.result }}
+        SONAR_STATUS: ${{ needs.sonar.result }}
+      run: |
+        set -e
+        failed=0
+        for entry in \
+          "Build:$BUILD_STATUS" \
+          "Test:$TEST_STATUS" \
+          "Security:$SECURITY_STATUS" \
+          "Sonar:$SONAR_STATUS"; do
+          name="${entry%%:*}"
+          status="${entry#*:}"
+          echo "$name -> $status"
+          if [ "$status" != "success" ]; then
+            failed=1
+          fi
+        done
+        if [ "$failed" -ne 0 ]; then
+          echo "::error::Quality Gate FAILED - one or more upstream CI jobs did not succeed. See the individual job logs."
+          exit 1
+        fi
+        echo "Quality Gate PASSED - all required gates are green."
