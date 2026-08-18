@@ -91,6 +91,7 @@ ingress:
   enabled: true
   className: nginx
   host: api-stage.<your-domain>        # DEPLOYMENT-TIME placeholder
+  tlsEnabled: true
   tlsSecretName: claimassist-api-gateway-tls
 
 certManager:

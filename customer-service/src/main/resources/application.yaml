@@ -1,6 +1,8 @@
 logging:
   pattern:
     level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"
+  level:
+    org.springframework.security: INFO
 
 
 spring:

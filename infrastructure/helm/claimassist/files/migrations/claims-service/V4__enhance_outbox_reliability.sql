@@ -5,7 +5,8 @@ ALTER TABLE outbox_events
     ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMP;
 
 UPDATE outbox_events
-SET next_attempt_at = COALESCE(next_attempt_at, published_at, created_at, CURRENT_TIMESTAMP);
+SET next_attempt_at = COALESCE(next_attempt_at, published_at, created_at, CURRENT_TIMESTAMP)
+WHERE next_attempt_at IS NULL;
 
 ALTER TABLE outbox_events
     ALTER COLUMN next_attempt_at SET NOT NULL;

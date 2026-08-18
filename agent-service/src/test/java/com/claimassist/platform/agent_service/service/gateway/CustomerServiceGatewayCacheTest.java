@@ -73,4 +73,30 @@ class CustomerServiceGatewayCacheTest {
         g.getPolicyCoverage(7L, userId);
         assertThat(backend.store).doesNotContainKey("agent:v1:get_policy_coverage:policy:7");
     }
+
+    @Test
+    void fallbackReturnsNotFoundPlaceholderForFeign404() throws Exception {
+        CustomerServiceGateway g = gateway(mock(CustomerClient.class), new MemBackend());
+        feign.FeignException ex = feign.FeignException.errorStatus("GET",
+                feign.Response.builder().status(404).reason("Not Found")
+                        .request(feign.Request.create(feign.Request.HttpMethod.GET,
+                                "http://t", java.util.Map.of(), new byte[0], java.nio.charset.StandardCharsets.UTF_8))
+                        .build());
+        Object result = invokeFallback(g, "policyFallback", 7L, userId, ex);
+        assertThat(((PolicyCoverageDto) result).status()).isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    void fallbackReturnsUnavailablePlaceholderForGenericError() throws Exception {
+        CustomerServiceGateway g = gateway(mock(CustomerClient.class), new MemBackend());
+        Object result = invokeFallback(g, "policyFallback", 7L, userId, new RuntimeException("down"));
+        assertThat(((PolicyCoverageDto) result).status()).isEqualTo("UNAVAILABLE");
+    }
+
+    private static Object invokeFallback(Object target, String method, Object... args) throws Exception {
+        java.lang.reflect.Method m = target.getClass().getDeclaredMethod(method,
+                Long.class, Long.class, Throwable.class);
+        m.setAccessible(true);
+        return m.invoke(target, args);
+    }
 }

@@ -32,4 +32,33 @@
         <cve>CVE-2026-66299</cve>
     </suppress>
 
+    <!--
+        TEMPORARY / NARROW SUPPRESSION - CVE-2026-53914.
+
+        Dependency-Check identifies CVE-2026-53914 against
+        kotlin-stdlib-common:1.9.25 through the broad JetBrains Kotlin CPE.
+
+        The detected artifact is pulled transitively through:
+        MinIO 8.5.17 -> OkHttp 4.12.0 -> Okio 3.6.0 -> Okio-JVM 3.6.0.
+
+        This suppression is deliberately scoped to EXACTLY
+        kotlin-stdlib-common:1.9.25 and EXACTLY CVE-2026-53914.
+
+        Re-evaluate and remove this suppression when a stable Kotlin version
+        containing the official fix is available or when the dependency graph
+        changes.
+    -->
+    <suppress>
+        <notes>
+            Narrow temporary suppression for CVE-2026-53914 as identified by
+            Dependency-Check against kotlin-stdlib-common:1.9.25. The artifact is
+            transitively introduced through Okio by MinIO in this Java/Spring Boot
+            Maven application. This suppression is limited to this exact package
+            version and CVE and must be re-evaluated when a stable fixed Kotlin
+            release becomes available or the dependency graph changes.
+        </notes>
+        <packageUrl regex="true">^pkg:maven/org\.jetbrains\.kotlin/kotlin-stdlib-common@1\.9\.25$</packageUrl>
+        <cve>CVE-2026-53914</cve>
+    </suppress>
+
 </suppressions>
