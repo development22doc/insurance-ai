@@ -184,16 +184,17 @@ jobs:
           -DdataDirectory=${{ env.DC_DATA_DIR }} \
           -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
 
-    # Persist the (autoUpdate=true) updated ODC database AFTER the scan so the
-    # next run restores a warm DB and only does incremental NVD updates. Runs
-    # unconditionally (if: always()) because the scan above exits non-zero when
-    # a CVSS>=8 issue is found (the security gate is NOT disabled); the updated
-    # odc.mv.db must still be saved so the cache does not stay cold forever.
-    # The combined actions/cache@v4 action only saves on a primary-key MISS, so
-    # it could never re-seed a cache whose key was already a HIT on a bad entry;
-    # an explicit save-after-scan avoids that. The restored path == dataDirectory.
+    # Persist the (autoUpdate=true) updated ODC database ONLY after the scan
+    # SUCCEEDS. Runs only when this job's steps up to here all succeeded
+    # (if: success()). This prevents a failed NVD synchronization from persisting
+    # a partial NVD database into the cache: an interrupted update leaves stale
+    # update metadata, so restoring that partial DB would force yet another full
+    # NVD download on the next run (the recurring cold-sync / 503 loop).
+    # When the scan exits non-zero because a CVSS>=8 issue is found (the security
+    # gate is NOT disabled), the DB is still complete/updated and is saved; only
+    # an NVD-update failure is left uncached. The restored path == dataDirectory.
     - name: Save OWASP Dependency-Check data
-      if: always()
+      if: success()
       uses: actions/cache/save@v4
       with:
         path: ${{ env.DC_DATA_DIR }}
