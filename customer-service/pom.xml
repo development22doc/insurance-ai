@@ -199,7 +199,28 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-
+            <!--
+                CVE-2026-71290 (CVSS 9.1) in httpclient5 5.5.2, pulled transitively via
+                com.netflix.eureka:eureka-client:2.0.4 (Spring Cloud Netflix Eureka 4.3.0).
+                Override to non-vulnerable 5.6.4 and align companion httpcore5/httpcore5-h2
+                to 5.4.3 (the versions httpclient5-parent 5.6.4 pins). No 5.5.3 exists, so the
+                5.6.x line is required. Does not weaken any security gate.
+            -->
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>5.6.4</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5</artifactId>
+                <version>5.4.3</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5-h2</artifactId>
+                <version>5.4.3</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
