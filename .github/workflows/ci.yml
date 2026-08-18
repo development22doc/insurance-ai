@@ -161,6 +161,17 @@ jobs:
           ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-
           ${{ runner.os }}-odc-
 
+    # dependency-check is a BARE goal (no lifecycle phase): it does not package
+    # or install reactor modules. On a cold ~/.m2 the internal common-lib module
+    # is therefore unavailable, so when the goal processes discovery-service it
+    # cannot resolve the compile-scope com.claimassist.platform:common-lib
+    # dependency and falls back to Maven Central -> "Could not find artifact ...
+    # in central". Installing the internal module into ~/.m2 first lets the goal
+    # resolve it from the local repository. This builds ONLY common-lib (its only
+    # reactor sibling via -am); it does NOT skip or weaken the OWASP check.
+    - name: Install internal common-lib for dependency-check
+      run: mvn -B -pl common-lib -am install -DskipTests
+
     - name: Run Maven dependency check
       env:
         NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
