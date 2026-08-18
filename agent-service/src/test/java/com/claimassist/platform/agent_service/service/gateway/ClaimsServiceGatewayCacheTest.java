@@ -129,4 +129,70 @@ class ClaimsServiceGatewayCacheTest {
         verify(client).checkPermission(99L, com.claimassist.platform.common_lib.enums.ClaimPermission.VIEW);
         assertThat(backend.store).isEmpty();
     }
+
+    @Test
+    void statusFallbackReturnsNotFoundPlaceholderForFeign404() throws Exception {
+        ClaimsServiceGateway g = gateway(mock(ClaimsClient.class), new MemBackend());
+        feign.FeignException ex = feign.FeignException.errorStatus("GET",
+                feign.Response.builder().status(404).reason("Not Found")
+                        .request(feign.Request.create(feign.Request.HttpMethod.GET,
+                                "http://t", java.util.Map.of(), new byte[0], java.nio.charset.StandardCharsets.UTF_8))
+                        .build());
+        ClaimStatusDto result = (ClaimStatusDto) invokeTwoArgFallback(g, "statusFallback", 99L, ex);
+        assertThat(result.status()).isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    void statusFallbackReturnsUnavailablePlaceholderForGenericError() throws Exception {
+        ClaimsServiceGateway g = gateway(mock(ClaimsClient.class), new MemBackend());
+        ClaimStatusDto result = (ClaimStatusDto) invokeTwoArgFallback(g, "statusFallback", 99L, new RuntimeException("down"));
+        assertThat(result.status()).isEqualTo("UNAVAILABLE");
+    }
+
+    @Test
+    void documentsFallbackReturnsEmptyList() throws Exception {
+        ClaimsServiceGateway g = gateway(mock(ClaimsClient.class), new MemBackend());
+        Object result = invokeTwoArgFallback(g, "documentsFallback", 99L, new RuntimeException("down"));
+        assertThat((java.util.List<?>) result).isEmpty();
+    }
+
+    @Test
+    void permissionFallbackRejectsAsUnauthorizedFor401() throws Exception {
+        ClaimsServiceGateway g = gateway(mock(ClaimsClient.class), new MemBackend());
+        feign.FeignException ex = feign.FeignException.errorStatus("GET",
+                feign.Response.builder().status(401).reason("Unauthorized")
+                        .request(feign.Request.create(feign.Request.HttpMethod.GET,
+                                "http://t", java.util.Map.of(), new byte[0], java.nio.charset.StandardCharsets.UTF_8))
+                        .build());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        invokePermissionFallback(g, 99L,
+                                com.claimassist.platform.common_lib.enums.ClaimPermission.VIEW, ex))
+                .isInstanceOf(java.lang.reflect.InvocationTargetException.class)
+                .cause()
+                .isInstanceOf(org.springframework.security.authentication.CredentialsExpiredException.class);
+    }
+
+    @Test
+    void permissionFallbackFailsClosedOnGenericError() throws Exception {
+        ClaimsServiceGateway g = gateway(mock(ClaimsClient.class), new MemBackend());
+        Object result = invokePermissionFallback(g, 99L,
+                com.claimassist.platform.common_lib.enums.ClaimPermission.VIEW, new RuntimeException("down"));
+        assertThat(result).isEqualTo(Boolean.FALSE);
+    }
+
+    private static Object invokeTwoArgFallback(Object target, String method, Long claimId, Throwable t)
+            throws Exception {
+        java.lang.reflect.Method m = target.getClass().getDeclaredMethod(method, Long.class, Throwable.class);
+        m.setAccessible(true);
+        return m.invoke(target, claimId, t);
+    }
+
+    private static Object invokePermissionFallback(Object target, Long claimId,
+                                                   com.claimassist.platform.common_lib.enums.ClaimPermission permission,
+                                                   Throwable t) throws Exception {
+        java.lang.reflect.Method m = target.getClass().getDeclaredMethod("permissionFallback",
+                Long.class, com.claimassist.platform.common_lib.enums.ClaimPermission.class, Throwable.class);
+        m.setAccessible(true);
+        return m.invoke(target, claimId, permission, t);
+    }
 }

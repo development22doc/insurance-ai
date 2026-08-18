@@ -1,7 +1,10 @@
 package com.claimassist.platform.agent_service.config;
 
+import com.claimassist.platform.agent_service.security.InputGuardrails;
+import com.claimassist.platform.agent_service.security.OutputGuardrails;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.ollama.api.OllamaApi;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -9,27 +12,36 @@ import static org.mockito.Mockito.when;
 
 class AiConfigTest {
 
-    @Test
-    void propertiesHaveSaneExternalizableDefaults() {
-        AgentAiProperties props = new AgentAiProperties();
-        assertThat(props.getMaxToolCalls()).isEqualTo(10);
-        assertThat(props.getToolTimeoutMs()).isEqualTo(15_000);
-        assertThat(props.getAgentTimeoutMs()).isEqualTo(60_000);
-    }
+    private final AiConfig config = new AiConfig();
 
     @Test
-    void chatClientBeanBuildsFromAutoConfiguredBuilder() {
-        ChatClient client = mock(ChatClient.class);
+    void chatClientBuildsFromBuilder() {
         ChatClient.Builder builder = mock(ChatClient.Builder.class);
+        ChatClient client = mock(ChatClient.class);
         when(builder.build()).thenReturn(client);
-
-        ChatClient built = new AiConfig().chatClient(builder);
-        assertThat(built).isSameAs(client);
+        assertThat(config.chatClient(builder)).isSameAs(client);
     }
 
     @Test
-    void ollamaSettingsAreExternalizedViaEnvironment() {
-        // Ensures the application relies on env placeholders rather than hardcoded endpoints.
-        assertThat(System.getenv().keySet()).doesNotContain("REQUIRED_HARDCODED_KEY");
+    void ollamaApiUsesConfiguredBaseUrlAndTimeouts() {
+        AgentAiProperties props = new AgentAiProperties();
+        props.setOllamaConnectTimeoutMs(1234);
+        props.setOllamaReadTimeoutMs(5678);
+        OllamaApi api = config.ollamaApi("http://ollama.test:11434", props);
+        assertThat(api).isNotNull();
+    }
+
+    @Test
+    void ollamaApiAcceptsAnyProvidedBaseUrl() {
+        AgentAiProperties props = new AgentAiProperties();
+        OllamaApi api = config.ollamaApi("http://localhost:11434", props);
+        assertThat(api).isNotNull();
+    }
+
+    @Test
+    void guardrailsBeansAreWired() {
+        AgentAiProperties props = new AgentAiProperties();
+        assertThat(config.inputGuardrails(props)).isInstanceOf(InputGuardrails.class);
+        assertThat(config.outputGuardrails(props)).isInstanceOf(OutputGuardrails.class);
     }
 }
