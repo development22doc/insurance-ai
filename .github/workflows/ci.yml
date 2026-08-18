@@ -58,6 +58,7 @@ jobs:
 
   test:
     name: Test
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -104,6 +105,7 @@ jobs:
 
   security-scan:
     name: Security Scan
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -233,6 +235,7 @@ jobs:
 
   sonar:
     name: SonarQube Cloud
+    needs: [ build, test, security-scan ]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -280,3 +283,47 @@ jobs:
           -Dsonar.organization=development22doc \
           -Dsonar.projectKey=development22doc_insurance-ai \
           -Dsonar.qualitygate.wait=true
+
+  # ---------------------------------------------------------------------------
+  # Quality Gate - the pipeline's blocking final gate. It is NOT a hardcoded
+  # success: it depends on every upstream CI job and fails the workflow whenever
+  # any of them did not succeed. Sonar additionally enforces the SonarQube Cloud
+  # quality gate natively (-Dsonar.qualitygate.wait=true makes its Maven
+  # invocation exit non-zero on a failed gate, which itself fails the sonar job).
+  # GitHub Actions also automatically skips this job when a needed job fails, so
+  # the run can never be reported green while a predecessor is red.
+  # ---------------------------------------------------------------------------
+  quality-gate:
+    name: Quality Gate
+    needs: [ build, test, security-scan, sonar ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Aggregate upstream CI status
+      env:
+        BUILD_STATUS: ${{ needs.build.result }}
+        TEST_STATUS: ${{ needs.test.result }}
+        SECURITY_STATUS: ${{ needs.security-scan.result }}
+        SONAR_STATUS: ${{ needs.sonar.result }}
+      run: |
+        set -e
+        failed=0
+        for entry in \
+          "Build:$BUILD_STATUS" \
+          "Test:$TEST_STATUS" \
+          "Security:$SECURITY_STATUS" \
+          "Sonar:$SONAR_STATUS"; do
+          name="${entry%%:*}"
+          status="${entry#*:}"
+          echo "$name -> $status"
+          if [ "$status" != "success" ]; then
+            failed=1
+          fi
+        done
+        if [ "$failed" -ne 0 ]; then
+          echo "::error::Quality Gate FAILED - one or more upstream CI jobs did not succeed. See the individual job logs."
+          exit 1
+        fi
+        echo "Quality Gate PASSED - all required gates are green."

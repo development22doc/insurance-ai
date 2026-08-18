@@ -34,6 +34,15 @@
 #   deploys skip building and instead verify the immutable SHA image already exists
 #   via `docker manifest inspect` before touching the cluster.
 #
+# * BUILD-ONLY DOCKER HUB PATH (independent from deployment):
+#   workflow_dispatch with action=build-only selects the services to build/push and runs
+#   ONLY the reusable docker-build.yaml (build + push immutable SHA images), then STOPS.
+#   Every deployment/infra job is explicitly gated on the `run_deploy` output from
+#   resolve-targets (run_deploy=false in build-only), so Helm/kubectl/Kubernetes
+#   credentials can NEVER execute in build-only mode, regardless of job ordering.
+#   build-only does not initialize Helm, does not call kubectl, and does not require any
+#   kubeconfig secret (it only needs the repo-level DOCKER_USERNAME / DOCKER_PASSWORD).
+#
 # * Infra synchronization:
 #   - application change                    -> service-wise helm upgrade (this service only)
 #   - common-lib/** or root pom.xml change   -> all four services (they all depend on it)
@@ -67,8 +76,16 @@ on:
   # Manual deployment: pick environment + service (independent, no "all-or-nothing").
   workflow_dispatch:
     inputs:
+      action:
+        description: 'Docker-only build+push (BUILD-ONLY: STOPS after Docker Hub) OR deploy'
+        type: choice
+        options:
+          - build-only
+          - deploy
+        default: deploy
+        required: true
       environment:
-        description: 'Target environment'
+        description: 'Target environment (only used by the deploy action)'
         type: choice
         options:
           - dev
@@ -77,7 +94,7 @@ on:
         default: dev
         required: true
       service:
-        description: 'Service to deploy'
+        description: 'Service to build (build-only) or deploy'
         type: choice
         options:
           - all
@@ -146,16 +163,28 @@ jobs:
     name: Resolve Deployment Targets
     runs-on: ubuntu-latest
     needs: detect-changes
+    # detect-changes is SKIPPED on workflow_dispatch (its `if` is push-only). A
+    # job's implicit success() would otherwise treat that skip as a failure and
+    # skip this resolver, breaking manual deploys. Including a status function
+    # (`!cancelled()`) plus an explicit result check makes this run for BOTH
+    # triggers (detect-changes succeeded on push, or skipped on dispatch) while
+    # still being skipped if change detection genuinely failed.
+    if: |
+      !cancelled() &&
+      (needs.detect-changes.result == 'success' || needs.detect-changes.result == 'skipped')
     outputs:
       environment: ${{ steps.resolve.outputs.environment }}
       app_services: ${{ steps.resolve.outputs.app_services }}
       run_build: ${{ steps.resolve.outputs.run_build }}
       run_infra_sync: ${{ steps.resolve.outputs.run_infra_sync }}
       trigger_kind: ${{ steps.resolve.outputs.trigger_kind }}
+      build_only: ${{ steps.resolve.outputs.build_only }}
+      run_deploy: ${{ steps.resolve.outputs.run_deploy }}
     steps:
       - name: Compute deployment target
         id: resolve
         env:
+          DISPATCH_ACTION: ${{ github.event.inputs.action }}
           DISPATCH_ENV: ${{ github.event.inputs.environment }}
           DISPATCH_SERVICE: ${{ github.event.inputs.service }}
           CH_API: ${{ needs.detect-changes.outputs.api-gateway }}
@@ -168,10 +197,28 @@ jobs:
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             ENV="${DISPATCH_ENV:-dev}"
-            echo "environment=$ENV" >> "$GITHUB_OUTPUT"
-            echo "trigger_kind=manual" >> "$GITHUB_OUTPUT"
-            echo "run_build=false" >> "$GITHUB_OUTPUT"
-            echo "run_infra_sync=false" >> "$GITHUB_OUTPUT"
+            ACTION="${DISPATCH_ACTION:-deploy}"
+            {
+              echo "environment=$ENV"
+              echo "run_infra_sync=false"
+            } >> "$GITHUB_OUTPUT"
+            if [ "$ACTION" = "build-only" ]; then
+              # Build & push immutable SHA images, then STOP. No deployment.
+              {
+                echo "trigger_kind=build-only"
+                echo "build_only=true"
+                echo "run_deploy=false"
+                echo "run_build=true"
+              } >> "$GITHUB_OUTPUT"
+            else
+              # Manual deploy: verify pre-built immutable images, then deploy.
+              {
+                echo "trigger_kind=manual"
+                echo "build_only=false"
+                echo "run_deploy=true"
+                echo "run_build=false"
+              } >> "$GITHUB_OUTPUT"
+            fi
             if [ "$DISPATCH_SERVICE" = "all" ]; then
               echo 'app_services=["api-gateway","customer-service","claims-service","agent-service"]' >> "$GITHUB_OUTPUT"
             else
@@ -180,9 +227,13 @@ jobs:
             exit 0
           fi
 
-          # Automatic push -> DEV only.
-          echo "environment=dev" >> "$GITHUB_OUTPUT"
-          echo "trigger_kind=auto" >> "$GITHUB_OUTPUT"
+          # Automatic push -> DEV only (deploy path, unchanged behavior).
+          {
+            echo "environment=dev"
+            echo "trigger_kind=auto"
+            echo "build_only=false"
+            echo "run_deploy=true"
+          } >> "$GITHUB_OUTPUT"
           if [ "$CH_INFRA" = "true" ]; then
             echo "run_infra_sync=true" >> "$GITHUB_OUTPUT"
           else
@@ -228,7 +279,7 @@ jobs:
     name: Sync Infrastructure DEV
     runs-on: ubuntu-latest
     needs: resolve-targets
-    if: needs.resolve-targets.outputs.run_infra_sync == 'true' && needs.resolve-targets.outputs.environment == 'dev'
+    if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.run_infra_sync == 'true' && needs.resolve-targets.outputs.environment == 'dev'
     environment: dev
     concurrency:
       group: cd-deploy-dev
@@ -292,7 +343,18 @@ jobs:
     name: Deploy ${{ matrix.service }} DEV
     runs-on: ubuntu-latest
     needs: [resolve-targets, build-images]
-    if: needs.resolve-targets.outputs.environment == 'dev' && needs.resolve-targets.outputs.app_services != '[]'
+    # build-images is SKIPPED on manual dispatch (run_build=false) and on
+    # infra-only auto runs. A status function is required here: without it the
+    # implicit success() would treat that skip as a failure and skip this deploy,
+    # breaking manual DEV deploys. We accept build-images in 'success' OR
+    # 'skipped' (manual/infra-only) and only reject a genuine build FAILURE, so
+    # a manual deploy never rebuilds and never waits for a skipped build.
+    if: |
+      !cancelled() &&
+      needs.resolve-targets.outputs.run_deploy == 'true' &&
+      (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
+      needs.resolve-targets.outputs.environment == 'dev' &&
+      needs.resolve-targets.outputs.app_services != '[]'
     environment: dev
     strategy:
       fail-fast: false
@@ -368,7 +430,13 @@ jobs:
     name: DEV Validation
     runs-on: ubuntu-latest
     needs: [resolve-targets, dev-deploy, infra-sync]
-    if: needs.resolve-targets.outputs.environment == 'dev'
+    # infra-sync is SKIPPED when there is no infrastructure change; dev-deploy is
+    # skipped when there is no app change. A status function keeps this
+    # informational validation running whenever the environment resolves to dev.
+    if: |
+      !cancelled() &&
+      needs.resolve-targets.outputs.run_deploy == 'true' &&
+      needs.resolve-targets.outputs.environment == 'dev'
     steps:
       - name: Validate DEV deployment result
         run: |
@@ -381,7 +449,7 @@ jobs:
     name: Deploy ${{ matrix.service }} STAGE
     runs-on: ubuntu-latest
     needs: resolve-targets
-    if: needs.resolve-targets.outputs.environment == 'stage' && needs.resolve-targets.outputs.app_services != '[]'
+    if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.environment == 'stage' && needs.resolve-targets.outputs.app_services != '[]'
     environment: stage
     strategy:
       fail-fast: false
@@ -457,7 +525,7 @@ jobs:
     name: STAGE Validation
     runs-on: ubuntu-latest
     needs: [resolve-targets, stage-deploy]
-    if: needs.resolve-targets.outputs.environment == 'stage'
+    if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.environment == 'stage'
     steps:
       - name: Validate STAGE deployment result
         run: |
@@ -469,7 +537,7 @@ jobs:
     name: Deploy ${{ matrix.service }} PROD
     runs-on: ubuntu-latest
     needs: resolve-targets
-    if: needs.resolve-targets.outputs.environment == 'prod' && needs.resolve-targets.outputs.app_services != '[]'
+    if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.environment == 'prod' && needs.resolve-targets.outputs.app_services != '[]'
     environment: prod
     strategy:
       fail-fast: false
@@ -545,7 +613,7 @@ jobs:
     name: PROD Validation
     runs-on: ubuntu-latest
     needs: [resolve-targets, prod-deploy]
-    if: needs.resolve-targets.outputs.environment == 'prod'
+    if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.environment == 'prod'
     steps:
       - name: Validate PROD deployment result
         run: |
@@ -556,16 +624,18 @@ jobs:
   # Deployment summary
   # ---------------------------------------------------------------------------
   deployment-summary:
-    name: Deployment Summary
+    name: Summary
     runs-on: ubuntu-latest
     if: always()
-    needs: [resolve-targets, dev-validation, stage-validation, prod-validation]
+    needs: resolve-targets
     steps:
-      - name: Print deployment summary
+      - name: Print run summary
         run: |
+          echo "Action            : ${{ needs.resolve-targets.outputs.trigger_kind }} (build_only=${{ needs.resolve-targets.outputs.build_only }})"
           echo "Environment        : ${{ needs.resolve-targets.outputs.environment }}"
-          echo "Services deployed   : ${{ needs.resolve-targets.outputs.app_services }}"
+          echo "Services involved  : ${{ needs.resolve-targets.outputs.app_services }}"
           echo "Trigger            : ${{ needs.resolve-targets.outputs.trigger_kind }} (${{ github.event_name }})"
           echo "Build ran          : ${{ needs.resolve-targets.outputs.run_build }}"
+          echo "Deploy ran         : ${{ needs.resolve-targets.outputs.run_deploy }}"
           echo "Infra sync ran     : ${{ needs.resolve-targets.outputs.run_infra_sync }}"
           echo "Workflow run ID    : ${{ github.run_id }}"

@@ -1,6 +1,6 @@
 name: Rollback DEV
 
-# DEV-ONLY rollback workflow.
+# DEV-ONLY, SERVICE-WISE rollback workflow.
 #
 # Security model (HARDENED):
 #   - Rolls back ONLY the `dev` GitHub Environment / claimassist-dev namespace.
@@ -9,24 +9,52 @@ name: Rollback DEV
 #   - STAGE and PROD are LOCKED: no environment selector is offered. This file
 #     cannot touch any other namespace or release.
 #   - All rollback targets are hardcoded constants and verified by a safety gate.
+#   - Only ONE application service can be rolled back per run; the service is
+#     validated against the four allowed Kubernetes workloads.
+
+# SERVICE-WISE ROLLBACK (NO Helm drift, NO kubectl side-effects):
+#   A whole-release `helm rollback` would revert ALL four application Deployments
+#   (and any infrastructure change) at once - that is NOT a service-wise rollback
+#   and could silently revert sibling services. Instead we restore ONLY the target
+#   service to its previously-deployed immutable image tag:
+#     1. Read the target service's imageTag from a prior Helm release revision
+#        (default: the previous revision) via `helm get values --revision N`.
+#     2. Re-apply that tag with a service-specific `helm upgrade` using the SAME
+#        `services.<name>.imageTag` override the CD deploy uses. Because Helm
+#        merges over the current release values, ONLY the target Deployment's pod
+#        template changes -> only that one service rolls back. The other three
+#        services keep their already-deployed SHA (verified after rollback).
+#   Helm is the sole mutator of the Deployments, so Helm release values ALWAYS
+#   equal the live Kubernetes Deployment image. There is no `kubectl rollout
+#   undo` anywhere, so a rollback can never leave a result that disagrees with
+#   Helm's stored values.
 
 on:
   workflow_dispatch:
     inputs:
+      service:
+        description: 'Service to roll back (one application service only)'
+        required: true
+        type: choice
+        options:
+          - api-gateway
+          - customer-service
+          - claims-service
+          - agent-service
       revision:
-        description: 'Revision to rollback to (leave empty for previous)'
+        description: 'Helm release revision whose image tag to restore (default: previous revision)'
         required: false
         type: string
 
 env:
   CHART: infrastructure/helm/claimassist
-  VALUES: values-dev.yaml
   NAMESPACE: claimassist-dev
   RELEASE: claimassist-dev
 
 # Shared namespace-level lock with the CD deploy jobs (cd-deploy-dev): a rollback
 # and a deploy of the same env can never run concurrently against the single Helm
-# release, otherwise a rollback could be overwritten by an in-flight deploy.
+# release, otherwise a rollback could be overwritten by an in-flight deploy (and
+# vice-versa). The lock also serializes this rollback against the other services.
 concurrency:
   group: cd-deploy-dev
   cancel-in-progress: false
@@ -41,14 +69,19 @@ jobs:
       contents: read
 
     steps:
-    - name: Enforce DEV-only rollback target
+    - name: Enforce DEV-only rollback target and valid service
       run: |
         set -euo pipefail
         [ "$NAMESPACE" = "claimassist-dev" ] || { echo "FATAL: namespace is not claimassist-dev"; exit 1; }
         [ "$RELEASE" = "claimassist-dev" ] || { echo "FATAL: release is not claimassist-dev"; exit 1; }
-        [ "$VALUES" = "values-dev.yaml" ] || { echo "FATAL: values file is not values-dev.yaml"; exit 1; }
         [ "$CHART" = "infrastructure/helm/claimassist" ] || { echo "FATAL: chart path is incorrect"; exit 1; }
-        echo "Target verified: namespace=$NAMESPACE release=$RELEASE values=$VALUES chart=$CHART"
+        case "$SERVICE" in
+          api-gateway|customer-service|claims-service|agent-service) ;;
+          *) echo "FATAL: invalid service '$SERVICE'"; exit 1 ;;
+        esac
+        echo "Target verified: namespace=$NAMESPACE release=$RELEASE chart=$CHART service=$SERVICE"
+      env:
+        SERVICE: ${{ github.event.inputs.service }}
 
     - name: Checkout code
       uses: actions/checkout@v4
@@ -78,24 +111,107 @@ jobs:
     - name: Get current Helm release history
       run: helm history "$RELEASE" -n "$NAMESPACE"
 
-    - name: Perform rollback
-      run: |
-        if [ -z "${{ github.event.inputs.revision }}" ]; then
-          echo "Rolling back to previous release..."
-          helm rollback "$RELEASE" -n "$NAMESPACE"
-        else
-          echo "Rolling back to revision ${{ github.event.inputs.revision }}..."
-          helm rollback "$RELEASE" "${{ github.event.inputs.revision }}" -n "$NAMESPACE"
-        fi
-
-    - name: Wait for rollback to complete
-      run: kubectl rollout status deployment -n "$NAMESPACE" --timeout=5m
-
-    - name: Verify rollback
+    - name: Record pre-rollback live image tags (proof sibling services are untouched)
+      id: pre
       run: |
         set -euo pipefail
-        echo "=== Current Deployment Status ($NAMESPACE) ==="
-        kubectl get pods -n "$NAMESPACE"
-        echo ""
-        echo "=== Latest Helm Release ==="
-        helm status "$RELEASE" -n "$NAMESPACE"
+        for svc in api-gateway customer-service claims-service agent-service; do
+          tag=$(kubectl -n "$NAMESPACE" get deployment "claimassist-$svc" \
+                -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
+          echo "BEFORE_$svc=$tag" >> "$GITHUB_ENV"
+          echo "Before rollback  $svc => $tag"
+        done
+
+    - name: Resolve target revision and prior image tag
+      id: resolve
+      run: |
+        set -euo pipefail
+        HISTORY=$(helm history "$RELEASE" -n "$NAMESPACE" -o json)
+        CURRENT=$(echo "$HISTORY" | jq -r 'map(.revision) | max')
+        if [ -n "${REVISION:-}" ]; then
+          TARGET_REV=$REVISION
+        else
+          TARGET_REV=$(( CURRENT - 1 ))
+        fi
+        if [ "$TARGET_REV" -lt 1 ]; then
+          echo "::error::No previous revision to restore from (current revision is $CURRENT)."
+          exit 1
+        fi
+        echo "Current revision: $CURRENT | restoring from revision: $TARGET_REV"
+        PRIOR_VALUES=$(helm get values "$RELEASE" -n "$NAMESPACE" --revision "$TARGET_REV" -o json)
+        TARGET_TAG=$(echo "$PRIOR_VALUES" | jq -r --arg svc "$SERVICE" '(.services[$svc].imageTag // .image.tag // "1.0.0")')
+        if [ -z "$TARGET_TAG" ] || [ "$TARGET_TAG" = "null" ]; then
+          echo "::error::Could not determine the prior image tag for '$SERVICE' from revision $TARGET_REV."
+          exit 1
+        fi
+        echo "Restoring '$SERVICE' to image tag: $TARGET_TAG"
+        echo "TARGET_TAG=$TARGET_TAG" >> "$GITHUB_ENV"
+      env:
+        SERVICE: ${{ github.event.inputs.service }}
+        REVISION: ${{ github.event.inputs.revision }}
+
+    - name: Perform service-wise rollback via Helm (no drift)
+      run: |
+        set -euo pipefail
+        # Restore ONLY the target service to its prior immutable SHA. Because
+        # `helm upgrade` merges over the current release values, the other three
+        # services' imageTag values are untouched -> only this Deployment rolls.
+        # Helm remains the sole mutator (no kubectl rollout undo).
+        helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+          --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+          --set "services.$SERVICE.imageTag=$TARGET_TAG" \
+          --wait \
+          --timeout 10m
+      env:
+        SERVICE: ${{ github.event.inputs.service }}
+        TARGET_TAG: ${{ env.TARGET_TAG }}
+
+    - name: Wait for the rolled-back service rollout to complete
+      run: kubectl -n "$NAMESPACE" rollout status "deployment/claimassist-$SERVICE" --timeout=10m
+      env:
+        SERVICE: ${{ github.event.inputs.service }}
+
+    - name: Verify rolled-back service is healthy
+      run: |
+        set -euo pipefail
+        DEP="claimassist-$SERVICE"
+        AVAILABLE=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
+        READY=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.status.readyReplicas}')
+        DESIRED=$(kubectl -n "$NAMESPACE" get deployment "$DEP" -o jsonpath='{.spec.replicas}')
+        echo "Available condition: $AVAILABLE | readyReplicas: ${READY:-0} / desired: $DESIRED"
+        if [ "$AVAILABLE" != "True" ] || [ "${READY:-0}" -lt "${DESIRED:-1}" ]; then
+          echo "::error::$DEP did not become healthy after rollback."
+          exit 1
+        fi
+      env:
+        SERVICE: ${{ github.event.inputs.service }}
+
+    - name: Verify Helm consistency and service-wise scope
+      run: |
+        set -euo pipefail
+        DEP="claimassist-$SERVICE"
+        # 1) Helm stored values == live Deployment image for the rolled-back service.
+        LIVE_TAG=$(kubectl -n "$NAMESPACE" get deployment "$DEP" \
+                   -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
+        HELM_TAG=$(helm get values "$RELEASE" -n "$NAMESPACE" -o json \
+                   | jq -r --arg svc "$SERVICE" '(.services[$svc].imageTag // .image.tag // "1.0.0")')
+        echo "Rolled-back service  $SERVICE  -> Helm=$HELM_TAG  live=$LIVE_TAG"
+        [ "$LIVE_TAG" = "$HELM_TAG" ] || {
+          echo "::error::Helm release values and live Deployment image disagree for '$SERVICE' (Helm=$HELM_TAG live=$LIVE_TAG)."
+          exit 1
+        }
+        # 2) Sibling services must be UNCHANGED by this rollback.
+        for svc in api-gateway customer-service claims-service agent-service; do
+          [ "$svc" = "$SERVICE" ] && continue
+          before="$(printenv BEFORE_${svc})"
+          after=$(kubectl -n "$NAMESPACE" get deployment "claimassist-$svc" \
+                  -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
+          echo "Sibling service     $svc  -> before=$before  after=$after"
+          [ "$before" = "$after" ] || {
+            echo "::error::Rollback of '$SERVICE' unexpectedly modified sibling '$svc' (before=$before after=$after)."
+            exit 1
+          }
+        done
+        echo "Rollback confirmed service-wise; Helm state == live state for all four services."
+      env:
+        SERVICE: ${{ github.event.inputs.service }}
