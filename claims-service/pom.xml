@@ -5,8 +5,8 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.6</version>
+<artifactId>spring-boot-starter-parent</artifactId>
+		<version>3.5.16</version>
         <relativePath/>
     </parent>
     <groupId>com.claimassist.platform</groupId>
@@ -19,6 +19,17 @@
         <java.version>21</java.version>
         <spring-cloud.version>2025.0.0</spring-cloud.version>
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
+        <testcontainers.version>1.20.0</testcontainers.version>
+        <tomcat.version>10.1.57</tomcat.version>
+        <!-- Security-fix alignment: Netty 4.1.135.Final (Boot default) -> 4.1.136.Final,
+             Jackson 2.21.4 -> 2.21.6, Log4j 2.24.3 -> 2.26.1 (see api-gateway CVE notes). -->
+        <netty.version>4.1.136.Final</netty.version>
+        <jackson-bom.version>2.21.6</jackson-bom.version>
+        <log4j2.version>2.26.1</log4j2.version>
+        <!-- CVE-2026-54291 (CVSS 8.2) in postgresql 42.7.11 (Spring Boot 3.5.16 default);
+             42.7.13 fixes it and is the current maintenance line. Overrides the
+             Spring Boot-managed postgresql.version without upgrading Spring Boot. -->
+        <postgresql.version>42.7.13</postgresql.version>
     </properties>
 
     <dependencies>
@@ -91,11 +102,7 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-config</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.minio</groupId>
-            <artifactId>minio</artifactId>
-            <version>8.5.17</version>
-        </dependency>
+
         <dependency>
             <groupId>io.fabric8</groupId>
             <artifactId>kubernetes-client</artifactId>
@@ -109,7 +116,7 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>runtime</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -134,11 +141,43 @@
             <artifactId>common-lib</artifactId>
             <version>1.0.0</version>
         </dependency>
-        <dependency>
+<dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>jdbc</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Phase 5 Kafka integration testing: a disposable, real Kafka broker via
+             Testcontainers. Used to exercise the producer -> topic -> consumer -> DLT
+             reliability flow (and outbox publisher) against the actual message broker. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <dependencyManagement>
@@ -149,6 +188,62 @@
                 <version>${spring-cloud.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <!--
+                CVE-2026-40982 (CVSS 9.1) and CVE-2026-41002 (CVSS 8.1) in Spring Cloud
+                Config 4.3.0-4.3.2. spring-cloud-starter-config + spring-cloud-config-client
+                are BOM-managed to 4.3.0; pin both to the OSS fixed 4.3.3. Does not change
+                the release train (2025.0.0) and does not weaken any security gate.
+            -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-starter-config</artifactId>
+                <version>4.3.3</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-config-client</artifactId>
+                <version>4.3.3</version>
+            </dependency>
+            <!--
+                CVE-2026-71290 (CVSS 9.1) in httpclient5 5.5.2, pulled transitively via
+                com.netflix.eureka:eureka-client:2.0.4 (Spring Cloud Netflix Eureka 4.3.0).
+                Override to non-vulnerable 5.6.4 and align companion httpcore5/httpcore5-h2
+                to 5.4.3 (the versions httpclient5-parent 5.6.4 pins). No 5.5.3 exists, so the
+                5.6.x line is required. Does not weaken any security gate.
+            -->
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>5.6.4</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5</artifactId>
+                <version>5.4.3</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5-h2</artifactId>
+                <version>5.4.3</version>
+            </dependency>
+            <!--
+                CVE-2026-15075 (CVSS 8.2) and CVE-2026-15076 (CVSS 8.2) in Vert.x 4.5.14
+                (fixed in 4.5.30+), pulled transitively via io.fabric8:kubernetes-client:7.1.0
+                -> kubernetes-httpclient-vertx:7.3.1. Pin vertx-core + vertx-web-client to the
+                current 4.5.x maintenance 4.5.32 and keep the Vert.x modules aligned
+                (web-common/auth-common follow transitively from web-client). Does not change
+                fabric8 and does not weaken any security gate.
+            -->
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-core</artifactId>
+                <version>4.5.32</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-web-client</artifactId>
+                <version>4.5.32</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -175,6 +270,33 @@
                             <version>${org.mapstruct.version}</version>
                         </path>
                     </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.11</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>${argLine}</argLine>
                 </configuration>
             </plugin>
         </plugins>

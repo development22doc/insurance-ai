@@ -51,4 +51,18 @@ public class ClaimDocument {
 
     @Builder.Default
     Instant uploadedAt = Instant.now();
+
+    // V3 migration columns
+    @Column(nullable = false)
+    @Builder.Default
+    String processingStatus = "PENDING";
+
+    @Column(columnDefinition = "text")
+    String processingError;
+
+    Instant processedAt;
+
+    @Column(nullable = false)
+    @Builder.Default
+    boolean fraudFlag = false;
 }

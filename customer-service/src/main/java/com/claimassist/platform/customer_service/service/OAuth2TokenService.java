@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import java.time.Instant;
 import java.util.Map;
 
 @Slf4j
@@ -34,151 +35,158 @@ public class OAuth2TokenService {
     private final EventLogger eventLogger;
     private final PerformanceLogger performanceLogger;
 
-    public AuthResponse exchangeAuthorizationCode (
+    public AuthResponse exchangeAuthorizationCode(
             String authorizationCode,
             String codeVerifier) {
 
         LinkedMultiValueMap<String, String> body =
-                new LinkedMultiValueMap<> ();
+                new LinkedMultiValueMap<>();
 
-        body.add ("grant_type", "authorization_code");
-        body.add ("client_id", keycloakProperties.clientId ());
-        body.add ("client_secret", keycloakProperties.clientSecret ());
-        body.add ("code", authorizationCode);
-        body.add ("code_verifier", codeVerifier);
-        body.add ("redirect_uri", keycloakProperties.redirectUri ());
+        body.add("grant_type", "authorization_code");
+        body.add("client_id", keycloakProperties.clientId());
+        body.add("client_secret", keycloakProperties.clientSecret());
+        body.add("code", authorizationCode);
+        body.add("code_verifier", codeVerifier);
+        body.add("redirect_uri", keycloakProperties.redirectUri());
 
         Map<String, Object> response =
-                restClient.post ()
-                        .uri (keycloakProperties.tokenUri ())
-                        .contentType (MediaType.APPLICATION_FORM_URLENCODED)
-                        .body (body)
-                        .retrieve ()
-                        .body (Map.class);
+                restClient.post()
+                        .uri(keycloakProperties.tokenUri())
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .body(body)
+                        .retrieve()
+                        .body(Map.class);
 
-        String idToken = (String) response.get ("id_token");
+        String idToken = (String) response.get("id_token");
         String username = extractUsernameFromValidatedIdToken(idToken);
 
         Long customerId = null;
         String fullName = null;
+        String refreshToken = (String) response.get("refresh_token");
 
-         if (username != null) {
-             long dbStart = System.currentTimeMillis();
-             Customer customer = customerRepository.findByUsername(username).orElse(null);
-             long dbDuration = System.currentTimeMillis() - dbStart;
-             Map<String,Object> dbDetails = new java.util.HashMap<>();
-             dbDetails.put("username", username);
-             dbDetails.put("event", customer != null ? "CUSTOMER_FOUND" : "CUSTOMER_NOT_FOUND");
-             dbDetails.put("executionTimeMs", dbDuration);
-             dbDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-             eventLogger.logDatabaseEvent("customer-service", "customer-service", dbDuration, dbDetails);
-             performanceLogger.log("REPOSITORY", "repository.customer.find", dbDuration, Map.of("username", username, "found", customer != null));
+        if (username != null) {
+            long dbStart = System.currentTimeMillis();
+            Customer customer = customerRepository.findByUsername(username).orElse(null);
+            long dbDuration = System.currentTimeMillis() - dbStart;
+            Map<String, Object> dbDetails = new java.util.HashMap<>();
+            dbDetails.put("username", username);
+            dbDetails.put("event", customer != null ? "CUSTOMER_FOUND" : "CUSTOMER_NOT_FOUND");
+            dbDetails.put("executionTimeMs", dbDuration);
+            dbDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
+            eventLogger.logDatabaseEvent("customer-service", "customer-service", dbDuration, dbDetails);
+            performanceLogger.log("REPOSITORY", "repository.customer.find", dbDuration,
+                    Map.of("username", username, "found", customer != null));
 
-             if (customer != null) {
-                 customerId = customer.getId ();
-                 fullName = customer.getFullName ();
+            if (customer != null) {
+                customerId = customer.getId();
+                fullName = customer.getFullName();
 
-                 // persist refresh token (rotation handled later on refresh)
-                 String refreshToken = (String) response.get("refresh_token");
-                 if (refreshToken != null) {
-                     // create local token record (use Keycloak token string as stored token)
-                     // We will treat Keycloak refresh token directly as our stored token value
-                     // but also create a local generated token for rotation if needed.
-                     refreshTokenService.createRefreshToken(customer);
-                 }
-             }
-         }
+                // Persist the ACTUAL Keycloak refresh token (the value the client
+                // will present on refresh/logout), so local validation/rotation/
+                // revocation can match it.
+                if (refreshToken != null) {
+                    Instant now = Instant.now();
+                    refreshTokenService.createRefreshToken(
+                            customer, refreshToken, now, expiresAtFrom(response, now));
+                }
+            }
+        }
 
-         return new AuthResponse (
-                (String) response.get ("access_token"),
-                (String) response.get ("refresh_token"),
-                (String) response.get ("token_type"),
-                ((Number) response.get ("expires_in")).longValue (),
-                ((Number) response.get ("refresh_expires_in")).longValue (),
-                (String) response.get ("scope"),
+        return new AuthResponse(
+                (String) response.get("access_token"),
+                refreshToken,
+                (String) response.get("token_type"),
+                ((Number) response.get("expires_in")).longValue(),
+                ((Number) response.get("refresh_expires_in")).longValue(),
+                (String) response.get("scope"),
                 idToken,
                 customerId,
                 fullName
         );
     }
 
-    public AuthResponse refreshToken (String refreshToken) {
+    public AuthResponse refreshToken(String refreshToken) {
 
-         // Validate locally that refresh token exists and is not expired/revoked
-         refreshTokenService.validateAndRotate(refreshToken);
+        // SAFE ORDERING (Phase 2): Keycloak is authoritative for refresh-token
+        // validation and rotation, so the external Keycloak call happens FIRST.
+        // Only AFTER it succeeds do we do the atomic local persistence/rotation -
+        // never inside a DB transaction, and never a local rotate that could
+        // consume a token Keycloak rejected.
+        LinkedMultiValueMap<String, String> body =
+                new LinkedMultiValueMap<>();
 
-         LinkedMultiValueMap<String, String> body =
-                 new LinkedMultiValueMap<> ();
+        body.add("grant_type", "refresh_token");
+        body.add("client_id", keycloakProperties.clientId());
+        body.add("client_secret", keycloakProperties.clientSecret());
+        body.add("refresh_token", refreshToken);
 
-         body.add ("grant_type", "refresh_token");
-         body.add ("client_id", keycloakProperties.clientId ());
-         body.add ("client_secret", keycloakProperties.clientSecret ());
-         body.add ("refresh_token", refreshToken);
+        // Keycloak throws 400 (invalid_grant) for an expired/revoked/used token;
+        // that propagates to the global error handler as a rejected refresh.
+        Map<String, Object> response =
+                restClient.post()
+                        .uri(keycloakProperties.tokenUri())
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .body(body)
+                        .retrieve()
+                        .body(Map.class);
 
-         Map<String, Object> response =
-                 restClient.post ()
-                         .uri (keycloakProperties.tokenUri ())
-                         .contentType (MediaType.APPLICATION_FORM_URLENCODED)
-                         .body (body)
-                         .retrieve ()
-                         .body (Map.class);
+        String idToken = (String) response.get("id_token");
+        String newRefreshToken = (String) response.get("refresh_token");
+        String username = extractUsernameFromValidatedIdToken(idToken);
 
-         String idToken = (String) response.get ("id_token");
-         String username = extractUsernameFromValidatedIdToken(idToken);
+        Long customerId = null;
+        String fullName = null;
 
-         Long customerId = null;
-         String fullName = null;
-
-         if (username != null) {
-             long dbStart = System.currentTimeMillis();
-             Customer customer = customerRepository.findByUsername(username).orElse(null);
-             long dbDuration = System.currentTimeMillis() - dbStart;
-             Map<String,Object> dbDetails = new java.util.HashMap<>();
-             dbDetails.put("username", username);
-             dbDetails.put("event", customer != null ? "CUSTOMER_FOUND" : "CUSTOMER_NOT_FOUND");
-             dbDetails.put("executionTimeMs", dbDuration);
-             dbDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-             eventLogger.logDatabaseEvent("customer-service", "customer-service", dbDuration, dbDetails);
-             performanceLogger.log("REPOSITORY", "repository.customer.find", dbDuration, Map.of("username", username, "found", customer != null));
+        if (username != null) {
+            long dbStart = System.currentTimeMillis();
+            Customer customer = customerRepository.findByUsername(username).orElse(null);
+            long dbDuration = System.currentTimeMillis() - dbStart;
+            Map<String, Object> dbDetails = new java.util.HashMap<>();
+            dbDetails.put("username", username);
+            dbDetails.put("event", customer != null ? "CUSTOMER_FOUND" : "CUSTOMER_NOT_FOUND");
+            dbDetails.put("executionTimeMs", dbDuration);
+            dbDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
+            eventLogger.logDatabaseEvent("customer-service", "customer-service", dbDuration, dbDetails);
+            performanceLogger.log("REPOSITORY", "repository.customer.find", dbDuration,
+                    Map.of("username", username, "found", customer != null));
 
             if (customer != null) {
-                customerId = customer.getId ();
-                fullName = customer.getFullName ();
+                customerId = customer.getId();
+                fullName = customer.getFullName();
             }
         }
 
-        // If Keycloak returned a new refresh token, we should record it (rotation)
-        if (response.containsKey("refresh_token")) {
-            // use local rotation: create a new record for the customer
-            if (customerId != null) {
-                 final Long finalCustomerId = customerId;
-                 long dbStart = System.currentTimeMillis();
-                 final long finalDbStart = dbStart;
-                 customerRepository.findById(customerId).ifPresent(c -> {
-                     long dbDuration = System.currentTimeMillis() - finalDbStart;
-                     Map<String,Object> dbDetails2 = new java.util.HashMap<>();
-                     dbDetails2.put("customerId", finalCustomerId);
-                     dbDetails2.put("event", "CUSTOMER_FOUND");
-                     dbDetails2.put("executionTimeMs", dbDuration);
-                     dbDetails2.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-                     eventLogger.logDatabaseEvent("customer-service", "customer-service", dbDuration, dbDetails2);
-                    performanceLogger.log("REPOSITORY", "repository.customer.find", dbDuration, Map.of("customerId", finalCustomerId, "found", true));
-                    refreshTokenService.createRefreshToken(c);
-                });
-            }
+        // Atomic local rotation to the NEW Keycloak token (single-use guard on
+        // the old token). Empty result = no local record; Keycloak is
+        // authoritative and the refresh stands. Revoked/expired/used local
+        // records throw here as a defense-in-depth replay/expiry guard.
+        if (customerId != null && newRefreshToken != null && !newRefreshToken.equals(refreshToken)) {
+            Instant now = Instant.now();
+            refreshTokenService.rotateIfPresent(refreshToken, newRefreshToken, now, expiresAtFrom(response, now));
         }
 
-        return new AuthResponse (
-                (String) response.get ("access_token"),
-                (String) response.get ("refresh_token"),
-                (String) response.get ("token_type"),
-                ((Number) response.get ("expires_in")).longValue (),
-                ((Number) response.get ("refresh_expires_in")).longValue (),
-                (String) response.get ("scope"),
+        return new AuthResponse(
+                (String) response.get("access_token"),
+                newRefreshToken,
+                (String) response.get("token_type"),
+                ((Number) response.get("expires_in")).longValue(),
+                ((Number) response.get("refresh_expires_in")).longValue(),
+                (String) response.get("scope"),
                 idToken,
                 customerId,
                 fullName
         );
+    }
+
+    private Instant expiresAtFrom(Map<String, Object> response, Instant now) {
+        Object re = response.get("refresh_expires_in");
+        if (re instanceof Number n) {
+            long secs = n.longValue();
+            if (secs > 0) {
+                return now.plusSeconds(secs);
+            }
+        }
+        return null; // RefreshTokenService applies its configured TTL fallback
     }
 
     /**
@@ -192,10 +200,8 @@ public class OAuth2TokenService {
         }
 
         try {
-            // Decode and validate JWT signature using JwtDecoder configured with JWKS
             Jwt jwt = jwtDecoder.decode(idToken);
 
-            // Extract preferred_username or email claim
             String preferred = jwt.getClaimAsString("preferred_username");
             if (preferred == null) {
                 preferred = jwt.getClaimAsString("email");
@@ -214,6 +220,5 @@ public class OAuth2TokenService {
             return null;
         }
     }
-
 
 }

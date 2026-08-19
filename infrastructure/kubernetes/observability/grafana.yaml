@@ -1,0 +1,210 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  namespace: claimassist-observability
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-service.claimassist-observability.svc.cluster.local:9090
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: 15s
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki-service.claimassist-observability.svc.cluster.local:3100
+        isDefault: false
+        editable: false
+        jsonData:
+          maxLines: 1000
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'ClaimAssist Dashboards'
+        orgId: 1
+        folder: 'ClaimAssist'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /etc/grafana/provisioning/dashboards
+---
+# Re-uses the maintained ClaimAssist overview dashboard (same JSON that drives
+# the LOCAL/Docker Grafana). Panels filter on the `environment` template label
+# defaulting to dev/stage/prod; the dashboard is environment-aware.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: claimassist-observability
+data:
+  claimassist-overview.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "templating": {
+        "list": [
+          {
+            "name": "environment",
+            "type": "custom",
+            "options": [
+              { "text": "dev", "value": "dev", "selected": true },
+              { "text": "stage", "value": "stage", "selected": false },
+              { "text": "prod", "value": "prod", "selected": false }
+            ],
+            "current": { "text": "dev", "value": "dev" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "id": 1,
+          "targets": [ { "expr": "sum(rate(http_server_requests_seconds_count{environment=\"$environment\"}[5m]))", "refId": "A" } ],
+          "title": "HTTP Request Rate (5m)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "id": 2,
+          "targets": [ { "expr": "sum(rate(http_server_requests_seconds_count{environment=\"$environment\",status=~\"5..\"}[5m]))", "refId": "A" } ],
+          "title": "HTTP Error Rate (5xx)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+          "id": 3,
+          "targets": [ { "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{environment=\"$environment\"}[5m])) by (le))", "refId": "A" } ],
+          "title": "HTTP Latency p95",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "id": 4,
+          "targets": [ { "expr": "sum(jvm_memory_used_bytes{environment=\"$environment\",area=\"heap\"})", "refId": "A" } ],
+          "title": "JVM Heap Used",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "id": 5,
+          "targets": [ { "expr": "sum(jvm_threads_live_threads{environment=\"$environment\"})", "refId": "A" } ],
+          "title": "Live Threads",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+          "id": 6,
+          "targets": [ { "expr": "sum(up{cluster=\"claimassist-k3s\"})", "refId": "A" } ],
+          "title": "Scraped Targets Up",
+          "type": "gauge"
+        },
+        {
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+          "id": 7,
+          "targets": [ { "expr": "kafka_consumer_consumer_lag{environment=\"$environment\"}", "refId": "A" } ],
+          "title": "Kafka Consumer Lag",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Loki",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 32 },
+          "id": 8,
+          "targets": [ { "expr": "{environment=\"$environment\"}", "refId": "A" } ],
+          "title": "Service Logs (environment)",
+          "type": "logs"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 27,
+      "tags": ["claimassist", "observability"],
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "ClaimAssist Platform Overview (K8s)",
+      "uid": "claimassist-overview-k8s",
+      "version": 0
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: claimassist-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.2.2
+          env:
+            # Admin credentials must come from a Secret at deploy time; placeholders
+            # here are replaced by the operator. Never commit real credentials.
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-password
+                  optional: true
+          volumeMounts:
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning
+            - name: dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            # TASK 6A-14B-4B: CPU request 100m -> 50m (Grafana is lightly used on
+            # the free-tier node); limits unchanged.
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+      volumes:
+        - name: provisioning
+          configMap:
+            name: grafana-provisioning
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+  namespace: claimassist-observability
+spec:
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000

@@ -5,6 +5,7 @@ import com.claimassist.platform.common_lib.observability.LoggingConstants;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -14,6 +15,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -58,6 +60,50 @@ public class GlobalExceptionHandler {
 
         emitExceptionEvent(ex, HttpStatus.BAD_REQUEST, "BAD_REQUEST", startTime);
         log.warn("BadRequest: {}", error.message());
+
+        return ResponseEntity.status(error.status()).body(error);
+    }
+
+    /**
+     * Handles @Valid request-body validation failures with a 400 (not a 500).
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<EnhancedApiError> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
+        long startTime = System.currentTimeMillis();
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(fe -> fe.getField() + " " + fe.getDefaultMessage())
+                .orElse("Validation failed");
+        EnhancedApiError error = buildEnhancedError(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_ERROR",
+                message
+        );
+
+        emitExceptionEvent(ex, HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", startTime);
+        log.warn("Validation error: {} - path: {}", message, error.path());
+
+        return ResponseEntity.status(error.status()).body(error);
+    }
+
+    /**
+     * Handles method-parameter / bean-validation constraint violations with a 400.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<EnhancedApiError> handleConstraintViolation(ConstraintViolationException ex) {
+        long startTime = System.currentTimeMillis();
+        String message = ex.getConstraintViolations().stream()
+                .findFirst()
+                .map(cv -> cv.getPropertyPath() + " " + cv.getMessage())
+                .orElse("Validation failed");
+        EnhancedApiError error = buildEnhancedError(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_ERROR",
+                message
+        );
+
+        emitExceptionEvent(ex, HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", startTime);
+        log.warn("Validation error: {} - path: {}", message, error.path());
 
         return ResponseEntity.status(error.status()).body(error);
     }

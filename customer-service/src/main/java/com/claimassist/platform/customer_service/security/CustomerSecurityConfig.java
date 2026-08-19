@@ -2,7 +2,6 @@ package com.claimassist.platform.customer_service.security;
 
 import com.claimassist.platform.common_lib.observability.CorrelationIdFilter;
 import com.claimassist.platform.common_lib.security.KeycloakJwtAuthenticationConverter;
-import com.claimassist.platform.common_lib.security.SecurityHeadersFilter;
 import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,8 +9,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -35,17 +34,12 @@ public class CustomerSecurityConfig {
         log.info ("Initializing Customer Service Security Filter Chain.");
 
         httpSecurity
-                .csrf (csrf -> csrf
-                        // Use a cookie-backed CSRF token repository for browser-based flows
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        // Ignore CSRF for actuator, webhook and API endpoints which are stateless/consumed by machines
-                        .ignoringRequestMatchers(
-                            "/auth/signup",
-                            "/actuator/**",
-                            "/webhooks/**",
-                            "/api/**"
-                        )
-                )
+                // Stateless JWT-bearer resource server behind the API gateway: this
+                // service has no cookie/session-based authentication and is not
+                // browser-reachable externally, so CSRF (which relies on ambient
+                // browser credentials) provides no protection here. Consistent with
+                // claims-service and the gateway, CSRF is disabled.
+                .csrf (AbstractHttpConfigurer :: disable)
                 .cors (cors -> cors.configurationSource (corsConfigurationSource))
                 .headers (headers -> {
                         headers.frameOptions (frameOptions -> frameOptions.deny ());

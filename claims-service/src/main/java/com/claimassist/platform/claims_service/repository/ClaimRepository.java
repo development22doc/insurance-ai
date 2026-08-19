@@ -11,14 +11,23 @@ import java.util.Optional;
 
 public interface ClaimRepository extends JpaRepository<Claim, Long> {
 
+    /**
+     * "My claims" listing. Uses a constructor projection ({@link ClaimSummaryRow}) that selects
+     * only the columns needed to build {@code ClaimSummaryResponse}, rather than hydrating full
+     * {@link Claim} entities (version/updatedAt/deletedAt are not needed for the summary). This is
+     * a pure read-only reduction in data loaded and entity materialization; the WHERE/JOIN/ORDER BY
+     * (and thus the {@code idx_claim_parties_user_id} usage) are unchanged.
+     */
     @Query("""
-        SELECT c AS claim, cp.claimRole AS role
+        SELECT new com.claimassist.platform.claims_service.repository.ClaimSummaryRow(
+            c.id, c.claimNumber, c.policyId, c.incidentType, c.status,
+            c.estimatedAmountCents, c.approvedAmountCents, c.incidentDate, c.createdAt, cp.claimRole)
         FROM Claim c
         JOIN ClaimParty cp ON cp.claim.id = c.id
         WHERE cp.id.userId = :userId AND c.deletedAt IS NULL
         ORDER BY c.createdAt DESC
         """)
-    List<ClaimWithRoleProjection> findAllAccessibleByUser(@Param("userId") Long userId);
+    List<ClaimSummaryRow> findAllAccessibleByUser(@Param("userId") Long userId);
 
     @Query("""
         SELECT c FROM Claim c
@@ -26,6 +35,25 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
         WHERE c.id = :claimId AND cp.id.userId = :userId AND c.deletedAt IS NULL
         """)
     Optional<Claim> findAccessibleClaimById(@Param("claimId") Long claimId, @Param("userId") Long userId);
+
+    /**
+     * Single round-trip for {@code GET /claims/{id}}: returns the claim together
+     * with the caller's {@link ClaimRole} in ONE query that enforces ownership at
+     * the data layer (the join on {@code claim_parties.user_id}). This removes the
+     * previous per-request {@code findById} + separate role lookup (two queries,
+     * neither of which validated the caller's party membership), and hardens IDOR
+     * protection: a caller who is not a party to the claim gets an empty result
+     * from the database itself, independent of (and as a fallback to) the
+     * {@code @PreAuthorize} gate. The interface projection {@link ClaimWithRoleProjection}
+     * selects the aggregate entity plus the {@link ClaimRole} enum in one statement.
+     */
+    @Query("""
+        SELECT cp.claim AS claim, cp.claimRole AS role
+        FROM ClaimParty cp
+        WHERE cp.claim.id = :claimId AND cp.id.userId = :userId AND cp.claim.deletedAt IS NULL
+        """)
+    Optional<ClaimWithRoleProjection> findAccessibleClaimWithRoleByClaimIdAndUserId(
+            @Param("claimId") Long claimId, @Param("userId") Long userId);
 
     Optional<Claim> findByClaimNumber(String claimNumber);
 

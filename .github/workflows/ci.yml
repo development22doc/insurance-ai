@@ -1,0 +1,353 @@
+name: CI
+
+on:
+  push:
+    branches: [ dev ]
+  pull_request:
+    branches: [ dev ]
+
+# Shared environment: one source of truth for the OWASP Dependency-Check data
+# directory so the Maven invocation and the cache step always agree. Kept in
+# the runner's home (writable by the non-root runner user). The NVD database it
+# holds is public data; never place secrets here.
+env:
+  DC_DATA_DIR: /home/runner/odc-data
+  # Dependency-Check Maven plugin version. Single source of truth: used both for
+  # the mvn invocation below and in the cache key so an upgrade to the plugin
+  # (which can change the on-disk NVD database format) automatically invalidates
+  # the OWASP cache instead of silently reusing an incompatible database.
+  DC_PLUGIN_VERSION: 12.2.2
+  # Bump this only when the OWASP on-disk data layout changes in a way that is
+  # NOT captured by the plugin version (e.g. NVD data format shift), to force a
+  # fresh cold-cache (full NVD) download. It is NOT derived from pom.xml because
+  # the NVD data is independent of the dependency set.
+  # v1->v2: escape any cache entry that was persisted empty/stale under the old
+  # static key (combined actions/cache only saves on a primary-key MISS, so a
+  # static key can pin an unusable entry forever). v2 forces a re-seed; restore
+  # below still reuses the older cache via restore-keys when it is usable.
+  DC_CACHE_KEY: v2
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed so setup-java's `cache: maven` can restore/save the ~/.m2 cache.
+      actions: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+        cache: maven
+
+    # Deterministic reactor build from repository root. -DskipTests: this job
+    # only compiles/packages; the Test job runs the tests and owns the exit code.
+    - name: Build with Maven
+      run: mvn -B clean install -DskipTests
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: build-artifacts-jdk21
+        path: '**/target/*.jar'
+        retention-days: 7
+
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # cache: maven save/restore
+      actions: write
+      # dorny/test-reporter needs to write a check run / PR comment to publish
+      # the JUnit summary. Missing this fails the job even when tests pass, so
+      # it is required, not optional.
+      checks: write
+      pull-requests: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+        cache: maven
+
+    # Genuinely execute the tests. Maven's exit code is authoritative for this
+    # job; the test-reporter step below only publishes results and never bypasses
+    # a real failure. No masking flags and no -DskipTests here.
+    - name: Run tests
+      run: mvn -B clean test
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-jdk21
+        path: '**/target/surefire-reports/'
+        retention-days: 7
+
+    - name: Publish test report
+      uses: dorny/test-reporter@3eeb9fc888e82e8be2fb356bbeec2750231672bc
+      if: always()
+      with:
+        name: Test Results (JDK 21)
+        path: '**/target/surefire-reports/*.xml'
+        reporter: 'java-junit'
+
+  security-scan:
+    name: Security Scan
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # cache: maven + actions/cache (OWASP data, Trivy db) save/restore
+      actions: write
+      # Required to upload the Trivy SARIF and CodeQL results to the Security tab.
+      security-events: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+        cache: maven
+
+    # ---------------- OWASP Dependency-Check ----------------
+    # Root cause of the earlier repeated HTTP 429 failures: unauthenticated NVD
+    # API calls are aggressively rate-limited. Industrial fix:
+    #   1. Require an NVD API key secret (NVD_API_KEY). If absent, fail loudly so
+    #      the admin is told exactly what to configure instead of a confusing 429.
+    #   2. Hand the key to the plugin via nvdApiKeyEnvironmentVariable (the plugin's
+    #      recommended CI mechanism) so the value never lands on a command line.
+    #   3. Point dataDirectory at a stable, cached location so each run does NOT
+    #      redownload the entire 370k-record NVD DB from scratch.
+    #   4. actions/cache persists that data directory across runs (deterministic,
+    #      secret-free key). The first cold-cache run is a valid full download.
+    - name: Verify NVD API key is configured
+      env:
+        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      run: |
+        if [ -z "$NVD_API_KEY" ]; then
+          echo "::error::OWASP Dependency-Check requires the NVD_API_KEY repository secret to avoid NVD API HTTP 429 rate limiting. Add it at https://github.com/<owner>/<repo>/settings/secrets/actions then re-run this job."
+          exit 1
+        fi
+
+    - name: Restore OWASP Dependency-Check data
+      uses: actions/cache/restore@v4
+      with:
+        # Only the vulnerability database/data directory is cached. No reports,
+        # no target/, no Maven build outputs. path MUST equal -DdataDirectory so
+        # the restored H2 DB (odc.mv.db) is exactly what Dependency-Check opens.
+        path: ${{ env.DC_DATA_DIR }}
+        # Key = OS + plugin version + explicit data-layout bump. The plugin
+        # version is included so a plugin upgrade automatically invalidates an
+        # incompatible database. DC_CACHE_KEY is the manual escape hatch. github.sha
+        # is deliberately NOT used (would create a new cache on every commit).
+        key: ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-${{ env.DC_CACHE_KEY }}
+        # Fallback: if the exact key misses (e.g. DC_CACHE_KEY bump, or a previous
+        # run only wrote the pre-version key), reuse the closest compatible older
+        # cache for this OS/plugin, then any OWASP cache for this OS.
+        restore-keys: |
+          ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-
+          ${{ runner.os }}-odc-
+
+    - name: Run Maven dependency check
+      env:
+        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      # Invoked via full GA coordinates (group:artifact:version:goal) so it does not
+      # rely on Maven prefix discovery. Explicit -D flags (rather than relying on
+      # pluginManagement pick-up) make the run deterministic. No masking flags:
+      # this must genuinely run and fail CI on a real error.
+      run: |
+        mvn -B org.owasp:dependency-check-maven:${{ env.DC_PLUGIN_VERSION }}:check \
+          -DskipTests \
+          -DfailBuildOnCVSS=8 \
+          -DfailOnError=true \
+          -DautoUpdate=true \
+          -DdataDirectory=${{ env.DC_DATA_DIR }} \
+          -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
+
+    # Persist the (autoUpdate=true) updated ODC database AFTER the scan so the
+    # next run restores a warm DB and only does incremental NVD updates. Runs
+    # unconditionally (if: always()) because the scan above exits non-zero when
+    # a CVSS>=8 issue is found (the security gate is NOT disabled); the updated
+    # odc.mv.db must still be saved so the cache does not stay cold forever.
+    # The combined actions/cache@v4 action only saves on a primary-key MISS, so
+    # it could never re-seed a cache whose key was already a HIT on a bad entry;
+    # an explicit save-after-scan avoids that. The restored path == dataDirectory.
+    - name: Save OWASP Dependency-Check data
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ env.DC_DATA_DIR }}
+        key: ${{ runner.os }}-odc-${{ env.DC_PLUGIN_VERSION }}-${{ env.DC_CACHE_KEY }}
+
+    # Warm ~/.m2 with the full dependency set for Trivy. Uses a lifecycle phase
+    # (test-compile) instead of the bare `dependency:resolve` goal: a bare goal on
+    # the root aggregator never runs the compile/package phases, so common-lib's
+    # jar is never produced and discovery-service cannot resolve the internal
+    # common-lib module from the reactor (it falls back to Maven Central and
+    # fails). test-compile compiles common-lib in the same reactor, so every
+    # module resolves common-lib from the reactor, and main+test dependencies are
+    # downloaded into ~/.m2 exactly as `dependency:resolve` did. -DskipTests
+    # (no tests run here); the Test job owns the test gate.
+    - name: Resolve Maven dependencies (warm ~/.m2 for Trivy)
+      run: mvn -B test-compile -DskipTests
+
+    # ---------------- Trivy ----------------
+    # Pinned to an immutable commit SHA (no mutable tag) to avoid a re-pointing
+    # supply-chain attack. fs + vulnerabilities + secrets all remain enabled. The
+    # Trivy DB/cache dir is cached so the tool does not re-download on every run.
+    - name: Cache Trivy database
+      uses: actions/cache@v4
+      with:
+        path: /home/runner/.cache/trivy
+        key: ${{ runner.os }}-trivy-${{ env.DC_CACHE_KEY }}
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        # Scan application sources; skip build output and version-control internals
+        # to avoid re-scanning jars/tooling and to keep the report meaningful.
+        skip-dirs: '**/target,**/.git,**/node_modules'
+
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: hashFiles('trivy-results.sarif') != ''
+      with:
+        sarif_file: 'trivy-results.sarif'
+        category: 'trivy'
+
+    # ---------------- CodeQL ----------------
+    # CodeQL init must precede the build that Maven performs so the database
+    # captures the real compilation. Build/analyze use the same Maven reactor.
+    - name: Run CodeQL analysis
+      uses: github/codeql-action/init@v3
+      with:
+        languages: 'java'
+
+    - name: Build for CodeQL
+      run: mvn -B clean package -DskipTests
+
+    - name: Perform CodeQL analysis
+      uses: github/codeql-action/analyze@v3
+
+  sonar:
+    name: SonarQube Cloud
+    needs: [ build, test, security-scan ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # cache: maven save/restore
+      actions: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+        cache: maven
+
+    # Runs the full verify lifecycle first (compiles, runs tests, then JaCoCo
+    # generates each module's target/site/jacoco/jacoco.xml during the verify
+    # phase). Sonar is then run as a SEPARATE invocation so it reads the XML
+    # coverage reports that verify already produced, in the required sequence:
+    # clean -> compile -> tests -> jacoco report (verify) -> sonar -> quality gate.
+    - name: Build, test, and generate JaCoCo coverage reports
+      run: mvn -B verify
+
+    # Diagnostic: proves the expected JaCoCo XML reports exist before Sonar starts.
+    - name: Verify JaCoCo reports
+      run: |
+        echo "JaCoCo reports:"
+        find . -path "*/target/site/jacoco/jacoco.xml" -print
+
+    # Runs SonarQube Cloud analysis with the quality gate in blocking mode. The job
+    # fails if the gate fails (genuine exit code). SonarQube Cloud drives the server
+    # URL and token (SONAR_TOKEN); org/projectKey/qualitygate.wait are pinned here
+    # because the root pom.xml does not define them. Coverage needs NO explicit
+    # sonar.coverage.jacoco.xmlReportPaths: each module's report at
+    # <module>/target/site/jacoco/jacoco.xml is found via SonarScanner for Maven's
+    # default path, resolved against each module's own base dir. (An earlier
+    # root-relative comma list in the root pom was propagated to every module and
+    # resolved against each module's base dir, so no report was found -> 0% coverage
+    # -> gate failure; it was removed.)
+    - name: Run SonarQube Cloud analysis
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
+          -Dsonar.organization=development22doc \
+          -Dsonar.projectKey=development22doc_insurance-ai \
+          -Dsonar.qualitygate.wait=true
+
+  # ---------------------------------------------------------------------------
+  # Quality Gate - the pipeline's blocking final gate. It is NOT a hardcoded
+  # success: it depends on every upstream CI job and fails the workflow whenever
+  # any of them did not succeed. Sonar additionally enforces the SonarQube Cloud
+  # quality gate natively (-Dsonar.qualitygate.wait=true makes its Maven
+  # invocation exit non-zero on a failed gate, which itself fails the sonar job).
+  # GitHub Actions also automatically skips this job when a needed job fails, so
+  # the run can never be reported green while a predecessor is red.
+  # ---------------------------------------------------------------------------
+  quality-gate:
+    name: Quality Gate
+    needs: [ build, test, security-scan, sonar ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Aggregate upstream CI status
+      env:
+        BUILD_STATUS: ${{ needs.build.result }}
+        TEST_STATUS: ${{ needs.test.result }}
+        SECURITY_STATUS: ${{ needs.security-scan.result }}
+        SONAR_STATUS: ${{ needs.sonar.result }}
+      run: |
+        set -e
+        failed=0
+        for entry in \
+          "Build:$BUILD_STATUS" \
+          "Test:$TEST_STATUS" \
+          "Security:$SECURITY_STATUS" \
+          "Sonar:$SONAR_STATUS"; do
+          name="${entry%%:*}"
+          status="${entry#*:}"
+          echo "$name -> $status"
+          if [ "$status" != "success" ]; then
+            failed=1
+          fi
+        done
+        if [ "$failed" -ne 0 ]; then
+          echo "::error::Quality Gate FAILED - one or more upstream CI jobs did not succeed. See the individual job logs."
+          exit 1
+        fi
+        echo "Quality Gate PASSED - all required gates are green."

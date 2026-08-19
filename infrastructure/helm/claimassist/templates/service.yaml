@@ -1,0 +1,24 @@
+{{- range $name, $svc := .Values.services }}
+{{- $root := $ }}
+---
+# ClusterIP Service for {{ $name }} - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-{{ $name }}
+  namespace: {{ include "claimassist.namespace" $root | quote }}
+  labels:
+    {{- include "claimassist.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" $root | quote }}
+    app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+    app.kubernetes.io/component: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+      protocol: TCP
+{{- end }}

@@ -39,7 +39,8 @@ public class SecurityExpressions {
      */
     @Cacheable(
             cacheNames = RedisCacheConfig.CLAIM_PERMISSION_LOOKUP_CACHE,
-            key = "#claimId + '-' + #userId + '-' + #permission.name()")
+            key = "#claimId + '-' + #userId + '-' + #permission.name()",
+            sync = true)
     public boolean hasPermissionForUser(Long claimId, Long userId, ClaimPermission permission) {
         return claimPartyRepository.findRoleByClaimIdAndUserId(claimId, userId)
                 .map(role -> role.hasPermission(permission))

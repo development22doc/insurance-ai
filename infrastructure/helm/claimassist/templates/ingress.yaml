@@ -1,0 +1,57 @@
+{{- if .Values.ingress.enabled }}
+{{- $gw := index .Values.services "api-gateway" }}
+---
+# Task 6A-11: DEV public application edge.
+# Free OCI IP-based deployment:
+# Internet -> OCI public IP -> NGINX Ingress -> API Gateway.
+#
+# TLS and cert-manager are conditional. They remain disabled for the
+# current no-domain/free-tier deployment.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: claimassist-ingress
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+  {{- if .Values.ingress.tlsEnabled }}
+  annotations:
+    nginx.org/redirect-to-https: "true"
+    {{- if .Values.certManager.enabled }}
+    cert-manager.io/issuer: {{ .Values.certManager.issuerName | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- else }}
+    {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+
+spec:
+  ingressClassName: {{ .Values.ingress.className | default "nginx" | quote }}
+
+  {{- if .Values.ingress.tlsEnabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tlsSecretName | quote }}
+  {{- end }}
+
+  rules:
+    - {{- if .Values.ingress.host }}
+      host: {{ .Values.ingress.host | quote }}
+      {{- end }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path | default "/" | quote }}
+            pathType: {{ .Values.ingress.pathType | default "Prefix" | quote }}
+            backend:
+              service:
+                name: claimassist-api-gateway
+                port:
+                  number: {{ $gw.port }}
+{{- end }}

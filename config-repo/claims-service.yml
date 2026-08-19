@@ -31,7 +31,7 @@ spring:
       batch-size: ${KAFKA_PRODUCER_BATCH_SIZE:16384}
       linger-ms: ${KAFKA_PRODUCER_LINGER_MS:10}
       properties:
-        compression.type: ${KAFKA_PRODUCER_COMPRESSION:snappy}
+        compression.type: ${KAFKA_PRODUCER_COMPRESSION:none}
         delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:120000}
         request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
         retry.backoff.ms: ${KAFKA_RETRY_BACKOFF_MS:1000}
@@ -54,8 +54,19 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
 
-service-client:
-  registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+security:
+  service-client:
+    registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+    # F-1 (Phase 1 shared-foundation fix): these keys are REQUIRED for the shared
+    # ClientRegistrationConfiguration to register the internal service client and
+    # enable the OAuth2 client-credentials flow. They were previously absent from
+    # this file (only registration-id was set), so claims-service ran with
+    # "client-credentials flow disabled" and its outbound Feign calls sent no
+    # valid Bearer token. The values resolve from the environment (SERVICE_CLIENT_*),
+    # matching the Keycloak service-account client used across the platform.
+    client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+    client-secret: ${SERVICE_CLIENT_SECRET:}
+    token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
 
 
 

@@ -1,0 +1,103 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.postgresql.enabled }}
+# Dedicated Keycloak PostgreSQL StatefulSet - one per K8s environment namespace.
+# ISOLATED from the application PostgreSQL (postgresql.*) with its own stable
+# pod identity, ClusterIP Service and persistent storage via volumeClaimTemplates
+# (NOT emptyDir: Keycloak schema is durable). Credentials come from the dedicated
+# Secret. Probes use pg_isready against the Keycloak DB. Security context is
+# intentionally left unset by default: the official postgres image must start as
+# root to chown its volume during init (same reasoning as the app PostgreSQL).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.keycloak.postgresql.serviceName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-postgresql
+spec:
+  serviceName: {{ .Values.keycloak.postgresql.serviceName }}
+  replicas: {{ .Values.keycloak.postgresql.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+      app.kubernetes.io/component: keycloak-postgresql
+  template:
+    metadata:
+      labels:
+        {{- include "claimassist.labels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-postgresql
+    spec:
+      {{- with .Values.keycloak.postgresql.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: postgresql
+          image: "{{ .Values.keycloak.postgresql.image.registry }}{{ if .Values.keycloak.postgresql.image.registry }}/{{ end }}{{ .Values.keycloak.postgresql.image.repository }}:{{ .Values.keycloak.postgresql.image.tag }}"
+          imagePullPolicy: {{ .Values.keycloak.postgresql.image.pullPolicy }}
+          ports:
+            - name: postgresql
+              containerPort: {{ .Values.keycloak.postgresql.port }}
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.postgresql.credentials.secretName }}
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.postgresql.credentials.secretName }}
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.postgresql.credentials.secretName }}
+                  key: POSTGRES_PASSWORD
+            - name: TZ
+              value: {{ .Values.keycloak.postgresql.timezone | quote }}
+            - name: PGTZ
+              value: {{ .Values.keycloak.postgresql.timezone | quote }}
+          resources:
+            {{- toYaml .Values.keycloak.postgresql.resources | nindent 12 }}
+          {{- with .Values.keycloak.postgresql.probes.startup }}
+          startupProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- with .Values.keycloak.postgresql.probes.liveness }}
+          livenessProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- with .Values.keycloak.postgresql.probes.readiness }}
+          readinessProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "claimassist.labels" . | nindent 10 }}
+          app.kubernetes.io/component: keycloak-postgresql
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.keycloak.postgresql.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.keycloak.postgresql.storageSize | quote }}
+{{- end }}

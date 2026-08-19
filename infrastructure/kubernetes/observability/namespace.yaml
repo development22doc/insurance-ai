@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: claimassist-observability
+  labels:
+    app.kubernetes.io/part-of: claimassist
+    environment: observability
+---
+# Task 6A-13 OBSERVABILITY / AUDITABILITY. Task 6A-14B-4B: Zipkin is OPTIONAL and
+# DISABLED by default on the free-tier profile (see zipkin.yaml - the K8s runtime
+# sends no traces). The default stack is Prometheus + Grafana + Loki + Promtail.
+#
+# ONE SHARED observability stack (Prometheus + Grafana + Loki + Promtail)
+# deployed a single time, collecting from all three application environments
+# (namespaces claimassist-dev / claimassist-stage / claimassist-prod) at once.
+# This is deliberate and FREE-TIER HONEST:
+#   - Running 5 extra observability workloads per environment (x3) would exceed the
+#     single Always-Free node's CPU/RAM budget. A single shared collector keeps the
+#     footprint small.
+#   - Environment isolation is preserved NOT by separate stacks but by LABELS: every
+#     series/line carries the `environment` (dev|stage|prod) label sourced from the
+#     pod's namespace. No environment's metrics/logs are tagged as another's.
+#
+# Read-only RBAC: Prometheus (list/watch pods) and Promtail (read pod logs) only.
+# No admin access is granted. Kubernetes ADMIN audit is NOT provided by this stack
+# and is documented separately (see AUDITABILITY.md).

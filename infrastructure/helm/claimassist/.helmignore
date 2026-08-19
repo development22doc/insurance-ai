@@ -1,0 +1,18 @@
+# Patterns to ignore when building the Helm package.
+# - Sensitive / local-only material is never packed into the chart.
+# - Values files for environments are excluded from the packaged .tgz; only the
+#   active -f values override is applied at install time.
+
+.git
+.gitignore
+.idea
+.vscode
+*.tmproj
+.tmp
+# Note: Helm 4 rejects the double-star (**) wildcard. The chart contains no
+# *.md files, so no recursive markdown exclusion is required. If documentation
+# is later shipped, exclude markdown files explicitly by name here.
+values-local.yaml
+values-qa.yaml
+values-uat.yaml
+values-root.yaml

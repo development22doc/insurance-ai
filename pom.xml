@@ -31,10 +31,73 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Common versions for child modules -->
         <lombok.version>1.18.28</lombok.version>
+        <testcontainers.version>1.20.0</testcontainers.version>
+
+        <!--
+            JaCoCo coverage report consumption for SonarScanner for Maven. Per the
+            SonarQube Cloud docs, the Maven scanner reads analysis properties from
+            pom.xml (not sonar-project.properties).
+            We deliberately do NOT set sonar.coverage.jacoco.xmlReportPaths here.
+            During the verify phase each module emits its own report at
+            <module>/target/site/jacoco/jacoco.xml, and SonarScanner for Maven's
+            default report path "target/site/jacoco/jacoco.xml" is already resolved
+            against EACH module's own base dir, so every module's report is picked up
+            automatically. This aggregator pom is NOT the Maven parent of the modules
+            (their parent is spring-boot-starter-parent), so any sonar.* property set
+            here is propagated to every module by the scanner and resolved against
+            each module's base dir. A previous root-relative comma list (e.g.
+            common-lib/target/site/jacoco/jacoco.xml) therefore resolved to
+            <module>/common-lib/target/site/jacoco/jacoco.xml for every module, no
+            report was found, coverage was 0% and the quality gate failed. Removing it
+            restores the working per-module default.
+            Modules with zero test classes (discovery-service, config-service,
+            api-gateway) emit NO report; Sonar tolerates a missing file and simply
+            reports no coverage for them while continuing to analyze every module.
+        -->
     </properties>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <!--
+                    OWASP dependency-check. Version and config are centrally managed here (pluginManagement)
+                    so the Security workflow can invoke the plugin deterministically via full GA
+                    coordinates: mvn org.owasp:dependency-check-maven:12.2.2:check. Coordinates are
+                    org.owasp:dependency-check-maven (the previously used
+                    org.owasp.dependency-check-maven-plugin:dependency-check-maven-plugin does not exist on
+                    Maven Central). NOT bound to any lifecycle phase: only the Security workflow invokes it.
+                    failBuildOnCVSS=8 fails the build on any High+ vulnerability; failOnError=true fails if
+                    the scan itself errors.
+                -->
+                <plugin>
+                    <groupId>org.owasp</groupId>
+                    <artifactId>dependency-check-maven</artifactId>
+                    <version>12.2.2</version>
+                    <configuration>
+                        <failBuildOnCVSS>8</failBuildOnCVSS>
+                        <failOnError>true</failOnError>
+                        <!--
+                            Documented false-positive suppressions, single source of truth.
+                            ${maven.multiModuleProjectDirectory} is the repo root even when
+                            the plugin runs for a downstream reactor module. See
+                            dependency-check-suppressions.xml for the justification (only
+                            CVE-2026-66299 on tomcat-embed-core 10.1.57 is suppressed; it is
+                            not applicable to Spring Boot's embedded Tomcat).
+                        -->
+                        <suppressionFiles>
+                            <suppressionFile>${maven.multiModuleProjectDirectory}/dependency-check-suppressions.xml</suppressionFile>
+                        </suppressionFiles>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
+            <!--
+                Declared here (not pluginManagement) so child modules inherit and actually
+                execute these lifecycle-bound goals. Maven's default lifecycle never invokes
+                JaCoCo's prepare-agent/report, so leaving it only in pluginManagement would
+                silently drop coverage; it must be an active inherited plugin.
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -46,6 +109,40 @@
                     <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.11</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+    <dependencies>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

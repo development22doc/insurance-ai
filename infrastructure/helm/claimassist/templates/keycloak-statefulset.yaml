@@ -1,0 +1,115 @@
+{{- if .Values.keycloak.enabled }}
+{{- $realm := .Values.keycloak.realm }}
+# Keycloak StatefulSet - one per K8s environment namespace. INTERNAL ONLY.
+# replicaCount defaults to 1 (learning-tier; NOT real Keycloak HA - see values).
+# Keycloak's persistent state lives in the dedicated Keycloak PostgreSQL, so it
+# does NOT request a PVC (no volumeClaimTemplates). The deterministic realm import
+# is mounted read-only from the realm ConfigMap and consumed with the official
+# `start --import-realm` bootstrap (the SAME mechanism LOCAL uses). Admin and DB
+# credentials come from Secrets - never committed. Probes use Keycloak's health
+# endpoints with generous startup timing (Keycloak + PostgreSQL + realm import).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.keycloak.serviceName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+spec:
+  serviceName: {{ .Values.keycloak.serviceName }}
+  replicas: {{ .Values.keycloak.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+      app.kubernetes.io/component: keycloak
+  template:
+    metadata:
+      labels:
+        {{- include "claimassist.labels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak
+    spec:
+      {{- with .Values.keycloak.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: realm-import
+          configMap:
+            name: {{ .Values.keycloak.realmConfigMapName }}
+            defaultMode: 0444
+      containers:
+        - name: keycloak
+          image: "{{ .Values.keycloak.image.registry }}{{ if .Values.keycloak.image.registry }}/{{ end }}{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}"
+          imagePullPolicy: {{ .Values.keycloak.image.pullPolicy }}
+          command: ["start", "--import-realm"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.keycloak.port }}
+              protocol: TCP
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: "jdbc:postgresql://{{ .Values.keycloak.postgresql.serviceName }}:{{ .Values.keycloak.postgresql.port }}/{{ .Values.keycloak.postgresql.database }}"
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.postgresql.credentials.secretName }}
+                  key: POSTGRES_USER
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.postgresql.credentials.secretName }}
+                  key: POSTGRES_PASSWORD
+            - name: KC_HOSTNAME
+              value: {{ .Values.keycloak.hostname | quote }}
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.credentials.secretName }}
+                  key: KEYCLOAK_ADMIN
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.credentials.secretName }}
+                  key: KEYCLOAK_ADMIN_PASSWORD
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          resources:
+            {{- toYaml .Values.keycloak.resources | nindent 12 }}
+          {{- with .Values.keycloak.probes.startup }}
+          startupProbe:
+            httpGet:
+              path: /realms/{{ $realm }}/.well-known/openid-configuration
+              port: http
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- with .Values.keycloak.probes.liveness }}
+          livenessProbe:
+            httpGet:
+              path: /realms/{{ $realm }}/.well-known/openid-configuration
+              port: http
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- with .Values.keycloak.probes.readiness }}
+          readinessProbe:
+            httpGet:
+              path: /realms/{{ $realm }}/.well-known/openid-configuration
+              port: http
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+{{- end }}

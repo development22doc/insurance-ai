@@ -1,0 +1,79 @@
+{{- if and .Values.flyway.enabled .Values.postgresql.enabled }}
+# Flyway migration Job - a SEPARATE Kubernetes Job, NOT run inside application
+# startup (services set spring.flyway.enabled=false) and NOT inside the postgres
+# container. For each application database it connects via the K8s Service DNS
+# (claimassist-postgresql) using Secret credentials and runs the real repository
+# migrations from its mounted migration ConfigMap. Flyway is idempotent per its
+# schema history, so the Job is safe to run again. It is a post-install/
+# post-upgrade Helm hook, so `helm install --wait` / `helm upgrade --wait` blocks
+# until the migration Job succeeds (migration before application rollout). The
+# app readiness probe (/actuator/health/readiness incl. the DataSource db, with
+# flyway disabled + ddl-auto none) also gates serving traffic until the schema
+# exists. Name is release-aware so releases never collide.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-flyway" .Values.postgresql.serviceName | trunc 63 | trimSuffix "-" }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: flyway
+  {{- with .Values.flyway.jobAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.flyway.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.flyway.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "claimassist.labels" . | nindent 8 }}
+        app.kubernetes.io/component: flyway
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: flyway
+          image: "{{ .Values.flyway.image.repository }}:{{ .Values.flyway.image.tag }}"
+          imagePullPolicy: {{ .Values.flyway.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              {{- $pgSvc := .Values.postgresql.serviceName }}
+              {{- range .Values.postgresql.databases }}
+              echo "==> Migrating {{ .name }} ({{ .service }})"
+              flyway \
+                -url="jdbc:postgresql://{{ $pgSvc }}:{{ $.Values.postgresql.port }}/{{ .name }}" \
+                -user="$FLYWAY_USER" \
+                -password="$FLYWAY_PASSWORD" \
+                -locations="filesystem:/flyway/sql/{{ .service }}" \
+                -connectRetries=120 \
+                migrate
+              {{- end }}
+          env:
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.credentials.secretName }}
+                  key: POSTGRES_USER
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.credentials.secretName }}
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            {{- range .Values.postgresql.databases }}
+            - name: mig-{{ .service }}
+              mountPath: /flyway/sql/{{ .service }}
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.flyway.resources | nindent 12 }}
+      volumes:
+        {{- range .Values.postgresql.databases }}
+        - name: mig-{{ .service }}
+          configMap:
+            name: {{ $.Values.flyway.migrationsConfigMapName }}-{{ .service }}
+        {{- end }}
+{{- end }}

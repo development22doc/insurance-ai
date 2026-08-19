@@ -1,0 +1,22 @@
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.k8sConfig }}
+---
+# Kubernetes application configuration for {{ $name }}.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-{{ $name }}-config
+  namespace: {{ include "claimassist.namespace" $ | quote }}
+  labels:
+    {{- include "claimassist.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+data:
+  application-k8s.yaml: |
+{{ $.Files.Get (printf "files/k8s-config/%s/application-k8s.yaml" $name) | nindent 4 }}
+{{- end }}
+{{- end }}

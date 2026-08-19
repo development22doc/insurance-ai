@@ -32,18 +32,20 @@ spring:
       batch-size: ${KAFKA_PRODUCER_BATCH_SIZE:16384}
       linger-ms: ${KAFKA_PRODUCER_LINGER_MS:10}
       properties:
-        compression.type: ${KAFKA_PRODUCER_COMPRESSION:snappy}
+        compression.type: ${KAFKA_PRODUCER_COMPRESSION:none}
         delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:120000}
         request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
         retry.backoff.ms: ${KAFKA_RETRY_BACKOFF_MS:1000}
     listener:
       observation-enabled: ${KAFKA_LISTENER_OBSERVATION_ENABLED:true}
   ai:
-    openai:
-      api-key: ${AI_API_KEY}
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
         options:
-          model: gpt-4o-mini
+          model: ${OLLAMA_MODEL:qwen2.5-coder:3b}
+          temperature: 0.2
+          num-ctx: 8192
   security:
     oauth2:
       client:
@@ -64,4 +66,10 @@ spring:
 security:
   service-client:
     registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+    # F-1 (Phase 1 shared-foundation fix): align with claims/customer so the
+    # internal service client is always registered and client-credentials is
+    # enabled for service-to-service calls.
+    client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+    client-secret: ${SERVICE_CLIENT_SECRET:}
+    token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}
 

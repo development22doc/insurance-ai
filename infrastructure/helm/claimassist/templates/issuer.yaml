@@ -1,0 +1,39 @@
+{{- if .Values.certManager.enabled }}
+---
+# Task 6A-11: cert-manager integration. This renders the cert-manager manifest required
+# by this chart (an automatic TLS Issuer); it does NOT install the cert-manager
+# operator itself (that is installed/deployed separately, out of scope for this task,
+# and is a release-time prerequisite). cert-manager is NOT claimed to be present.
+#
+# DEV     -> Let's Encrypt STAGING (no production certificate, no rate-limit risk)
+# STAGE   -> Let's Encrypt PRODUCTION
+# PROD    -> Let's Encrypt PRODUCTION
+#
+# A namespace-scoped Issuer (not ClusterIssuer) is used deliberately: the cluster is
+# ONE shared K3s node with three per-environment namespaces (claimassist-dev/stage/prod).
+# A namespace-scoped Issuer keeps account key + ACME identity fully isolated per
+# environment, collides with nothing across namespaces, and is removed cleanly with
+# its own release. The Ingress references it via cert-manager.io/issuer.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.certManager.issuerName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+spec:
+  acme:
+    # Let's Encrypt API endpoint (env-specific): staging or production.
+    server: {{ .Values.certManager.server | quote }}
+    # Operator contact email for the ACME account. Deployment-time value; no real
+    # email is committed.
+    email: {{ .Values.certManager.email | quote }}
+    # The ACME account private key is held in a Secret managed by cert-manager.
+    # Never committed. Per-environment (namespace-scoped) so it never collides.
+    privateKeySecretRef:
+      name: {{ .Values.certManager.issuerSecretName | quote }}
+    solvers:
+      - http01:
+          ingress:
+            class: {{ .Values.ingress.className | default "nginx" | quote }}
+{{- end }}

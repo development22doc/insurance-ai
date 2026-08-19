@@ -1,0 +1,149 @@
+# =============================================================================
+# ClaimAssist - STAGE environment values
+# Namespace: claimassist-stage | one shared K3s cluster.
+# Stateless application workload overrides (Task 6A-6).
+# =============================================================================
+global:
+  environment: stage
+  app: claimassist
+  managedBy: helm
+
+image:
+  registry: ""              # OCIR placeholder - set at deploy time
+  repository: claimassist
+  tag: "1.0.0"              # matches Task 6A-3 built images (stage tag convention later)
+  pullPolicy: Always
+  pullSecret: ""
+
+namespace:
+  create: true
+
+serviceAccounts:
+  create: true
+
+configMap:
+  enabled: false
+  data: {}
+
+secrets:
+  create: false
+  values: {}
+
+# Task 6A-7: PostgreSQL + Flyway for STAGE (namespace claimassist-stage). One
+# PostgreSQL StatefulSet + ClusterIP Service + PVC for this environment only.
+# Real credentials are supplied at deploy time (postgresql.credentials.*) - never
+# committed. App databases (claimassist_customer/claims/agent) live inside THIS
+# instance; no cross-environment URLs.
+postgresql:
+  enabled: true
+  storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
+  storageSize: 8Gi
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 600m, memory: 768Mi }
+  securityContext: {}
+
+# Task 6A-8: Redis for STAGE (namespace claimassist-stage). One internal Deployment
+# + ClusterIP Service. Cache only (no PVC / no persistence). Conservative free-tier
+# resources; overridable here without a template change.
+redis:
+  enabled: true
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+
+# Task 6A-9: Kafka for STAGE (namespace claimassist-stage). One KRaft broker
+# StatefulSet + internal ClusterIP Service + PVC. Free-learning-tier (NOT HA).
+# Conservative resources; overridable here.
+kafka:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 500m, memory: 1Gi }
+
+flyway:
+  enabled: true
+
+# Task 6A-10: Keycloak for STAGE (namespace claimassist-stage). One self-hosted
+# Keycloak + one dedicated Keycloak PostgreSQL, isolated in this namespace.
+# Realm = claimassist-stage (ONE realm per environment). No cross-environment
+# issuer/DB/client references. Internal Service DNS only. Real values at deploy time.
+keycloak:
+  enabled: true
+  realm: claimassist-stage
+  replicaCount: 1
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 500m, memory: 1024Mi }
+  postgresql:
+    enabled: true
+    storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
+    storageSize: 2Gi
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+
+# Task 6A-11: STAGE public edge + TLS. Let's Encrypt PRODUCTION certificate.
+# `host` is a DEPLOYMENT-TIME placeholder; replace api-stage.<your-domain> with the
+# real STAGE host when DNS exists. certManager.server points at the production ACME
+# directory; certManager.email is a placeholder. Production issuer for STAGE only.
+ingress:
+  enabled: true
+  className: nginx
+  host: api-stage.<your-domain>        # DEPLOYMENT-TIME placeholder
+  tlsEnabled: true
+  tlsSecretName: claimassist-api-gateway-tls
+
+certManager:
+  enabled: true
+  issuerName: claimassist-letsencrypt
+  issuerSecretName: claimassist-letsencrypt-account
+  email: "cert-manager@example.com"    # DEPLOYMENT-TIME placeholder
+  server: "https://acme-v02.api.letsencrypt.org/directory"
+
+# Task 6A-14 RBAC intent (STAGE): team-read-only is allowed (as DEV, first env to
+# exercise the group binding at bootstrap). NO secrets/write for team. Inert by
+# default; enable rbac.teamReadOnly.binding.enabled via override when the group exists.
+rbac:
+  adminBinding:
+    enabled: false
+  teamReadOnly:
+    binding:
+      enabled: false
+# Task 6A-12 + TASK 6A-14B-4B: Stateless application replicas (STAGE).
+# FREE-TIER PROFILE: STAGE is a single-replica environment, ACTIVE only during
+# STAGE verification (DEV is scaled down first - one active environment at a time
+# on the single 2-OCPU node). Request budget is now minimal (~1.0 OCPU / ~2.4GiB
+# per active environment + shared observability). Single replica => NO pod-level
+# HA, NO PDB (PDB renders only at >= 2 replicas - see poddisruptionbudget.yaml).
+# This is NOT enterprise HA; the one VM/node remains a single point of failure.
+services:
+  api-gateway:
+    replicas: 1
+  customer-service:
+    replicas: 1
+  claims-service:
+    replicas: 1
+  agent-service:
+    replicas: 1
+
+# Task 6A-14B-3 + TASK 6A-14B-4B: HPA (STAGE). Free-tier bound: 1 baseline
+# replica, ceiling 2 (never 3). On request-CPU pressure HPA may add ONE extra
+# pod, then scale back after a 5-minute idle window. If the 2-OCPU node is CPU
+# constrained the extra pod simply stays unschedulable - no overflow. 2 replicas
+# is an UPPER BOUND, not guaranteed simultaneous capacity. metrics-server is
+# required at bootstrap for the CPU metric.
+hpa:
+  services:
+    api-gateway:
+      min: 1
+      max: 2
+    customer-service:
+      min: 1
+      max: 2
+    claims-service:
+      min: 1
+      max: 2
+    agent-service:
+      min: 1
+      max: 2

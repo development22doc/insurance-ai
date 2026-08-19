@@ -1,198 +1,161 @@
 package com.claimassist.platform.agent_service.cache;
 
-import lombok.RequiredArgsConstructor;
+import com.claimassist.platform.agent_service.config.CacheProperties;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
-import com.claimassist.platform.common_lib.observability.PerformanceLogger;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
- * Production-grade Cache-Aside pattern implementation for agent-service.
- * Provides typed caching with TTL, eviction, and invalidation support.
+ * The agent's cache-aside layer. Cache is NOT a source of truth - the database /
+ * backend services are. This layer only optimises reads:
+ *
+ * <pre>
+ * Request → cache GET → HIT? → return
+ *                        │ NO
+ *                        ▼
+ *              load from backend (source of truth)
+ *                        ▼
+ *              cache SET (only if cacheable)
+ *                        ▼
+ *                        return
+ * </pre>
+ *
+ * <h2>Guarantees</h2>
+ * <ul>
+ *   <li><b>Fail-open:</b> any Redis/cache error is logged as controlled metadata
+ *       and the request falls through to the source of truth. A cache outage can
+ *       never take the agent down or lose a business answer.</li>
+ *   <li><b>Single-flight:</b> concurrent cache misses for the same key coalesce
+ *       on a per-key lock (double-checked), so a thundering herd on one key does
+ *       not fan out to N backend calls.</li>
+ *   <li><b>Never caches failures:</b> only values satisfying {@code cacheable}
+ *       are stored (so UNAVAILABLE / NOT_FOUND placeholders are never cached).</li>
+ *   <li><b>Thread-safe:</b> the backend (Spring Data Redis
+ *       {@code StringRedisTemplate}) is thread-safe; this service is stateless
+ *       apart from thread-safe maps and atomic metrics.</li>
+ *   <li><b>Sensitive-data safe:</b> cache keys carry only version + operation +
+ *       resource ids (no user/claim PII), and no cache content is ever logged.</li>
+ * </ul>
  */
-@Component
 @Slf4j
-// Redis is optional for local developer startup; inject it only when available
-// (use autowired(required=false) below)
+@Service
 public class CacheService {
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private RedisTemplate<String, Object> redisTemplate;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private PerformanceLogger performanceLogger;
+    private final CacheBackend backend;
+    private final ObjectMapper objectMapper;
+    private final CacheProperties properties;
+    private final CacheMetrics metrics;
 
-    // Cache TTLs (in seconds)
-    public static final long SESSION_CACHE_TTL = 1800;     // 30 minutes
-    public static final long AGENT_EVENT_CACHE_TTL = 300;  // 5 minutes
-    public static final long LLM_RESPONSE_CACHE_TTL = 3600; // 1 hour
+    /** Per-key monitors used to coalesce concurrent misses (single-flight). */
+    private final Map<String, Object> locks = new ConcurrentHashMap<>();
 
-    // Cache key prefixes
-    private static final String SESSION_PREFIX = "agent:session:";
-    private static final String EVENT_PREFIX = "agent:event:";
-    private static final String LLM_PREFIX = "agent:llm:";
+    public CacheService(CacheBackend backend, ObjectMapper objectMapper,
+                        CacheProperties properties, CacheMetrics metrics) {
+        this.backend = backend;
+        this.objectMapper = objectMapper;
+        this.properties = properties;
+        this.metrics = metrics;
+    }
+
+    /** Build a deterministic, collision-safe cache key. */
+    public String key(String operation, String resourceType, Long resourceId) {
+        return "agent:" + properties.getVersion() + ":" + operation + ":" + resourceType + ":" + resourceId;
+    }
 
     /**
-     * Get a cached value by key, with type casting.
+     * Cache-aside read with single-flight coalescing and fail-open fallback.
      *
-     * @param key The cache key
-     * @param type The expected return type
-     * @return The cached value or null
+     * @param cacheable only results satisfying this predicate are stored (never
+     *                  cache failures/placeholders)
      */
-    public <T> T get(String key, Class<T> type) {
-        long start = System.nanoTime();
-        try {
-            Object value = redisTemplate.opsForValue().get(key);
-            if (value != null) {
-                if (type.isInstance(value)) {
-                    log.debug("Cache HIT: {}", key);
-                    return type.cast(value);
-                }
-            } else {
-                log.debug("Cache MISS: {}", key);
+    public <T> T getOrLoad(String key, TypeReference<T> typeRef, Duration ttl,
+                           Supplier<T> loader, Predicate<T> cacheable) {
+        if (!properties.isEnabled()) {
+            return loader.get();
+        }
+
+        // Fast hit path (no lock taken on a hit).
+        T cached = readCached(key, typeRef);
+        if (cached != null) {
+            metrics.recordHit();
+            return cached;
+        }
+        metrics.recordMiss();
+
+        // Miss → single-flight on a per-key lock; re-check inside so a
+        // concurrent miss that already loaded skips re-loading.
+        Object lock = locks.computeIfAbsent(key, k -> new Object());
+        synchronized (lock) {
+            T cachedAgain = readCached(key, typeRef);
+            if (cachedAgain != null) {
+                metrics.recordHit();
+                return cachedAgain;
             }
+            T value = loader.get();
+            if (value != null && cacheable.test(value)) {
+                put(key, value, ttl);
+            }
+            return value;
+        }
+    }
+
+    /** Read-only cache GET. Returns {@code null} on miss or cache failure. */
+    public <T> T get(String key, TypeReference<T> typeRef) {
+        return readCached(key, typeRef);
+    }
+
+    /** Best-effort write-through put; never throws (fail-open). */
+    public <T> void put(String key, T value, Duration ttl) {
+        if (!properties.isEnabled()) {
+            return;
+        }
+        try {
+            backend.set(key, objectMapper.writeValueAsString(value), ttl);
+        } catch (Exception e) {
+            metrics.recordError();
+            log.warn("Cache PUT failed (key={}): {}", key, e.toString());
+        }
+    }
+
+    /** Remove a key (e.g. after a successful write to invalidate read caches). */
+    public void evict(String key) {
+        if (!properties.isEnabled()) {
+            return;
+        }
+        try {
+            backend.delete(key);
+        } catch (Exception e) {
+            metrics.recordError();
+            log.warn("Cache DELETE failed (key={}): {}", key, e.toString());
+        }
+    }
+
+    public boolean isEnabled() {
+        return properties.isEnabled();
+    }
+
+    public CacheMetrics metrics() {
+        return metrics;
+    }
+
+    private <T> T readCached(String key, TypeReference<T> typeRef) {
+        try {
+            String json = backend.get(key);
+            if (json == null) {
+                return null;
+            }
+            return objectMapper.readValue(json, typeRef);
+        } catch (Exception e) {
+            metrics.recordError();
+            log.warn("Cache GET failed (key={}); falling back to source of truth: {}", key, e.toString());
             return null;
-        } catch (Exception e) {
-            log.error("Error retrieving from cache: {}", key, e);
-            return null;
-        } finally {
-            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
-            try { performanceLogger.log("CACHE", "cache.get", elapsedMs, java.util.Map.of("key", key)); } catch (Exception ignored) {}
-        }
-    }
-
-    /**
-     * Set a value in cache with specified TTL.
-     *
-     * @param key The cache key
-     * @param value The value to cache
-     * @param ttlSeconds Time to live in seconds
-     */
-    public void set(String key, Object value, long ttlSeconds) {
-        long start = System.nanoTime();
-        try {
-            if (value == null) {
-                log.warn("Attempted to cache null value: {}", key);
-                return;
-            }
-            redisTemplate.opsForValue().set(key, value, ttlSeconds, TimeUnit.SECONDS);
-            log.debug("Cache SET: key={}, ttl={}s", key, ttlSeconds);
-        } catch (Exception e) {
-            log.error("Error setting cache: {}", key, e);
-        } finally {
-            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
-            try { performanceLogger.log("CACHE", "cache.set", elapsedMs, java.util.Map.of("key", key)); } catch (Exception ignored) {}
-        }
-    }
-
-    /**
-     * Delete a key from cache.
-     *
-     * @param key The cache key
-     */
-    public void delete(String key) {
-        long start = System.nanoTime();
-        try {
-            redisTemplate.delete(key);
-            log.debug("Cache DELETE: {}", key);
-        } catch (Exception e) {
-            log.error("Error deleting from cache: {}", key, e);
-        } finally {
-            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
-            try { performanceLogger.log("CACHE", "cache.delete", elapsedMs, java.util.Map.of("key", key)); } catch (Exception ignored) {}
-        }
-    }
-
-    /**
-     * Delete multiple keys from cache (pattern-based eviction).
-     *
-     * @param pattern The key pattern (e.g., "agent:session:user:123:*")
-     */
-    public void deleteByPattern(String pattern) {
-        long start = System.nanoTime();
-        try {
-            var keys = redisTemplate.keys(pattern);
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
-                log.debug("Cache EVICT: pattern={}, count={}", pattern, keys.size());
-            }
-        } catch (Exception e) {
-            log.error("Error evicting cache by pattern: {}", pattern, e);
-        } finally {
-            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
-            try { performanceLogger.log("CACHE", "cache.evict.pattern", elapsedMs, java.util.Map.of("pattern", pattern)); } catch (Exception ignored) {}
-        }
-    }
-
-    /**
-     * Invalidate all sessions for a specific user.
-     *
-     * @param userId The user ID
-     */
-    public void invalidateUserSessions(Long userId) {
-        String pattern = SESSION_PREFIX + userId + ":*";
-        deleteByPattern(pattern);
-        log.info("Invalidated user sessions: userId={}", userId);
-    }
-
-    /**
-     * Invalidate all events for a specific user.
-     *
-     * @param userId The user ID
-     */
-    public void invalidateUserEvents(Long userId) {
-        String pattern = EVENT_PREFIX + userId + ":*";
-        deleteByPattern(pattern);
-        log.info("Invalidated user events: userId={}", userId);
-    }
-
-    /**
-     * Generate cache key for session.
-     *
-     * @param userId The user ID
-     * @param sessionId The session ID
-     * @return The cache key
-     */
-    public static String sessionKey(Long userId, String sessionId) {
-        return SESSION_PREFIX + userId + ":" + sessionId;
-    }
-
-    /**
-     * Generate cache key for agent event.
-     *
-     * @param eventId The event ID
-     * @return The cache key
-     */
-    public static String eventKey(String eventId) {
-        return EVENT_PREFIX + eventId;
-    }
-
-    /**
-     * Generate cache key for LLM response.
-     *
-     * @param prompt The prompt hash
-     * @return The cache key
-     */
-    public static String llmResponseKey(String prompt) {
-        return LLM_PREFIX + prompt;
-    }
-
-    /**
-     * Clear entire cache (use sparingly).
-     */
-    public void clearAll() {
-        long start = System.nanoTime();
-        try {
-            redisTemplate.getConnectionFactory().getConnection().flushAll();
-            log.warn("Cleared entire Redis cache");
-        } catch (Exception e) {
-            log.error("Error clearing cache", e);
-        } finally {
-            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
-            try { performanceLogger.log("CACHE", "cache.clearAll", elapsedMs, java.util.Map.of()); } catch (Exception ignored) {}
         }
     }
 }
-

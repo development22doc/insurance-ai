@@ -1,27 +1,103 @@
-target/
-.idea/
-*.log
-build-*.txt
-build-*.log
-final-build.log
-# Keep documentation tracked
-docs/
-infrastructure/helm/
-infrastructure/kubernetes/
-.github/
-CONFIG_AUDIT_REPORT.md
-MONGODB_USAGE_REPORT.md
-STARTUP_ANALYSIS_AND_FIXES.md
-STARTUP_FIXES_SUMMARY.md
-*.bat
-startup-log.txt
-.env
+# ============================================================
+# Java / Maven
+# ============================================================
 
-# Logs directory - tracked with .gitkeep, but ignore runtime logs
-logs/
+target/
+*.class
+
+# Maven generated reports/artifacts
+surefire-reports/
+failsafe-reports/
+
+# ============================================================
+# IntelliJ IDEA
+# ============================================================
+
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# ============================================================
+# Eclipse
+# ============================================================
+
+.classpath
+.project
+.settings/
+
+# ============================================================
+# VS Code
+# ============================================================
+
+.vscode/
+
+# ============================================================
+# Logs / Runtime output
+# ============================================================
+
+*.log
+*.log.*
+logs/*
 !logs/.gitkeep
 
-# OS specific
+startup-log.txt
+.env
+master_change_log.md
+
+# ============================================================
+# Environment / Secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+# Local Spring configuration containing secrets
+# Uncomment these if application-local files contain
+# machine-specific credentials/secrets.
+#application-local.yml
+#application-local.yaml
+
+# ============================================================
+# Build / Packaging
+# ============================================================
+
+*.jar
+*.war
+*.zip
+
+# ============================================================
+# OS
+# ============================================================
+
 .DS_Store
 Thumbs.db
-doc
+
+# ============================================================
+# Temporary files
+# ============================================================
+
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# ============================================================
+# Local test/runtime files
+# ============================================================
+
+test-output/
+coverage/
+
+# ============================================================
+# Local phase progress files
+# ============================================================
+
+phase1_task*_progress.md
+
+# ============================================================
+# Documentation/tool-generated local files
+# ============================================================
+
+doc/

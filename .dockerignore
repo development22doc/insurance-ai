@@ -1,0 +1,54 @@
+# ============================================================
+# Docker build-context exclusions
+# The Docker build uses the repository root as context. Keep the
+# Maven reactor files (root pom.xml, all module poms, common-lib,
+# service sources) available while excluding everything not needed.
+# ============================================================
+
+# Version control
+**/.git
+**/.github
+**/.gitattributes
+**/.gitignore
+
+# IDE
+**/.idea
+**/*.iml
+**/*.iws
+**/*.ipr
+**/.vscode
+
+# Build output / targets (excludes the service `target/` dirs and the
+# previously-built JARs, but NOT the source or pom.xml files the build needs)
+**/target
+**/build
+**/out
+
+# Logs
+**/logs
+**/*.log
+**/*.log.*
+
+# Environment / secrets (never copy real .env into an image)
+**/.env
+**/.env.*
+!.env.example
+
+# Node / frontend
+**/node_modules
+
+# Temp / OS
+**/tmp
+**/temp
+**/*.tmp
+**/*.swp
+**/*.swo
+**/.DS_Store
+
+# Maven wrapper (not needed - Maven comes from the builder image)
+**/.mvn
+**/mvnw
+**/mvnw.cmd
+
+# Compiled classes
+**/*.class

@@ -1,0 +1,18 @@
+# Kubernetes runtime configuration for claims-service.
+# Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+# LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+spring:
+  config:
+    # Empty override removes the packaged `optional:configserver:` import so no
+    # Config Server dependency exists at runtime.
+    import: ""
+  cloud:
+    discovery:
+      enabled: false
+
+eureka:
+  client:
+    enabled: false
+
+server:
+  port: 8082

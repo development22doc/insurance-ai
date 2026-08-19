@@ -1,0 +1,154 @@
+# =============================================================================
+# ClaimAssist - PROD environment values
+# Namespace: claimassist-prod | one shared K3s cluster.
+# Stateless application workload overrides (Task 6A-6).
+# =============================================================================
+global:
+  environment: prod
+  app: claimassist
+  managedBy: helm
+
+image:
+  registry: ""              # OCIR placeholder - set at deploy time
+  repository: claimassist
+  tag: "1.0.0"              # matches Task 6A-3 built images (prod tag convention later)
+  pullPolicy: IfNotPresent
+  pullSecret: ""
+
+namespace:
+  create: true
+
+serviceAccounts:
+  create: true
+
+configMap:
+  enabled: false
+  data: {}
+
+secrets:
+  create: false
+  values: {}
+
+# Task 6A-7: PostgreSQL + Flyway for PROD (namespace claimassist-prod). One
+# PostgreSQL StatefulSet + ClusterIP Service + PVC for this environment only.
+# Real credentials are supplied at deploy time (postgresql.credentials.*) - never
+# committed. App databases (claimassist_customer/claims/agent) live inside THIS
+# instance; no cross-environment URLs.
+postgresql:
+  enabled: true
+  storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
+  storageSize: 8Gi
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 800m, memory: 1Gi }
+  securityContext: {}
+
+# Task 6A-8: Redis for PROD (namespace claimassist-prod). One internal Deployment
+# + ClusterIP Service. Cache only (no PVC / no persistence). Production would
+# normally add AUTH via a Secret here; intentionally NOT enabled to avoid breaking
+# the existing consumers (LOCAL uses no password, and claims-service's manual
+# RedisConfig does not read a password). Overridable without a template change.
+redis:
+  enabled: true
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+
+# Task 6A-9: Kafka for PROD (namespace claimassist-prod). One KRaft broker
+# StatefulSet + internal ClusterIP Service + PVC. Free-learning-tier (NOT HA):
+# production scale (3+ brokers, RF>=3) is NOT provisioned on the free tier.
+# Conservative resources; overridable here without a template change.
+kafka:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 500m, memory: 1Gi }
+
+flyway:
+  enabled: true
+
+# Task 6A-10: Keycloak for PROD (namespace claimassist-prod). One self-hosted
+# Keycloak + one dedicated Keycloak PostgreSQL, isolated in this namespace.
+# Realm = claimassist-prod (ONE realm per environment). No cross-environment
+# issuer/DB/client references. Internal Service DNS only. Real values at deploy time.
+keycloak:
+  enabled: true
+  realm: claimassist-prod
+  replicaCount: 1
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 500m, memory: 1024Mi }
+  postgresql:
+    enabled: true
+    storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
+    storageSize: 2Gi
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+
+# Task 6A-11: PROD public edge + TLS. Let's Encrypt PRODUCTION certificate.
+# `host` is a DEPLOYMENT-TIME placeholder; replace api.<your-domain> with the real
+# PROD host when DNS exists. certManager.server points at the production ACME
+# directory; certManager.email is a placeholder. Production issuer for PROD only.
+ingress:
+  enabled: true
+  className: nginx
+  host: api.<your-domain>              # DEPLOYMENT-TIME placeholder
+  tlsEnabled: true
+  tlsSecretName: claimassist-api-gateway-tls
+
+certManager:
+  enabled: true
+  issuerName: claimassist-letsencrypt
+  issuerSecretName: claimassist-letsencrypt-account
+  email: "cert-manager@example.com"    # DEPLOYMENT-TIME placeholder
+  server: "https://acme-v02.api.letsencrypt.org/directory"
+
+# Task 6A-14 RBAC intent (PROD): STRONGEST RESTRICTION. Team-read-only binding is
+# intentionally DISABLED here by default (production namespaces are admin-only
+# until an explicit, documented decision to open read access; even then it is
+# read-only with NO secrets). No production RBAC write, Secret read or deployment
+# is ever granted to a team member. adminBinding remains inert until the owner
+# identity exists.
+rbac:
+  adminBinding:
+    enabled: false
+  teamReadOnly:
+    binding:
+      enabled: false          # PROD: keep disabled (strongest restriction)
+# Task 6A-12 + TASK 6A-14B-4B: Stateless application replicas (PROD).
+# FREE-TIER PROFILE: PROD is a single-replica environment, ACTIVE only during PROD
+# verification (STAGE is scaled down first - one active environment at a time on
+# the single 2-OCPU node). Request budget is minimal (~1.0 OCPU / ~2.4GiB per
+# active environment + shared observability). HONEST LIMITATION: single-replica,
+# single node, single database/broker => this is NOT production HA - no pod
+# tolerance, no PDB (renders only at >= 2 replicas), no zero-gap rollout.
+services:
+  api-gateway:
+    replicas: 1
+  customer-service:
+    replicas: 1
+  claims-service:
+    replicas: 1
+  agent-service:
+    replicas: 1
+
+# Task 6A-14B-3 + TASK 6A-14B-4B: HPA (PROD). Free-tier bound: 1 baseline
+# replica, ceiling 2 (never 3). CPU (request-based, 70%). Same bounded behavior
+# as DEV/STAGE; never scales the 2-OCPU node into an uncontrolled explosion.
+# Pod-level scaling only; the single Always-Free node remains a node-level single
+# point of failure. metrics-server required at bootstrap for the CPU metric.
+hpa:
+  services:
+    api-gateway:
+      min: 1
+      max: 2
+    customer-service:
+      min: 1
+      max: 2
+    claims-service:
+      min: 1
+      max: 2
+    agent-service:
+      min: 1
+      max: 2

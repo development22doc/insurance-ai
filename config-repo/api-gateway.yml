@@ -6,6 +6,12 @@ spring:
     gateway:
       server:
         webflux:
+          # Bounded edge timeouts (evidence-based hardening).
+          # connect-timeout: never wait forever to establish a downstream TCP connection.
+          # Per-route response-timeout (below) bounds synchronous routes while leaving the
+          # streaming /agent/** SSE routes unbounded so long-lived streams are not cut off.
+          httpclient:
+            connect-timeout: 3000
           default-filters:
             - name: RequestRateLimiter
               args:
@@ -25,6 +31,17 @@ spring:
                 - Path=/customer/**
               filters:
                 - StripPrefix=1
+              metadata:
+                response-timeout: 15000
+
+            - id: customer-auth-service
+              uri: lb://CUSTOMER-SERVICE
+              predicates:
+                - Path=/auth/**
+              filters:
+                - StripPrefix=1
+              metadata:
+                response-timeout: 15000
 
             # ===========================
             # Claims Service
@@ -34,6 +51,21 @@ spring:
               uri: lb://CLAIMS-SERVICE
               predicates:
                 - Path=/claims/**
+              filters:
+                # Safe, bounded retry: GET only (idempotent read) on transient 503/504,
+                # small backoff. POST/PUT/PATCH/DELETE are NEVER retried (no duplicate
+                # business operations), and streaming routes are not retried.
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    statuses: SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    backoff:
+                      firstBackoff: 100ms
+                      maxBackoff: 500ms
+                      factor: 2
+              metadata:
+                response-timeout: 15000
 
             # ===========================
             # Agent Service
@@ -52,17 +84,100 @@ spring:
               uri: lb://CUSTOMER-SERVICE
               predicates:
                 - Path=/policies/**
+              metadata:
+                response-timeout: 15000
+
+            # ===========================
+            # Versioned Public API (V1)
+            # ===========================
+            # URI versioning foundation (Task 8.1). Strategy: Gateway-only
+            # versioning (Option C). The gateway strips the /api/v1 prefix
+            # (StripPrefix=2) and forwards the unversioned downstream path so
+            # the existing service controllers, DTOs, and business logic are
+            # reused unchanged - no business logic is duplicated and the old
+            # unversioned routes above remain for backward compatibility.
+            #
+            # Compatibility: the /api/v1 routes reuse the exact same downstream
+            # controllers as the unversioned routes (verified path mapping),
+            # so V1 semantics, auth, authz, SSE, and status codes are identical.
+            # Future /api/v2 routes can be added here without redesign.
+            #
+            # /internal/v1/** is NOT gateway-routed and is intentionally excluded
+            # from the public /api/v1 namespace - internal Feign contracts stay
+            # internal.
+
+            - id: api-v1-claims-service
+              uri: lb://CLAIMS-SERVICE
+              predicates:
+                - Path=/api/v1/claims/**
+              filters:
+                - StripPrefix=2
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    statuses: SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    backoff:
+                      firstBackoff: 100ms
+                      maxBackoff: 500ms
+                      factor: 2
+              metadata:
+                response-timeout: 15000
+
+            - id: api-v1-agent-service
+              uri: lb://AGENT-SERVICE
+              predicates:
+                - Path=/api/v1/agent/**
+              filters:
+                - StripPrefix=2
+
+            - id: api-v1-customer-service
+              uri: lb://CUSTOMER-SERVICE
+              predicates:
+                - Path=/api/v1/customers/**
+              filters:
+                - StripPrefix=2
+              metadata:
+                response-timeout: 15000
+
+            - id: api-v1-policy-service
+              uri: lb://CUSTOMER-SERVICE
+              predicates:
+                - Path=/api/v1/policies/**
+              filters:
+                - StripPrefix=2
+              metadata:
+                response-timeout: 15000
+
+            - id: api-v1-auth-service
+              uri: lb://CUSTOMER-SERVICE
+              predicates:
+                - Path=/api/v1/auth/**
+              filters:
+                - StripPrefix=2
+              metadata:
+                response-timeout: 15000
 
 app:
   security:
     public-routes:
-      - /customer/auth/signup
-      - /customer/auth/authorize
-      - /customer/auth/callback
-      - /customer/auth/refresh
-      - /customer/auth/logout
+      - /auth/signup
+      - /auth/authorize
+      - /auth/callback
+      - /auth/refresh
+      - /auth/logout
       - /customer/webhooks/**
-      - /actuator/**
+      - /api/v1/auth/signup
+      - /api/v1/auth/authorize
+      - /api/v1/auth/callback
+      - /api/v1/auth/refresh
+      - /api/v1/auth/logout
+      # Only liveness/readiness/info probes are public. Management endpoints that
+      # reveal topology or metrics (gateway routes, prometheus, env) require a valid
+      # token - they are NOT in this list and are excluded from actuator exposure below.
+      - /actuator/health
+      - /actuator/health/**
+      - /actuator/info
       - /v3/api-docs/**
       - /swagger-ui/**
       - /swagger-ui.html
@@ -71,7 +186,9 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,gateway
+        # health/info public; metrics/prometheus exposed but token-protected.
+        # /actuator/gateway and /actuator/env are NOT exposed (route topology + secrets).
+        include: health,info,metrics,prometheus
 
   metrics:
     enable:
@@ -133,3 +250,22 @@ commonlib:
         info: 100
         warn: 500
         error: 2000
+
+# Circuit breaker for the edge (instance "api-gateway", wired via the default-filter).
+# Bounded: a tight window opens the breaker fast, a bounded half-open window probes
+# recovery, and the open state yields a controlled 503 via GatewayExceptionHandler
+# (CallNotPermittedException -> 503) rather than an unbounded wait or a misleading 404.
+resilience4j:
+  circuitbreaker:
+    instances:
+      api-gateway:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 20s
+        permitted-number-of-calls-in-half-open-state: 3
+        minimum-number-of-calls: 5
+  timelimiter:
+    instances:
+      api-gateway:
+        timeout-duration: 15s
+        cancel-running-future: true

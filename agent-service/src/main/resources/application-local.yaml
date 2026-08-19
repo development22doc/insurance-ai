@@ -68,6 +68,7 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
 
+security:
   service-client:
     registration-id: internal-service
     client-id: ${SERVICE_CLIENT_ID:internal-service-client}
@@ -81,12 +82,15 @@ eureka:
     register-with-eureka: true
     fetch-registry: true
 
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
+    hostname: ${EUREKA_HOSTNAME:localhost}
+
 outbox:
   publisher:
     poll-interval-ms: 999999999
     batch-size: 10
     max-attempts: 3
-    retry-delay-ms: 1000
 
 logging:
   level:

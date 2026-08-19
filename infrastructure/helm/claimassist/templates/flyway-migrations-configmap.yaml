@@ -1,0 +1,23 @@
+{{- if and .Values.flyway.enabled .Values.postgresql.enabled }}
+# Flyway migration sources - one ConfigMap per application database/service.
+# The SQL is the EXACT repository migration set (copied verbatim under
+# files/migrations/<service>/, validated in 6A-7). A ConfigMap volume mounts each
+# key as a file, so these are mounted into the Flyway Job as
+# /flyway/sql/<service>/<version>__<name>.sql. Non-sensitive - migrations are source.
+{{- range $db := .Values.postgresql.databases }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $.Values.flyway.migrationsConfigMapName }}-{{ $db.service }}
+  namespace: {{ include "claimassist.namespace" $ | quote }}
+  labels:
+    {{- include "claimassist.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: flyway-migrations
+data:
+  {{- range $f := $db.migrations }}
+  {{ $f }}: |-
+    {{- $.Files.Get (printf "files/migrations/%s/%s" $db.service $f) | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

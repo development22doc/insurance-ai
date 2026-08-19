@@ -2,6 +2,7 @@ package com.claimassist.platform.claims_service.saga;
 
 import com.claimassist.platform.common_lib.event.ClaimSagaOrchestrationRequestEvent;
 import com.claimassist.platform.common_lib.event.ClaimSagaStepResultEvent;
+import com.claimassist.platform.common_lib.messaging.AckUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +37,9 @@ public class ClaimSagaOrchestrationListener {
             ClaimSagaOrchestrationRequestEvent request =
                     objectMapper.readValue(rawMessage, ClaimSagaOrchestrationRequestEvent.class);
             orchestratorService.startOrchestration(request);
-            ack.acknowledge();
+            // Acknowledge only after the transaction commits (saga state + SagaProcessedMessage
+            // + outbox command must commit before the offset advances). On rollback no ack.
+            AckUtils.acknowledgeAfterCommit(ack);
             log.debug("Orchestration request acknowledged - topic: {}, partition: {}, offset: {}",
                     topic, partition, offset);
         } catch (Exception e) {
@@ -61,7 +64,9 @@ public class ClaimSagaOrchestrationListener {
             ClaimSagaStepResultEvent result =
                     objectMapper.readValue(rawMessage, ClaimSagaStepResultEvent.class);
             orchestratorService.handleStepResult(result);
-            ack.acknowledge();
+            // Acknowledge only after the transaction commits (saga state + SagaProcessedMessage
+            // must commit before the offset advances). On rollback no ack -> redelivery.
+            AckUtils.acknowledgeAfterCommit(ack);
             log.debug("Step result acknowledged - topic: {}, partition: {}, offset: {}",
                     topic, partition, offset);
         } catch (Exception e) {

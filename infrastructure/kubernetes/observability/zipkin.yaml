@@ -1,0 +1,70 @@
+# =============================================================================
+# ZIPKIN - OPTIONAL (Task 6A-14B-4B).
+#
+# STATUS: DISABLED BY DEFAULT on the Always-Free (2 OCPU / 12GB) profile.
+#
+# REASON: the K8s runtime does NOT send traces to Zipkin. The Helm chart sets no
+# ZIPKIN_ENDPOINT env, and the `k8s` config profile overrides the packaged
+# zipkin import to empty; the zipkin references in config-repo / application.yaml
+# are LOCAL/legacy only. With no producers, running a Zipkin Collector is wasted
+# CPU/RAM on the tiny node, so it is NOT applied as part of the free-tier
+# observability stack.
+#
+# HOW TO GATE: this file is simply NOT included in the `kubectl apply` set for
+# the free-tier bootstrap (apply the observability namespace/prometheus/grafana/
+# loki/promtail only). It is KEPT in the repository (not deleted) so tracing can
+# be re-enabled later WITHOUT re-architecting:
+#   1. Re-add the /metrics scrape target in prometheus.yaml if availability
+#      dashboards are wanted (it was removed because the collector is disabled).
+#   2. Wire a real ZIPKIN_ENDPOINT env into the application Deployments
+#      (Helm deployment.yaml) pointing at zipkin-service:9411.
+#   3. Apply THIS file to deploy Zipkin.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zipkin
+  namespace: claimassist-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zipkin
+  template:
+    metadata:
+      labels:
+        app: zipkin
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+      containers:
+        - name: zipkin
+          image: openzipkin/zipkin:3.4
+          ports:
+            - containerPort: 9411
+          readinessProbe:
+            httpGet: { path: /health, port: 9411 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 9411 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zipkin-service
+  namespace: claimassist-observability
+spec:
+  selector:
+    app: zipkin
+  ports:
+    - port: 9411
+      targetPort: 9411

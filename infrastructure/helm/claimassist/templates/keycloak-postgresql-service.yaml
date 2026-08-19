@@ -1,0 +1,24 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.postgresql.enabled }}
+# Dedicated Keycloak PostgreSQL ClusterIP Service. INTERNAL ONLY - the Keycloak
+# StatefulSet reaches it via the K8s Service DNS name (claimassist-keycloak-
+# postgresql). No NodePort, no LoadBalancer, no Ingress - never exposed outside
+# the cluster. Isolated per environment namespace (no cross-environment references).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.keycloak.postgresql.serviceName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-postgresql
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: keycloak-postgresql
+  ports:
+    - name: postgresql
+      port: {{ .Values.keycloak.postgresql.port }}
+      targetPort: postgresql
+      protocol: TCP
+{{- end }}

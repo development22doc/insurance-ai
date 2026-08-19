@@ -7,7 +7,6 @@ import org.springframework.boot.autoconfigure.cache.RedisCacheManagerBuilderCust
 import org.springframework.cache.Cache;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.interceptor.CacheErrorHandler;
-import org.springframework.cache.interceptor.SimpleCacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -27,7 +26,10 @@ import java.time.Duration;
  * guarantee comes from the @CacheEvict wired into
  * ClaimCommandServiceImpl.applyStatusChange - the SAME method used by both
  * the REST path and the AI-agent saga path, so a status change is never
- * visible-but-uncached or cached-but-stale from either entry point.
+ * visible-but-uncached or cached-but-stale from either entry point. The
+ * cache error handler is fully fail-open (GET/PUT/EVICT/CLEAR), matching
+ * customer-service (Phase 4 Task 4.2): the DB is the source of truth and a
+ * Redis outage must never abort a status read or write.
  */
 @Configuration
 @EnableCaching
@@ -58,19 +60,22 @@ public class RedisCacheConfig {
     }
 
     /**
-     * Without this, a Redis outage would make @Cacheable(CLAIM_STATUS_CACHE)
-     * and the @CacheEvict in ClaimCommandServiceImpl.applyStatusChange throw
-     * straight out of the request path, turning a Redis blip into a hard
-     * 500 on claim-status reads/updates. Logs and falls through to the
-     * underlying method/DB instead - see the identical bean in
-     * customer-service's RedisCacheConfig for the fuller rationale.
-     * Evict/clear failures are still re-thrown (via the default handler)
-     * since a failed evict can leave genuinely stale data behind, not just
-     * a missed optimization.
+     * Fully fail-open cache error handler - the same shape as the one approved
+     * in customer-service (Phase 4 Task 4.2). Redis is a cache, never the source
+     * of truth; the DB is. Every operation - GET, PUT, EVICT, CLEAR - logs and
+     * swallows its error so the Spring cache interceptor treats a failed GET as
+     * a miss (the method runs against the DB) and a failed PUT/EVICT/CLEAR as a
+     * no-op. This keeps a Redis outage from turning into a hard 500/rollback on
+     * claim-status READS and, critically, on WRITES too: the @CacheEvict in
+     * ClaimCommandServiceImpl.applyStatusChange runs inside the same @Transactional
+     * method, so a re-thrown evict failure would abort the status change and
+     * roll the DB back just because a cache was unreachable. Any staleness from an
+     * evict that could not reach a recovering Redis is bounded by the cache TTL
+     * (30s for CLAIM_STATUS_CACHE), which the short-TTL design already tolerates;
+     * the DB remains authoritative for state transitions.
      */
     @Bean
     public CacheErrorHandler cacheErrorHandler() {
-        SimpleCacheErrorHandler fallback = new SimpleCacheErrorHandler();
         return new CacheErrorHandler() {
             @Override
             public void handleCacheGetError(RuntimeException exception, Cache cache, Object key) {
@@ -86,15 +91,14 @@ public class RedisCacheConfig {
 
             @Override
             public void handleCacheEvictError(RuntimeException exception, Cache cache, Object key) {
-                log.error("Redis EVICT failed for cache={} key={}. A stale entry may remain until its TTL expires.",
+                log.warn("Redis EVICT failed for cache={} key={}. A stale entry remains only until its TTL expires.",
                         cache.getName(), key, exception);
-                fallback.handleCacheEvictError(exception, cache, key);
             }
 
             @Override
             public void handleCacheClearError(RuntimeException exception, Cache cache) {
-                log.error("Redis CLEAR failed for cache={}.", cache.getName(), exception);
-                fallback.handleCacheClearError(exception, cache);
+                log.warn("Redis CLEAR failed for cache={}. Stale entries remain only until their TTLs expire.",
+                        cache.getName(), exception);
             }
         };
     }

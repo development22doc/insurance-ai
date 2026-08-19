@@ -83,7 +83,10 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         String spanId = valueOrDash(resolveSpanId(request));
         String method = valueOrDash(request.getMethod());
         String path = valueOrDash(request.getRequestURI());
-        String query = request.getQueryString() != null ? request.getQueryString() : "";
+        // Query strings can carry one-time OAuth authorization codes, refresh or
+        // access tokens or other credentials (e.g. /customer/auth/callback?code=...).
+        // Never write those raw into the observability log - redact sensitive keys.
+        String query = maskQuery(request.getQueryString());
         String remoteIp = valueOrDash(request.getRemoteAddr());
         String userAgent = maskIfSensitive("User-Agent", request.getHeader("User-Agent"));
         String auth = maskIfSensitive("Authorization", request.getHeader("Authorization"));
@@ -112,7 +115,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             return "";
         }
         String normalizedKey = key == null ? "" : key.toLowerCase();
-        String normalizedValue = value == null ? "" : value.trim();
+        String normalizedValue = value.trim();
 
         // If header name indicates sensitive content, mask generically
         if (normalizedKey.contains("authorization") || normalizedKey.contains("password")
@@ -139,6 +142,46 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         return value;
     }
 
+    /**
+     * Redact credential-bearing query parameters so observability/audit logs do
+     * not become a secret leak. OAuth flows pass short-lived but sensitive values
+     * in the query string (code, state, id_token, access/refresh tokens). Keep the
+     * structure (key=***) so correlation still works, never the value.
+     */
+    private String maskQuery(String query) {
+        if (query == null || query.isEmpty()) {
+            return query == null ? "" : query;
+        }
+        String[] params = query.split("&");
+        StringBuilder masked = new StringBuilder();
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) masked.append('&');
+            String param = params[i];
+            int eq = param.indexOf('=');
+            String key = eq >= 0 ? param.substring(0, eq) : param;
+            if (isSensitiveQueryKey(key)) {
+                masked.append(key).append('=').append("***");
+            } else {
+                masked.append(param);
+            }
+        }
+        return masked.toString();
+    }
+
+    private boolean isSensitiveQueryKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        String k = key.toLowerCase();
+        return k.contains("token") || k.contains("secret") || k.contains("password")
+                || k.contains("passwd") || k.contains("pwd") || k.contains("authorization")
+                || k.contains("credential") || k.contains("api_key") || k.contains("apikey")
+                || k.contains("client_secret") || k.contains("access_token")
+                || k.contains("refresh_token") || k.contains("code_verifier")
+                || k.contains("code_challenge") || k.equals("code") || k.equals("auth_code")
+                || k.contains("auth_code");
+    }
+
     private boolean looksLikeJwt(String v) {
         // crude check: JWTs have three parts separated by dots
         return v != null && v.chars().filter(ch -> ch == '.').count() == 2;
@@ -153,21 +196,36 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         return value == null || value.isBlank() ? "-" : value;
     }
 
+    /**
+     * Escape a value for safe inclusion in a structured (JSON) log line.
+     * Backslash and double-quote are escaped for JSON correctness; CR/LF/TAB and
+     * other control characters (which may arrive in attacker-controlled request
+     * headers such as the correlation-id) are neutralized so they cannot inject
+     * forged log lines or break log structure (CWE-117 / CWE-93).
+     */
     private String escape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    // helper to read MDC values using the existing utility without exposing MDC
-    private String MDCUtilityRead(String key) {
-        // try the known constants
-        switch (key) {
-            case "traceId":
-                return org.slf4j.MDC.get(LoggingConstants.MDC_TRACE_ID);
-            case "spanId":
-                return org.slf4j.MDC.get(LoggingConstants.MDC_SPAN_ID);
-            default:
-                return org.slf4j.MDC.get(key);
+        if (value == null) {
+            return "";
         }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20 || c == 0x7f) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     // Attempt to resolve traceId using available tracer when MDC is blank.
@@ -181,15 +239,13 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
             // Lookup tracer bean by type using reflection to avoid compile-time dependency
             Class<?> tracerClass = Class.forName("io.micrometer.tracing.Tracer");
-            Object tracer = null;
+            Object tracer;
             try {
                 tracer = ctx.getBean(tracerClass);
             } catch (Exception ignored) {
                 // no tracer bean available
                 return null;
             }
-
-            if (tracer == null) return null;
 
             Object currentSpan = tracer.getClass().getMethod("currentSpan").invoke(tracer);
             if (currentSpan == null) return null;
@@ -216,14 +272,12 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             if (ctx == null) return null;
 
             Class<?> tracerClass = Class.forName("io.micrometer.tracing.Tracer");
-            Object tracer = null;
+            Object tracer;
             try {
                 tracer = ctx.getBean(tracerClass);
             } catch (Exception ignored) {
                 return null;
             }
-
-            if (tracer == null) return null;
 
             Object currentSpan = tracer.getClass().getMethod("currentSpan").invoke(tracer);
             if (currentSpan == null) return null;

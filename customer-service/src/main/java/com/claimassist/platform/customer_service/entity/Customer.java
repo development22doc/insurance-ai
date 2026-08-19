@@ -22,6 +22,13 @@ public class Customer {
     String username; // email, also login id - mirrored as the Keycloak user's username/email
 
     /**
+     * Password field - kept for rollback safety after Keycloak migration.
+     * No longer written or read by the application - Keycloak is now the
+     * sole holder of credentials. See V2 migration comments.
+     */
+    String password;
+
+    /**
      * Keycloak's own user id (a UUID) for this customer, so customer-service
      * can call the Keycloak Admin API for this user later (password reset,
      * disable account, etc.) without a lookup. NOT used as the JWT identity

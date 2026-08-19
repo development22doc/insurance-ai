@@ -10,7 +10,8 @@ import java.util.Base64;
 @Service
 public class PkceService {
 
-    private static final int CODE_VERIFIER_LENGTH = 64;
+    /** 48 random bytes base64url-encoded (without padding) yields a 64-char verifier. */
+    private static final int CODE_VERIFIER_LENGTH = 48;
 
     private final SecureRandom secureRandom = new SecureRandom ();
 

@@ -3,6 +3,7 @@ package com.claimassist.platform.claims_service.cache;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import com.claimassist.platform.common_lib.observability.PerformanceLogger;
@@ -211,7 +212,7 @@ public class CacheService {
                 log.debug("Cache CLEAR SKIPPED (Redis not available)");
                 return;
             }
-            template.getConnectionFactory().getConnection().flushAll();
+            template.execute((RedisCallback<Object>) connection -> { connection.flushAll(); return null; });
             log.warn("Cleared entire Redis cache");
         } catch (Exception e) {
             log.error("Error clearing cache", e);

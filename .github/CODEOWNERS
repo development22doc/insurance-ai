@@ -1,0 +1,8 @@
+# Infrastructure owner controls deployment and infrastructure changes.
+
+.github/workflows/**          @development22doc
+.github/CODEOWNERS            @development22doc
+infrastructure/helm/**       @development22doc
+infrastructure/kubernetes/** @development22doc
+config-repo/**                @development22doc
+master_change_log.md          @development22doc

@@ -1,0 +1,24 @@
+{{- if .Values.postgresql.enabled }}
+# PostgreSQL ClusterIP Service. INTERNAL ONLY - applications and the Flyway Job
+# reach the database via the K8s Service DNS name (claimassist-postgresql).
+# No NodePort, no LoadBalancer, no Ingress - PostgreSQL is never exposed
+# outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.postgresql.serviceName }}
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: postgresql
+  ports:
+    - name: postgresql
+      port: {{ .Values.postgresql.port }}
+      targetPort: postgresql
+      protocol: TCP
+{{- end }}
