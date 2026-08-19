@@ -110,12 +110,12 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
                 + "}";
     }
 
-    private String maskIfSensitive(String key, String value) {
+    String maskIfSensitive(String key, String value) {
         if (value == null) {
             return "";
         }
         String normalizedKey = key == null ? "" : key.toLowerCase();
-        String normalizedValue = value == null ? "" : value.trim();
+        String normalizedValue = value.trim();
 
         // If header name indicates sensitive content, mask generically
         if (normalizedKey.contains("authorization") || normalizedKey.contains("password")
@@ -229,7 +229,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
     }
 
     // Attempt to resolve traceId using available tracer when MDC is blank.
-    private String resolveTraceId(HttpServletRequest request) {
+    String resolveTraceId(HttpServletRequest request) {
         String fromMdc = org.slf4j.MDC.get(LoggingConstants.MDC_TRACE_ID);
         if (fromMdc != null && !fromMdc.isBlank()) return fromMdc;
 
@@ -247,8 +247,6 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
                 return null;
             }
 
-            if (tracer == null) return null;
-
             Object currentSpan = tracer.getClass().getMethod("currentSpan").invoke(tracer);
             if (currentSpan == null) return null;
             Object spanContext = currentSpan.getClass().getMethod("context").invoke(currentSpan);
@@ -265,7 +263,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         }
     }
 
-    private String resolveSpanId(HttpServletRequest request) {
+    String resolveSpanId(HttpServletRequest request) {
         String fromMdc = org.slf4j.MDC.get(LoggingConstants.MDC_SPAN_ID);
         if (fromMdc != null && !fromMdc.isBlank()) return fromMdc;
 
@@ -280,8 +278,6 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             } catch (Exception ignored) {
                 return null;
             }
-
-            if (tracer == null) return null;
 
             Object currentSpan = tracer.getClass().getMethod("currentSpan").invoke(tracer);
             if (currentSpan == null) return null;

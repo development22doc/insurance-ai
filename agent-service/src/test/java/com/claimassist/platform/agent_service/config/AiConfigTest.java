@@ -44,4 +44,13 @@ class AiConfigTest {
         assertThat(config.inputGuardrails(props)).isInstanceOf(InputGuardrails.class);
         assertThat(config.outputGuardrails(props)).isInstanceOf(OutputGuardrails.class);
     }
+
+    @Test
+    void ollamaApiWithTimeoutsPreserved() {
+        AgentAiProperties props = new AgentAiProperties();
+        props.setOllamaConnectTimeoutMs(3000);
+        props.setOllamaReadTimeoutMs(5000);
+        OllamaApi api = config.ollamaApi("http://ollama.test:11434", props);
+        assertThat(api).isNotNull();
+    }
 }

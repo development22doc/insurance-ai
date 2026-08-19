@@ -172,4 +172,17 @@ class ClaimCommandServiceImplTest {
         assertThatThrownBy(() -> service.applyStatusChange(command))
                 .isInstanceOf(OptimisticLockingFailureException.class);
     }
+
+    @Test
+    void applyStatusChangeWithNullNotePreservesNoteField() {
+        Claim claim = newClaim(1L, ClaimStatus.SUBMITTED);
+        when(claimRepository.findById(1L)).thenReturn(java.util.Optional.of(claim));
+        when(claimRepository.save(any(Claim.class))).thenReturn(claim);
+
+        UpdateClaimStatusCommand command = new UpdateClaimStatusCommand(1L, "UNDER_REVIEW", null, USER_ID.toString());
+
+        Claim updated = service.applyStatusChange(command);
+
+        assertThat(updated.getStatus()).isEqualTo(ClaimStatus.UNDER_REVIEW);
+    }
 }

@@ -81,4 +81,76 @@ class CorrelationIdFilterTest {
 
         assertThat(response.getHeader("Authorization")).isNull();
     }
+
+    // ---- maskIfSensitive tests (package-private method) ----
+
+    @Test
+    void maskIfSensitive_nullValueReturnsEmpty() {
+        assertThat(filter.maskIfSensitive("Authorization", null)).isEqualTo("");
+    }
+
+    @Test
+    void maskIfSensitive_authorizationBearerMasked() {
+        assertThat(filter.maskIfSensitive("Authorization", "Bearer token123")).isEqualTo("Bearer ***");
+    }
+
+    @Test
+    void maskIfSensitive_passwordMasked() {
+        assertThat(filter.maskIfSensitive("Password", "mypassword")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_secretMasked() {
+        assertThat(filter.maskIfSensitive("Secret", "mysecret")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_clientMasked() {
+        assertThat(filter.maskIfSensitive("Client", "myclient")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_apiMasked() {
+        assertThat(filter.maskIfSensitive("X-Api-Key", "myapikey")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_tokenMasked() {
+        assertThat(filter.maskIfSensitive("Token", "mytoken")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_refreshMasked() {
+        assertThat(filter.maskIfSensitive("Refresh", "refreshvalue")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_accessMasked() {
+        assertThat(filter.maskIfSensitive("Access", "accessvalue")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_nonSensitiveKeyReturnsValue() {
+        assertThat(filter.maskIfSensitive("X-Custom", "normalvalue")).isEqualTo("normalvalue");
+    }
+
+    @Test
+    void maskIfSensitive_jwtLikeValueMasked() {
+        assertThat(filter.maskIfSensitive("X-Custom", "eyJhbGciOiJIUzI1NiJ9.abc.def")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_longTokenLikeValueMasked() {
+        assertThat(filter.maskIfSensitive("X-Custom", "Averyverylongbas64tokenstringthatexceedsfortycharacters")).isEqualTo("***");
+    }
+
+    @Test
+    void maskIfSensitive_authorizationWithSpacePreservesScheme() {
+        assertThat(filter.maskIfSensitive("Authorization", "Bearer mytoken123")).isEqualTo("Bearer ***");
+    }
+
+    @Test
+    void maskIfSensitive_whitespaceValueIsMasked() {
+        assertThat(filter.maskIfSensitive("Authorization", "   ")).isEqualTo("***");
+    }
 }
