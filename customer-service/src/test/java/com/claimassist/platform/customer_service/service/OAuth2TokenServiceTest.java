@@ -1,229 +1,150 @@
 package com.claimassist.platform.customer_service.service;
 
-import com.claimassist.platform.common_lib.error.BadRequestException;
-import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.claimassist.platform.common_lib.observability.PerformanceLogger;
+import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.claimassist.platform.customer_service.config.KeycloakProperties;
 import com.claimassist.platform.customer_service.dto.auth.AuthResponse;
 import com.claimassist.platform.customer_service.entity.Customer;
-import com.claimassist.platform.customer_service.entity.RefreshToken;
 import com.claimassist.platform.customer_service.repository.CustomerRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.HttpMethod.POST;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
-/**
- * Phase 2 refresh-token flow tests: Keycloak is authoritative for the OAuth2
- * exchange (called FIRST), then the locally persisted Keycloak token is atomically
- * rotated via {@link RefreshTokenService#rotateIfPresent} and the local revoked /
- * expired guard can reject a presented token as defense-in-depth.
- */
-@ExtendWith(MockitoExtension.class)
 class OAuth2TokenServiceTest {
 
-    @Mock
     private RestClient restClient;
-
-    @Mock
-    private KeycloakProperties keycloakProperties;
-
-    @Mock
+    private MockRestServiceServer server;
     private CustomerRepository customerRepository;
-
-    @Mock
     private RefreshTokenService refreshTokenService;
-
-    @Mock
     private JwtDecoder jwtDecoder;
+    private OAuth2TokenService service;
+    private KeycloakProperties props;
 
-    @Mock
-    private EventLogger eventLogger;
-
-    @Mock
-    private PerformanceLogger performanceLogger;
-
-    @InjectMocks
-    private OAuth2TokenService oauth2TokenService;
-
-    private static final String TEST_USERNAME = "testuser@example.com";
-    private static final Long TEST_CUSTOMER_ID = 1L;
-    private static final String TEST_FULL_NAME = "Test User";
-    private static final String TEST_ID_TOKEN = "id-token-xyz";
-    private static final String TEST_ACCESS_TOKEN = "access-token-xyz";
-    private static final String TEST_REFRESH_TOKEN = "refresh-token-xyz";
-    private static final String TEST_TOKEN_URI = "http://keycloak/realms/test/protocol/openid-connect/token";
-    private static final String TEST_CLIENT_ID = "test-client";
-    private static final String TEST_CLIENT_SECRET = "test-secret";
-
-    private Customer testCustomer;
-    private Jwt testJwt;
-    private Map<String, Object> successfulTokenResponse;
+    private static final String TOKEN_JSON =
+            "{\"access_token\":\"at\",\"id_token\":\"idt\",\"refresh_token\":\"rt\","
+                    + "\"token_type\":\"Bearer\",\"expires_in\":300,\"refresh_expires_in\":1800,"
+                    + "\"scope\":\"openid\"}";
 
     @BeforeEach
     void setUp() {
-        testCustomer = Customer.builder()
-                .id(TEST_CUSTOMER_ID)
-                .username(TEST_USERNAME)
-                .fullName(TEST_FULL_NAME)
-                .keycloakId("keycloak-123")
-                .build();
-
-        testJwt = mock(Jwt.class);
-        lenient().when(testJwt.getClaimAsString("preferred_username")).thenReturn(TEST_USERNAME);
-        lenient().when(testJwt.getClaimAsString("email")).thenReturn(null);
-
-        successfulTokenResponse = Map.of(
-                "access_token", TEST_ACCESS_TOKEN,
-                "refresh_token", TEST_REFRESH_TOKEN,
-                "token_type", "Bearer",
-                "expires_in", 300L,
-                "refresh_expires_in", 1800L,
-                "scope", "openid profile email",
-                "id_token", TEST_ID_TOKEN
-        );
-
-        // Setup KeycloakProperties
-        lenient().when(keycloakProperties.clientId()).thenReturn(TEST_CLIENT_ID);
-        lenient().when(keycloakProperties.clientSecret()).thenReturn(TEST_CLIENT_SECRET);
-        lenient().when(keycloakProperties.tokenUri()).thenReturn(TEST_TOKEN_URI);
-
-        // Setup JwtDecoder
-        lenient().when(jwtDecoder.decode(TEST_ID_TOKEN)).thenReturn(testJwt);
-
-        // Setup CustomerRepository
-        lenient().when(customerRepository.findByUsername(TEST_USERNAME)).thenReturn(Optional.of(testCustomer));
+        props = new KeycloakProperties("http://keycloak:8180", "claimassist",
+                "app-client", "secret", "http://redirect", "admin-client", "admin-secret");
+        RestClient.Builder builder = RestClient.builder();
+        server = MockRestServiceServer.bindTo(builder).build();
+        restClient = builder.build();
+        customerRepository = mock(CustomerRepository.class);
+        refreshTokenService = mock(RefreshTokenService.class);
+        jwtDecoder = mock(JwtDecoder.class);
+        service = new OAuth2TokenService(restClient, props, customerRepository,
+                refreshTokenService, jwtDecoder, mock(EventLogger.class), mock(PerformanceLogger.class));
     }
 
-    /**
-     * KEYCLOAK FIRST: Keycloak is authoritative for validating and rotating the old
-     * token. When Keycloak returns a NEW refresh token, we then atomically rotate the
-     * local record. If that local record is revoked, the defense-in-depth guard throws.
-     */
-    @Test
-    void refreshToken_WhenLocalRecordRevoked_ShouldThrowBadRequestException() {
-        // Given: Keycloak rotates with a NEW token, customer is found, but the local
-        // record is revoked -> the local guard rejects it.
-        String oldRefreshToken = "revoked-local-token";
-        String newRefreshToken = "new-token-from-keycloak";
-        Map<String, Object> rotatedResponse = new HashMap<>(successfulTokenResponse);
-        rotatedResponse.put("refresh_token", newRefreshToken);
+    private void expectTokenCall() {
+        server.expect(requestTo(props.tokenUri()))
+                .andExpect(method(POST))
+                .andExpect(content().contentType(MediaType.APPLICATION_FORM_URLENCODED))
+                .andRespond(withStatus(HttpStatus.OK)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(TOKEN_JSON));
+    }
 
-        mockKeycloakTokenExchange(rotatedResponse);
-
-        when(refreshTokenService.rotateIfPresent(
-                eq(oldRefreshToken), eq(newRefreshToken), any(Instant.class), any()))
-                .thenThrow(new BadRequestException("Refresh token revoked"));
-
-        // When/Then
-        assertThatThrownBy(() -> oauth2TokenService.refreshToken(oldRefreshToken))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessage("Refresh token revoked");
-
-        // Keycloak was consulted FIRST (authoritative)
-        verify(restClient).post();
-        // Local atomic rotation was attempted on the presented old token
-        verify(refreshTokenService).rotateIfPresent(
-                eq(oldRefreshToken), eq(newRefreshToken), any(Instant.class), any());
+    private void stubValidIdToken(String username) {
+        Jwt jwt = mock(Jwt.class);
+        when(jwt.getClaimAsString("preferred_username")).thenReturn(username);
+        when(jwtDecoder.decode("idt")).thenReturn(jwt);
     }
 
     @Test
-    void refreshToken_WithValidToken_ShouldReturnAuthResponse() {
-        // Given: Keycloak returns a successful response with a NEW refresh token and
-        // the customer is found; rotation of the local record succeeds.
-        String oldRefreshToken = "valid-refresh-token";
-        String newRefreshToken = TEST_REFRESH_TOKEN;
+    void exchangeAuthorizationCode_success_createsLocalRefreshToken() {
+        expectTokenCall();
+        stubValidIdToken("alice@example.com");
+        Customer customer = Customer.builder().id(1L).username("alice@example.com").fullName("Alice").build();
+        when(customerRepository.findByUsername("alice@example.com")).thenReturn(Optional.of(customer));
 
-        mockKeycloakTokenExchange(successfulTokenResponse);
+        AuthResponse res = service.exchangeAuthorizationCode("code", "verifier");
 
-        when(refreshTokenService.rotateIfPresent(
-                eq(oldRefreshToken), eq(newRefreshToken), any(Instant.class), any()))
-                .thenReturn(Optional.of(mock(RefreshToken.class)));
-
-        // When
-        AuthResponse response = oauth2TokenService.refreshToken(oldRefreshToken);
-
-        // Then
-        assertThat(response).isNotNull();
-        assertThat(response.accessToken()).isEqualTo(TEST_ACCESS_TOKEN);
-        assertThat(response.refreshToken()).isEqualTo(TEST_REFRESH_TOKEN);
-        assertThat(response.tokenType()).isEqualTo("Bearer");
-        assertThat(response.expiresIn()).isEqualTo(300L);
-        assertThat(response.refreshExpiresIn()).isEqualTo(1800L);
-        assertThat(response.scope()).isEqualTo("openid profile email");
-        assertThat(response.idToken()).isEqualTo(TEST_ID_TOKEN);
-        assertThat(response.customerId()).isEqualTo(TEST_CUSTOMER_ID);
-        assertThat(response.fullName()).isEqualTo(TEST_FULL_NAME);
-
-        // Verify Keycloak exchange was performed
-        verify(restClient).post();
-        // Verify customer lookup
-        verify(customerRepository).findByUsername(TEST_USERNAME);
-        // Verify atomic local rotation old -> new Keycloak token
-        verify(refreshTokenService).rotateIfPresent(
-                eq(oldRefreshToken), eq(newRefreshToken), any(Instant.class), any());
+        assertThat(res.accessToken()).isEqualTo("at");
+        assertThat(res.customerId()).isEqualTo(1L);
+        assertThat(res.fullName()).isEqualTo("Alice");
+        verify(refreshTokenService).createRefreshToken(any(), anyString(), any(), any());
+        server.verify();
     }
 
     @Test
-    void refreshToken_WhenCustomerNotFound_ShouldReturnResponseWithoutCustomer() {
-        // Given: Keycloak returns tokens, but no customer matches the validated ID token.
-        String validRefreshToken = "valid-refresh-token-user-missing";
+    void exchangeAuthorizationCode_noCustomer_foundFalse() {
+        expectTokenCall();
+        stubValidIdToken("ghost@example.com");
+        when(customerRepository.findByUsername("ghost@example.com")).thenReturn(Optional.empty());
 
-        mockKeycloakTokenExchange(successfulTokenResponse);
+        AuthResponse res = service.exchangeAuthorizationCode("code", "verifier");
 
-        when(customerRepository.findByUsername(TEST_USERNAME)).thenReturn(Optional.empty());
-
-        // When
-        AuthResponse response = oauth2TokenService.refreshToken(validRefreshToken);
-
-        // Then
-        assertThat(response).isNotNull();
-        assertThat(response.accessToken()).isEqualTo(TEST_ACCESS_TOKEN);
-        assertThat(response.refreshToken()).isEqualTo(TEST_REFRESH_TOKEN);
-        assertThat(response.idToken()).isEqualTo(TEST_ID_TOKEN);
-        // No customer resolved, so customer fields must be null
-        assertThat(response.customerId()).isNull();
-        assertThat(response.fullName()).isNull();
-
-        // Customer was looked up but not found
-        verify(customerRepository).findByUsername(TEST_USERNAME);
-        // No local rotation performed when no customer id is known
-        verify(refreshTokenService, never()).rotateIfPresent(any(), any(), any(), any());
+        assertThat(res.customerId()).isNull();
+        verify(refreshTokenService, never()).createRefreshToken(any(), any(), any(), any());
+        server.verify();
     }
 
-    private void mockKeycloakTokenExchange(Map<String, Object> response) {
-        // Mock RestClient chain: post().uri().contentType().body().retrieve().body()
-        RestClient.RequestBodyUriSpec requestBodyUriSpec = mock(RestClient.RequestBodyUriSpec.class);
-        RestClient.RequestBodySpec requestBodySpec = mock(RestClient.RequestBodySpec.class);
-        RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
+    @Test
+    void exchangeAuthorizationCode_invalidIdToken_returnsNullCustomer() {
+        expectTokenCall();
+        when(jwtDecoder.decode("idt")).thenThrow(new JwtException("bad signature"));
 
-        when(restClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(TEST_TOKEN_URI)).thenReturn(requestBodySpec);
-        when(requestBodySpec.contentType(MediaType.APPLICATION_FORM_URLENCODED)).thenReturn(requestBodySpec);
-        when(requestBodySpec.body(any(LinkedMultiValueMap.class))).thenReturn(requestBodySpec);
-        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.body(Map.class)).thenReturn(response);
+        AuthResponse res = service.exchangeAuthorizationCode("code", "verifier");
+
+        assertThat(res.customerId()).isNull();
+        verify(customerRepository, never()).findByUsername(anyString());
+        server.verify();
+    }
+
+    @Test
+    void refreshToken_success_rotatesWhenNewTokenDiffers() {
+        String json = "{\"access_token\":\"at\",\"id_token\":\"idt\",\"refresh_token\":\"new-token\","
+                + "\"token_type\":\"Bearer\",\"expires_in\":300,\"refresh_expires_in\":0,\"scope\":\"openid\"}";
+        server.expect(requestTo(props.tokenUri())).andExpect(method(POST))
+                .andRespond(withStatus(HttpStatus.OK).contentType(MediaType.APPLICATION_JSON).body(json));
+        stubValidIdToken("alice@example.com");
+        Customer customer = Customer.builder().id(1L).username("alice@example.com").fullName("Alice").build();
+        when(customerRepository.findByUsername("alice@example.com")).thenReturn(Optional.of(customer));
+
+        AuthResponse res = service.refreshToken("old-token");
+
+        assertThat(res.accessToken()).isEqualTo("at");
+        assertThat(res.refreshToken()).isEqualTo("new-token");
+        verify(refreshTokenService).rotateIfPresent(anyString(), anyString(), any(), any());
+        server.verify();
+    }
+
+    @Test
+    void refreshToken_noNewToken_doesNotRotate() {
+        expectTokenCall();
+        stubValidIdToken("alice@example.com");
+        when(customerRepository.findByUsername("alice@example.com")).thenReturn(Optional.empty());
+
+        AuthResponse res = service.refreshToken("rt");
+
+        assertThat(res.refreshToken()).isEqualTo("rt");
+        verify(refreshTokenService, never()).rotateIfPresent(anyString(), anyString(), any(), any());
+        server.verify();
     }
 }

@@ -28,6 +28,12 @@ class MDCUtilityTest {
     @Test
     void ignoresNullValues() {
         MDCUtility.putCorrelationId(null);
+        MDCUtility.putTraceId(null);
+        MDCUtility.putSpanId(null);
+        MDCUtility.putRequestId(null);
         assertThat(org.slf4j.MDC.get(LoggingConstants.MDC_CORRELATION_ID)).isNull();
+        assertThat(org.slf4j.MDC.get(LoggingConstants.MDC_TRACE_ID)).isNull();
+        assertThat(org.slf4j.MDC.get(LoggingConstants.MDC_SPAN_ID)).isNull();
+        assertThat(org.slf4j.MDC.get(LoggingConstants.MDC_REQUEST_ID)).isNull();
     }
 }
