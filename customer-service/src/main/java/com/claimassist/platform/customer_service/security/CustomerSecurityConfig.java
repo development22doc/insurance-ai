@@ -9,14 +9,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.security.web.util.matcher.OrRequestMatcher;
-import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
@@ -31,27 +28,18 @@ public class CustomerSecurityConfig {
     private final KeycloakJwtAuthenticationConverter keycloakJwtAuthenticationConverter;
     private final CorsConfigurationSource corsConfigurationSource;
 
-    private static final RequestMatcher CSRF_EXEMPT_PATHS = new OrRequestMatcher(
-            new AntPathRequestMatcher("/auth/signup"),
-            new AntPathRequestMatcher("/actuator/**"),
-            new AntPathRequestMatcher("/webhooks/**"),
-            new AntPathRequestMatcher("/api/**"));
-
-    private static final RequestMatcher CSRF_PROTECTED_PATHS = request -> !CSRF_EXEMPT_PATHS.matches(request);
-
     @Bean
     public SecurityFilterChain securityFilterChain (HttpSecurity httpSecurity) throws Exception {
 
         log.info ("Initializing Customer Service Security Filter Chain.");
 
         httpSecurity
-                .csrf (csrf -> csrf
-                        // Use a cookie-backed CSRF token repository for browser-based flows.
-                        // The default repository sets the token cookie with the HttpOnly flag.
-                        .csrfTokenRepository(new CookieCsrfTokenRepository())
-                        // Require CSRF protection everywhere except stateless, machine-consumed endpoints
-                        .requireCsrfProtectionMatcher(CSRF_PROTECTED_PATHS)
-                )
+                // Stateless JWT-bearer resource server behind the API gateway: this
+                // service has no cookie/session-based authentication and is not
+                // browser-reachable externally, so CSRF (which relies on ambient
+                // browser credentials) provides no protection here. Consistent with
+                // claims-service and the gateway, CSRF is disabled.
+                .csrf (AbstractHttpConfigurer :: disable)
                 .cors (cors -> cors.configurationSource (corsConfigurationSource))
                 .headers (headers -> {
                         headers.frameOptions (frameOptions -> frameOptions.deny ());
