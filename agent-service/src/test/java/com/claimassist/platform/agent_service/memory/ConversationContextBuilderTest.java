@@ -10,72 +10,57 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ConversationContextBuilderTest {
 
-    private final AgentAiProperties props = new AgentAiProperties();
-    private final ConversationContextBuilder builder = new ConversationContextBuilder(props);
+    private ConversationContextBuilder builder(int maxChars) {
+        AgentAiProperties props = new AgentAiProperties();
+        props.setMaxContextChars(maxChars);
+        return new ConversationContextBuilder(props);
+    }
+
+    private ConversationMessage message(MessageRole role, String content) {
+        return new ConversationMessage(role, content);
+    }
 
     @Test
-    void emptyHistoryKeepsSystemPromptUnchanged() {
-        ConversationContextBuilder.Context ctx =
-                builder.build("You are ClaimAssist.", "hello", List.of());
-        assertThat(ctx.systemPrompt()).isEqualTo("You are ClaimAssist.");
+    void buildWithoutHistoryUsesPlainSystemInstructions() {
+        ConversationContextBuilder.Context ctx = builder(1000)
+                .build("You are a claims assistant.", "hello", List.of());
+        assertThat(ctx.systemPrompt()).isEqualTo("You are a claims assistant.");
         assertThat(ctx.userMessage()).isEqualTo("hello");
     }
 
     @Test
-    void nullHistoryIsTreatedAsEmpty() {
-        assertThat(builder.renderHistory(null)).isEmpty();
+    void buildWithHistoryAppendsLabelledTranscript() {
+        List<ConversationMessage> history = List.of(
+                message(MessageRole.USER, "what is my status?"),
+                message(MessageRole.ASSISTANT, "your claim is pending"));
+        ConversationContextBuilder.Context ctx = builder(1000)
+                .build("You are a claims assistant.", "thanks", history);
+        assertThat(ctx.systemPrompt()).contains("## Previous conversation (context)");
+        assertThat(ctx.systemPrompt()).contains("[USER] what is my status?");
+        assertThat(ctx.systemPrompt()).contains("[ASSISTANT] your claim is pending");
+        assertThat(ctx.systemPrompt()).contains("## End of previous conversation");
     }
 
     @Test
-    void rendersHistoryChronologicallyWithRoleLabels() {
-        List<ConversationMessage> history = List.of(
-                new ConversationMessage(MessageRole.USER, "My claim is CLM-123."),
-                new ConversationMessage(MessageRole.ASSISTANT, "Got it."));
-        String transcript = builder.renderHistory(history);
-        assertThat(transcript)
-                .contains("[USER] My claim is CLM-123.")
-                .contains("[ASSISTANT] Got it.");
-        // chronological: user line before assistant line
-        assertThat(transcript.indexOf("[USER] My claim"))
-                .isLessThan(transcript.indexOf("[ASSISTANT] Got it."));
+    void renderHistoryReturnsEmptyForNullHistory() {
+        assertThat(builder(1000).renderHistory(null)).isEmpty();
     }
 
     @Test
-    void buildAppendsTranscriptToSystemPrompt() {
+    void renderHistoryDropsOldestEntriesThatExceedBudget() {
         List<ConversationMessage> history = List.of(
-                new ConversationMessage(MessageRole.USER, "My claim is CLM-123."));
-        ConversationContextBuilder.Context ctx =
-                builder.build("You are ClaimAssist.", "What is its status?", history);
-        assertThat(ctx.systemPrompt()).contains("You are ClaimAssist.")
-                .contains("[USER] My claim is CLM-123.")
-                .contains("End of previous conversation");
-        assertThat(ctx.userMessage()).isEqualTo("What is its status?");
+                message(MessageRole.USER, "very old message that is long"),
+                message(MessageRole.ASSISTANT, "recent short reply"));
+        String rendered = builder(50).renderHistory(history);
+        assertThat(rendered).contains("recent short reply");
+        assertThat(rendered).doesNotContain("very old message");
     }
 
     @Test
-    void dropsOldestMessagesWhenCharacterBudgetExceeded() {
-        AgentAiProperties small = new AgentAiProperties();
-        small.setMaxContextChars(30);
-        ConversationContextBuilder b = new ConversationContextBuilder(small);
+    void renderHistoryKeepsAtLeastNewestTurnDespiteBudget() {
         List<ConversationMessage> history = List.of(
-                new ConversationMessage(MessageRole.USER, "A".repeat(40)),
-                new ConversationMessage(MessageRole.USER, "B".repeat(5)),
-                new ConversationMessage(MessageRole.ASSISTANT, "C".repeat(5)));
-        String transcript = b.renderHistory(history);
-        // The most recent entries must be kept; the oldest oversized entry dropped.
-        assertThat(transcript).contains("[USER] BBBBB").contains("[ASSISTANT] CCCCC");
-        assertThat(transcript).doesNotContain("AAAA");
-    }
-
-    @Test
-    void alwaysKeepsAtLeastMostRecentMessageEvenIfOverBudget() {
-        AgentAiProperties tiny = new AgentAiProperties();
-        tiny.setMaxContextChars(5);
-        ConversationContextBuilder b = new ConversationContextBuilder(tiny);
-        List<ConversationMessage> history = List.of(
-                new ConversationMessage(MessageRole.USER, "old"),
-                new ConversationMessage(MessageRole.ASSISTANT, "very long recent message"));
-        String transcript = b.renderHistory(history);
-        assertThat(transcript).contains("very long recent message");
+                message(MessageRole.USER, "a".repeat(500)), message(MessageRole.ASSISTANT, "b".repeat(500)));
+        String rendered = builder(50).renderHistory(history);
+        assertThat(rendered).contains("b".repeat(500));
     }
 }

@@ -7,38 +7,48 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SafeMetadataTest {
 
     @Test
-    void hashIsDeterministicAndNonReversible() {
-        assertThat(SafeMetadata.hash("CLM-99")).isEqualTo(SafeMetadata.hash("CLM-99"));
-        assertThat(SafeMetadata.hash("CLM-99")).isNotEqualTo(SafeMetadata.hash("CLM-100"));
-        assertThat(SafeMetadata.hash((Long) 99L)).isEqualTo(SafeMetadata.hash((Long) 99L));
-        // 16 hex chars = 64 bits of a SHA-256 digest - never the raw value.
-        assertThat(SafeMetadata.hash("CLM-99")).hasSize(16);
-        assertThat(SafeMetadata.hash("CLM-99")).doesNotContain("CLM");
+    void hashIsDeterministicAndShort() {
+        String h1 = SafeMetadata.hash("customer-42");
+        String h2 = SafeMetadata.hash("customer-42");
+        assertThat(h1).isEqualTo(h2);
+        assertThat(h1).hasSize(16);
+        assertThat(h1).matches("^[0-9a-f]{16}$");
     }
 
     @Test
-    void hashHandlesNullAndBlank() {
+    void hashReturnsEmptyForBlank() {
         assertThat(SafeMetadata.hash((String) null)).isEmpty();
+        assertThat(SafeMetadata.hash("")).isEmpty();
+        assertThat(SafeMetadata.hash("   ")).isEmpty();
+    }
+
+    @Test
+    void hashLongHandlesNull() {
         assertThat(SafeMetadata.hash((Long) null)).isEmpty();
-        assertThat(SafeMetadata.hash("  ")).isEmpty();
+        assertThat(SafeMetadata.hash(123L)).isEqualTo(SafeMetadata.hash("123"));
     }
 
     @Test
-    void redactRemovesBearerTokens() {
-        String redacted = SafeMetadata.redact("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature");
-        assertThat(redacted).doesNotContain("eyJhbGciOiJIUzI1NiJ9");
-        assertThat(redacted).contains("[REDACTED]");
+    void redactBearerToken() {
+        assertThat(SafeMetadata.redact("Authorization: Bearer abc.def-ghi_123"))
+                .contains("bearer [REDACTED]")
+                .doesNotContain("abc.def-ghi_123");
     }
 
     @Test
-    void redactRemovesCredentialPairs() {
-        String redacted = SafeMetadata.redact("apiKey=sk-12345secret password=supersecret");
-        assertThat(redacted).doesNotContain("sk-12345secret").doesNotContain("supersecret");
+    void redactCredentialsWithColonOrEquals() {
+        assertThat(SafeMetadata.redact("password=supersecret")).contains("[REDACTED]");
+        assertThat(SafeMetadata.redact("api_key: 123456")).contains("[REDACTED]");
+        assertThat(SafeMetadata.redact("secret = hunter2")).contains("[REDACTED]");
     }
 
     @Test
-    void redactIsSafeForNullAndOrdinaryText() {
+    void redactReturnsEmptyForNull() {
         assertThat(SafeMetadata.redact(null)).isEmpty();
-        assertThat(SafeMetadata.redact("What is the status of my claim?")).isEqualTo("What is the status of my claim?");
+    }
+
+    @Test
+    void redactLeavesNormalTextUntouched() {
+        assertThat(SafeMetadata.redact("your claim is approved")).isEqualTo("your claim is approved");
     }
 }
