@@ -118,7 +118,16 @@ class ClaimControllerTest {
     static class PermitAllSecurity {
         @Bean
         SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-            return http.csrf(csrf -> csrf.disable())
+            return http.csrf(csrf -> csrf
+                    .csrfTokenRepository(
+                            org.springframework.security.web.csrf.CookieCsrfTokenRepository.withHttpOnlyFalse()
+                    )
+                    .ignoringRequestMatchers(
+                            "/actuator/**",
+                            "/webhooks/**",
+                            "/claims/**"
+                    )
+            )
                     .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                     .build();
         }
