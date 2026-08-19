@@ -1,5 +1,31 @@
 ﻿{
   "$schema": "https://opencode.ai/config.json",
   "model": "ollama/qwen2.5-coder:3b",
-  "shell": "pwsh"
+  "shell": "pwsh",
+  "mcp": {
+    "sonarqube": {
+      "type": "local",
+      "command": [
+        "docker",
+        "run",
+        "--init",
+        "--pull=always",
+        "-i",
+        "--rm",
+        "-e",
+        "SONARQUBE_TOKEN",
+        "-e",
+        "SONARQUBE_ORG",
+        "-e",
+        "SONARQUBE_TOOLSETS=issues,quality-gates,coverage,projects",
+        "-e",
+        "SONARQUBE_READ_ONLY=true",
+        "sonarsource/sonarqube-mcp"
+      ],
+      "environment": {
+        "SONARQUBE_TOKEN": "{env:SONARQUBE_TOKEN}",
+        "SONARQUBE_ORG": "{env:SONARQUBE_ORG}"
+      }
+    }
+  }
 }
