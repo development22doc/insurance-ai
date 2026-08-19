@@ -115,7 +115,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             return "";
         }
         String normalizedKey = key == null ? "" : key.toLowerCase();
-        String normalizedValue = value == null ? "" : value.trim();
+        String normalizedValue = value.trim();
 
         // If header name indicates sensitive content, mask generically
         if (normalizedKey.contains("authorization") || normalizedKey.contains("password")
@@ -239,15 +239,13 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
             // Lookup tracer bean by type using reflection to avoid compile-time dependency
             Class<?> tracerClass = Class.forName("io.micrometer.tracing.Tracer");
-            Object tracer = null;
+            Object tracer;
             try {
                 tracer = ctx.getBean(tracerClass);
             } catch (Exception ignored) {
                 // no tracer bean available
                 return null;
             }
-
-            if (tracer == null) return null;
 
             Object currentSpan = tracer.getClass().getMethod("currentSpan").invoke(tracer);
             if (currentSpan == null) return null;
@@ -274,14 +272,12 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             if (ctx == null) return null;
 
             Class<?> tracerClass = Class.forName("io.micrometer.tracing.Tracer");
-            Object tracer = null;
+            Object tracer;
             try {
                 tracer = ctx.getBean(tracerClass);
             } catch (Exception ignored) {
                 return null;
             }
-
-            if (tracer == null) return null;
 
             Object currentSpan = tracer.getClass().getMethod("currentSpan").invoke(tracer);
             if (currentSpan == null) return null;

@@ -112,4 +112,85 @@ class QwenToolCallParserTest {
     void classifiesBlankAsPossiblePrefix() {
         assertThat(parser.classify("", REGISTERED)).isEqualTo(QwenToolCallParser.Classification.POSSIBLE_PREFIX);
     }
+
+    @Test
+    void parsesWhenRegisteredNamesIsNull() {
+        assertThat(parser.parse("{\"name\":\"get_claim_status\",\"arguments\":{}}", null)).isPresent();
+    }
+
+    @Test
+    void parsesWhenRegisteredNamesIsEmpty() {
+        assertThat(parser.parse("{\"name\":\"get_claim_status\",\"arguments\":{}}", Set.of())).isPresent();
+    }
+
+    @Test
+    void rejectsNonTextualName() {
+        assertThat(parser.parse("{\"name\":123,\"arguments\":{}}", REGISTERED)).isEmpty();
+    }
+
+    @Test
+    void rejectsNullNameValue() {
+        assertThat(parser.parse("{\"name\":null,\"arguments\":{}}", REGISTERED)).isEmpty();
+    }
+
+    @Test
+    void rejectsDuplicateFieldsViaStrictDuplicateDetection() {
+        assertThat(parser.parse(
+                "{\"name\":\"get_claim_status\",\"name\":\"get_claim_status\",\"arguments\":{}}", REGISTERED))
+                .isEmpty();
+    }
+
+    @Test
+    void convertsRichArgumentTypes() {
+        Optional<QwenToolCall> result = parser.parse(
+                "{\"name\":\"get_claim_status\",\"arguments\":{\"id\":1.5,\"flag\":true,\"nil\":null,"
+                        + "\"nested\":{\"k\":\"v\"},\"items\":[1,\"two\"]}}", REGISTERED);
+        assertThat(result).isPresent();
+        Map<String, Object> args = result.get().arguments();
+        assertThat(args.get("id")).isEqualTo(1.5d);
+        assertThat(args.get("flag")).isEqualTo(true);
+        assertThat(args).containsKey("nil");
+        assertThat(args.get("nil")).isNull();
+        assertThat(args.get("nested")).isEqualTo(Map.of("k", "v"));
+        assertThat(args.get("items")).isInstanceOf(java.util.List.class);
+    }
+
+    @Test
+    void rejectsControlCharactersInToolName() {
+        assertThat(parser.parse("{\"name\":\"get\\nclaim\",\"arguments\":{}}", REGISTERED)).isEmpty();
+    }
+
+    @Test
+    void rejectsToolNameThatIsTooLong() {
+        String longName = "a".repeat(129);
+        assertThat(parser.parse("{\"name\":\"" + longName + "\",\"arguments\":{}}", REGISTERED)).isEmpty();
+    }
+
+    @Test
+    void classifiesOversizedContentAsNotAToolCall() {
+        QwenToolCallParser tiny = new QwenToolCallParser(5);
+        assertThat(tiny.classify("{\"name\":\"get_claim_status\",\"arguments\":{}}", REGISTERED))
+                .isEqualTo(QwenToolCallParser.Classification.NOT_A_TOOL_CALL);
+    }
+
+    @Test
+    void classifiesCompleteInvalidJsonObjectAsNotAToolCall() {
+        assertThat(parser.classify("{\"foo\":1}", REGISTERED))
+                .isEqualTo(QwenToolCallParser.Classification.NOT_A_TOOL_CALL);
+        assertThat(parser.classify("[1,2]", REGISTERED))
+                .isEqualTo(QwenToolCallParser.Classification.NOT_A_TOOL_CALL);
+    }
+
+    @Test
+    void classifyRejectsDuplicateFieldsAsNotAToolCall() {
+        assertThat(parser.classify(
+                "{\"name\":\"get_claim_status\",\"name\":\"get_claim_status\",\"arguments\":{}}", REGISTERED))
+                .isEqualTo(QwenToolCallParser.Classification.NOT_A_TOOL_CALL);
+    }
+
+    @Test
+    void isCompleteToolCallTreatsBlankAndPrefixAsIncomplete() {
+        assertThat(parser.isCompleteToolCall("", REGISTERED)).isFalse();
+        assertThat(parser.isCompleteToolCall("{\"name\":\"get_claim", REGISTERED)).isFalse();
+    }
 }

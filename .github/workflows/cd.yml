@@ -105,9 +105,6 @@ on:
         default: all
         required: true
 
-permissions:
-  contents: read
-
 # Generic no-op job anchors are avoided; each matrix deploy job below declares its
 # own environment-scoped, namespace-level concurrency lock.
 
@@ -118,6 +115,8 @@ jobs:
   detect-changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     if: github.event_name == 'push'
     outputs:
       api-gateway: ${{ steps.filter.outputs.api-gateway }}
@@ -131,7 +130,7 @@ jobs:
 
       - name: Detect changed services
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad
         with:
           # Service filters fan out shared code:
           #  - common-lib/** and pom.xml -> all four (all depend on them)
@@ -162,6 +161,8 @@ jobs:
   resolve-targets:
     name: Resolve Deployment Targets
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: detect-changes
     # detect-changes is SKIPPED on workflow_dispatch (its `if` is push-only). A
     # job's implicit success() would otherwise treat that skip as a failure and
@@ -261,6 +262,8 @@ jobs:
   # ---------------------------------------------------------------------------
   build-images:
     name: Build Images
+    permissions:
+      contents: read
     if: needs.resolve-targets.outputs.run_build == 'true'
     needs: resolve-targets
     uses: ./.github/workflows/docker-build.yaml
@@ -278,6 +281,8 @@ jobs:
   infra-sync:
     name: Sync Infrastructure DEV
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: resolve-targets
     if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.run_infra_sync == 'true' && needs.resolve-targets.outputs.environment == 'dev'
     environment: dev
@@ -288,15 +293,16 @@ jobs:
       CHART: infrastructure/helm/claimassist
       NAMESPACE: claimassist-dev
       RELEASE: claimassist-dev
+      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8
         with:
           version: 'v1.27.0'
       - name: Set up Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@5119fcb9089d432beecbf79bb2c7915207344b78
         with:
           version: '3.16.4'
       - name: Configure kubectl (DEV credentials only)
@@ -316,7 +322,7 @@ jobs:
           set -euo pipefail
           helm lint "$CHART"
           helm template "$RELEASE" "$CHART" -n "$NAMESPACE" \
-            --set image.registry="${{ secrets.DOCKER_USERNAME }}" > /dev/null
+            --set image.registry="$DOCKER_REGISTRY" > /dev/null
       - name: Apply infrastructure change via Helm (DEV)
         run: |
           set -euo pipefail
@@ -324,7 +330,7 @@ jobs:
           # from saved release values, applying the changed chart/values, while
           # every application keeps its already-deployed SHA (no rollout).
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
-            --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+            --set image.registry="$DOCKER_REGISTRY" \
             --wait \
             --timeout 10m
       - name: Verify rollout
@@ -342,6 +348,8 @@ jobs:
   dev-deploy:
     name: Deploy ${{ matrix.service }} DEV
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [resolve-targets, build-images]
     # build-images is SKIPPED on manual dispatch (run_build=false) and on
     # infra-only auto runs. A status function is required here: without it the
@@ -365,19 +373,20 @@ jobs:
       cancel-in-progress: false
     env:
       NAMESPACE: claimassist-dev
+      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8
         with:
           version: 'v1.27.0'
       - name: Set up Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@5119fcb9089d432beecbf79bb2c7915207344b78
         with:
           version: '3.16.4'
       - name: Log in to registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -406,7 +415,7 @@ jobs:
           CHART=infrastructure/helm/claimassist
           RELEASE=claimassist-dev
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
-            --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+            --set image.registry="$DOCKER_REGISTRY" \
             --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
             --wait \
             --timeout 10m
@@ -429,6 +438,8 @@ jobs:
   dev-validation:
     name: DEV Validation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [resolve-targets, dev-deploy, infra-sync]
     # infra-sync is SKIPPED when there is no infrastructure change; dev-deploy is
     # skipped when there is no app change. A status function keeps this
@@ -448,6 +459,8 @@ jobs:
   stage-deploy:
     name: Deploy ${{ matrix.service }} STAGE
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: resolve-targets
     if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.environment == 'stage' && needs.resolve-targets.outputs.app_services != '[]'
     environment: stage
@@ -460,19 +473,20 @@ jobs:
       cancel-in-progress: false
     env:
       NAMESPACE: claimassist-stage
+      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8
         with:
           version: 'v1.27.0'
       - name: Set up Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@5119fcb9089d432beecbf79bb2c7915207344b78
         with:
           version: '3.16.4'
       - name: Log in to registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -501,7 +515,7 @@ jobs:
           CHART=infrastructure/helm/claimassist
           RELEASE=claimassist-stage
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
-            --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+            --set image.registry="$DOCKER_REGISTRY" \
             --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
             --wait \
             --timeout 10m
@@ -524,6 +538,8 @@ jobs:
   stage-validation:
     name: STAGE Validation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [resolve-targets, stage-deploy]
     if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.environment == 'stage'
     steps:
@@ -536,6 +552,8 @@ jobs:
   prod-deploy:
     name: Deploy ${{ matrix.service }} PROD
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: resolve-targets
     if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.environment == 'prod' && needs.resolve-targets.outputs.app_services != '[]'
     environment: prod
@@ -548,19 +566,20 @@ jobs:
       cancel-in-progress: false
     env:
       NAMESPACE: claimassist-prod
+      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8
         with:
           version: 'v1.27.0'
       - name: Set up Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@5119fcb9089d432beecbf79bb2c7915207344b78
         with:
           version: '3.16.4'
       - name: Log in to registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -589,7 +608,7 @@ jobs:
           CHART=infrastructure/helm/claimassist
           RELEASE=claimassist-prod
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
-            --set image.registry="${{ secrets.DOCKER_USERNAME }}" \
+            --set image.registry="$DOCKER_REGISTRY" \
             --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
             --wait \
             --timeout 10m
@@ -612,6 +631,8 @@ jobs:
   prod-validation:
     name: PROD Validation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [resolve-targets, prod-deploy]
     if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.environment == 'prod'
     steps:
@@ -626,6 +647,8 @@ jobs:
   deployment-summary:
     name: Summary
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     if: always()
     needs: resolve-targets
     steps:

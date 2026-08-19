@@ -100,7 +100,7 @@ jobs:
         retention-days: 7
 
     - name: Publish test report
-      uses: dorny/test-reporter@v1
+      uses: dorny/test-reporter@3eeb9fc888e82e8be2fb356bbeec2750231672bc
       if: always()
       with:
         name: Test Results (JDK 21)
@@ -292,9 +292,13 @@ jobs:
     # Runs SonarQube Cloud analysis with the quality gate in blocking mode. The job
     # fails if the gate fails (genuine exit code). SonarQube Cloud drives the server
     # URL and token (SONAR_TOKEN); org/projectKey/qualitygate.wait are pinned here
-    # because the root pom.xml does not define them. sonar.coverage.jacoco.xmlReportPaths
-    # is defined in the root pom.xml <properties> (the source of truth for the Maven
-    # scanner) as root-relative per-module reports, so it is not passed on the CLI.
+    # because the root pom.xml does not define them. Coverage needs NO explicit
+    # sonar.coverage.jacoco.xmlReportPaths: each module's report at
+    # <module>/target/site/jacoco/jacoco.xml is found via SonarScanner for Maven's
+    # default path, resolved against each module's own base dir. (An earlier
+    # root-relative comma list in the root pom was propagated to every module and
+    # resolved against each module's base dir, so no report was found -> 0% coverage
+    # -> gate failure; it was removed.)
     - name: Run SonarQube Cloud analysis
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

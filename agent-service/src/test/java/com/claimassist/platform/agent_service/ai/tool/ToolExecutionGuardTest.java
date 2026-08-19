@@ -9,6 +9,7 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -36,6 +37,27 @@ class ToolExecutionGuardTest {
         p.setToolTimeoutMs(timeoutMs);
         p.setAgentTimeoutMs(1000);
         return p;
+    }
+
+    @FunctionalInterface
+    private interface ThrowingSupplier<T> {
+        T get() throws Exception;
+    }
+
+    /** Adapt a throwing lambda to a plain Supplier, rethrowing the ORIGINAL exception unchecked. */
+    private static <T> Supplier<T> unchecked(ThrowingSupplier<T> throwing) {
+        return () -> {
+            try {
+                return throwing.get();
+            } catch (Exception e) {
+                return sneakyThrow(e);
+            }
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T, E extends Throwable> T sneakyThrow(Throwable t) throws E {
+        throw (E) t;
     }
 
     @Test
@@ -178,5 +200,79 @@ class ToolExecutionGuardTest {
         assertThat(captured).hasSize(1);
         assertThat(captured.get(0).status()).isEqualTo(ToolExecutionMetadata.STATUS_TIMEOUT);
         assertThat(captured.get(0).toolName()).isEqualTo("get_claim_status");
+    }
+
+    @Test
+    void checkedExceptionCauseIsWrappedInToolExecutionException() {
+        ToolExecutionGuard guard = new ToolExecutionGuard(props(10, 5000), new ToolRegistry());
+        assertThatThrownBy(() -> guard.execute("t", unchecked(() -> {
+            throw new java.io.IOException("io failure");
+        }))).isInstanceOf(ToolExecutionException.class).hasMessageContaining("t");
+    }
+
+    @Test
+    void interruptedCallingThreadYieldsToolExecutionExceptionAndRestoresFlag() {
+        ToolExecutionGuard guard = new ToolExecutionGuard(props(10, 5000), new ToolRegistry());
+        Thread.currentThread().interrupt();
+        try {
+            assertThatThrownBy(() -> guard.execute("t", () -> {
+                // keep the task running so Future.get() observes the interrupt while waiting
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                return "ok";
+            })).isInstanceOf(ToolExecutionException.class);
+        } finally {
+            Thread.interrupted(); // clear the interrupt flag the guard re-set
+        }
+    }
+
+    @Test
+    void registryToolSpecificTimeoutOverridesGlobalDefault() {
+        ToolRegistry custom = new ToolRegistry() {
+            @Override
+            public java.util.Optional<Long> timeoutMs(String name) {
+                return java.util.Optional.of(50L);
+            }
+        };
+        ToolExecutionGuard guard = new ToolExecutionGuard(props(10, 5000), custom);
+        assertThatThrownBy(() -> guard.execute("slow", () -> {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            return "late";
+        })).isInstanceOf(ToolExecutionTimeoutException.class);
+    }
+
+    @Test
+    void zeroMaxToolResultCharsLeavesResultUntouched() {
+        AgentAiProperties p = props(10, 5000);
+        p.setMaxToolResultChars(0);
+        ToolExecutionGuard guard = new ToolExecutionGuard(p, new ToolRegistry());
+        String big = "x".repeat(100);
+        assertThat(guard.execute("t", () -> big)).isEqualTo(big);
+    }
+
+    @Test
+    void guardedProviderWithNoCallbacksYieldsEmptyArray() {
+        ToolExecutionGuard guard = new ToolExecutionGuard(props(1, 5000), new ToolRegistry());
+        ToolCallbackProvider none = ToolCallbackProvider.from(new ToolCallback[0]);
+        assertThat(guard.guarded(none).getToolCallbacks()).isEmpty();
+    }
+
+    @Test
+    void recordsLimitExceededMetadata() {
+        List<ToolExecutionMetadata> captured = new ArrayList<>();
+        ToolExecutionGuard guard = new ToolExecutionGuard(props(1, 5000), new ToolRegistry(),
+                "req-lim", "corr-lim", captured::add);
+        guard.execute("t", () -> "a");
+        assertThatThrownBy(() -> guard.execute("t", () -> "b"))
+                .isInstanceOf(ToolCallLimitExceededException.class);
+        assertThat(captured).hasSize(2);
+        assertThat(captured.get(1).status()).isEqualTo(ToolExecutionMetadata.STATUS_LIMIT_EXCEEDED);
     }
 }
