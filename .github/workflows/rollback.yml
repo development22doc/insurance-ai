@@ -161,6 +161,7 @@ jobs:
         # services' imageTag values are untouched -> only this Deployment rolls.
         # Helm remains the sole mutator (no kubectl rollout undo).
         helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+          -f infrastructure/helm/claimassist/values-dev.yaml \
           --set image.registry="$DOCKER_REGISTRY" \
           --set "services.$SERVICE.imageTag=$TARGET_TAG" \
           --wait \

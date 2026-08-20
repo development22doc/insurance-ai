@@ -322,6 +322,7 @@ jobs:
           set -euo pipefail
           helm lint "$CHART"
           helm template "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" > /dev/null
       - name: Apply infrastructure change via Helm (DEV)
         run: |
@@ -330,6 +331,7 @@ jobs:
           # from saved release values, applying the changed chart/values, while
           # every application keeps its already-deployed SHA (no rollout).
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
             --wait \
             --timeout 10m
@@ -415,6 +417,7 @@ jobs:
           CHART=infrastructure/helm/claimassist
           RELEASE=claimassist-dev
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
             --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
             --wait \
