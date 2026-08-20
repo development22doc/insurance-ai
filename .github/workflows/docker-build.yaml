@@ -5,6 +5,10 @@
 # pushes them to Docker Hub: `claimassistdev/<service>:<sha>`.
 # Invoked by .github/workflows/cd.yml (`build-images` job) so that a deployment
 # can never start before the exact immutable image for the commit exists.
+# `ref` tells the checkout WHICH commit to build: on automatic (workflow_run) CD
+# this is the head_sha CI validated; on manual dispatch it is the default-branch
+# head. The image is tagged with `tag` (the same commit SHA), so what is built
+# and what is deployed always match.
 #
 # Context: the repository ROOT is the Docker build context (each service
 # Dockerfile does `COPY . .` then builds the reactor subset
@@ -15,6 +19,7 @@
 #   services  - JSON array of the services to build, e.g.
 #               '["api-gateway","customer-service"]'
 #   tag       - immutable tag to apply (the commit SHA, supplied by the caller)
+#   ref       - git ref/SHA to check out for the build (same commit as `tag`)
 # =============================================================================
 
 name: docker-build
@@ -28,6 +33,10 @@ on:
         type: string
       tag:
         description: 'Immutable image tag to build and push (git SHA).'
+        required: true
+        type: string
+      ref:
+        description: 'Git ref/SHA to check out for the build (the commit to tag).'
         required: true
         type: string
     secrets:
@@ -52,8 +61,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        # Each Dockerfile builds from the repository root (reactor + common-lib),
-        # so a full checkout is required and `path:` context is not used.
+        with:
+          # Build the exact commit referenced by `tag` (CI-validated head_sha on
+          # automatic runs, default-branch head on manual dispatch). Each Dockerfile
+          # builds from the repository root (reactor + common-lib), so a full
+          # checkout is required and `path:` context is not used.
+          ref: ${{ inputs.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
