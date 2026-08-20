@@ -62,6 +62,8 @@ spec:
             - name: PGTZ
               value: {{ .Values.postgresql.timezone | quote }}
           volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
             - name: init-db
               mountPath: /docker-entrypoint-initdb.d
           resources:

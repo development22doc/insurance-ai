@@ -59,6 +59,9 @@ spec:
               value: {{ .Values.keycloak.postgresql.timezone | quote }}
             - name: PGTZ
               value: {{ .Values.keycloak.postgresql.timezone | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
           resources:
             {{- toYaml .Values.keycloak.postgresql.resources | nindent 12 }}
           {{- with .Values.keycloak.postgresql.probes.startup }}
