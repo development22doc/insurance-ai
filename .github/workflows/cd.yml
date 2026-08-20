@@ -104,6 +104,11 @@ on:
           - agent-service
         default: all
         required: true
+      force_deploy:
+        description: 'Full DEV bootstrap: build + deploy ALL four services + infra. Requires action=deploy and environment=dev.'
+        type: boolean
+        default: false
+        required: false
 
 # Generic no-op job anchors are avoided; each matrix deploy job below declares its
 # own environment-scoped, namespace-level concurrency lock.
@@ -180,6 +185,7 @@ jobs:
       run_infra_sync: ${{ steps.resolve.outputs.run_infra_sync }}
       trigger_kind: ${{ steps.resolve.outputs.trigger_kind }}
       build_only: ${{ steps.resolve.outputs.build_only }}
+      force_deploy: ${{ steps.resolve.outputs.force_deploy }}
       run_deploy: ${{ steps.resolve.outputs.run_deploy }}
     steps:
       - name: Compute deployment target
@@ -188,6 +194,7 @@ jobs:
           DISPATCH_ACTION: ${{ github.event.inputs.action }}
           DISPATCH_ENV: ${{ github.event.inputs.environment }}
           DISPATCH_SERVICE: ${{ github.event.inputs.service }}
+          FORCE_DEPLOY: ${{ github.event.inputs.force_deploy }}
           CH_API: ${{ needs.detect-changes.outputs.api-gateway }}
           CH_CUSTOMER: ${{ needs.detect-changes.outputs.customer-service }}
           CH_CLAIMS: ${{ needs.detect-changes.outputs.claims-service }}
@@ -199,9 +206,30 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             ENV="${DISPATCH_ENV:-dev}"
             ACTION="${DISPATCH_ACTION:-deploy}"
+            # Force deploy = full-environment bootstrap (build + deploy ALL four
+            # services + install infra) in a single run. Only valid for DEV. It
+            # intentionally bypasses change detection and the pre-built-image check.
+            if [ "$ACTION" = "deploy" ] && [ "${FORCE_DEPLOY:-false}" = "true" ]; then
+              if [ "$ENV" != "dev" ]; then
+                echo "::error::force_deploy is only supported for environment=dev."
+                exit 1
+              fi
+              {
+                echo "environment=$ENV"
+                echo "trigger_kind=force-deploy"
+                echo "build_only=false"
+                echo "run_deploy=true"
+                echo "run_build=true"
+                echo "run_infra_sync=true"
+                echo "force_deploy=true"
+                echo 'app_services=["api-gateway","customer-service","claims-service","agent-service"]'
+              } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             {
               echo "environment=$ENV"
               echo "run_infra_sync=false"
+              echo "force_deploy=false"
             } >> "$GITHUB_OUTPUT"
             if [ "$ACTION" = "build-only" ]; then
               # Build & push immutable SHA images, then STOP. No deployment.
@@ -233,6 +261,7 @@ jobs:
             echo "environment=dev"
             echo "trigger_kind=auto"
             echo "build_only=false"
+            echo "force_deploy=false"
             echo "run_deploy=true"
           } >> "$GITHUB_OUTPUT"
           if [ "$CH_INFRA" = "true" ]; then
@@ -283,8 +312,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    needs: resolve-targets
-    if: needs.resolve-targets.outputs.run_deploy == 'true' && needs.resolve-targets.outputs.run_infra_sync == 'true' && needs.resolve-targets.outputs.environment == 'dev'
+    needs: [resolve-targets, build-images]
+    # build-images is SKIPPED on infra-only auto runs (run_build=false). A status
+    # function is required: without it the implicit success() would treat that skip
+    # as a failure and skip this job, breaking infra sync. We accept build-images
+    # in 'success' OR 'skipped' and only reject a genuine build FAILURE. This also
+    # guarantees the force_deploy bootstrap runs only AFTER all four images exist.
+    if: |
+      !cancelled() &&
+      needs.resolve-targets.outputs.run_deploy == 'true' &&
+      needs.resolve-targets.outputs.run_infra_sync == 'true' &&
+      needs.resolve-targets.outputs.environment == 'dev' &&
+      (needs.build-images.result == 'success' || needs.build-images.result == 'skipped')
     environment: dev
     concurrency:
       group: cd-deploy-dev
@@ -325,6 +364,7 @@ jobs:
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" > /dev/null
       - name: Apply infrastructure change via Helm (DEV)
+        if: needs.resolve-targets.outputs.force_deploy != 'true'
         run: |
           set -euo pipefail
           # No image.tag / imageTag overrides -> helm re-renders the whole chart
@@ -333,6 +373,24 @@ jobs:
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
+            --wait \
+            --timeout 10m
+      - name: Bootstrap DEV environment (full install, all services at SHA)
+        if: needs.resolve-targets.outputs.force_deploy == 'true'
+        run: |
+          set -euo pipefail
+          # FIRST-EVER DEV bootstrap: install the whole chart (shared infra +
+          # all four application Deployments) in ONE helm upgrade, pinning EVERY
+          # service to the immutable SHA so no Deployment falls back to the
+          # default image.tag (1.0.0). Runs only after build-images has pushed
+          # all four images at $GITHUB_SHA.
+          helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            -f infrastructure/helm/claimassist/values-dev.yaml \
+            --set image.registry="$DOCKER_REGISTRY" \
+            --set services.api-gateway.imageTag="$GITHUB_SHA" \
+            --set services.customer-service.imageTag="$GITHUB_SHA" \
+            --set services.claims-service.imageTag="$GITHUB_SHA" \
+            --set services.agent-service.imageTag="$GITHUB_SHA" \
             --wait \
             --timeout 10m
       - name: Verify rollout
@@ -359,11 +417,15 @@ jobs:
     # breaking manual DEV deploys. We accept build-images in 'success' OR
     # 'skipped' (manual/infra-only) and only reject a genuine build FAILURE, so
     # a manual deploy never rebuilds and never waits for a skipped build.
+    # During force_deploy the per-service matrix is skipped entirely: the
+    # bootstrap performs ONE whole-chart upgrade with all four SHA image tags, so
+    # no service can ever fall back to the default image.tag (1.0.0).
     if: |
       !cancelled() &&
       needs.resolve-targets.outputs.run_deploy == 'true' &&
       (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
       needs.resolve-targets.outputs.environment == 'dev' &&
+      needs.resolve-targets.outputs.force_deploy != 'true' &&
       needs.resolve-targets.outputs.app_services != '[]'
     environment: dev
     strategy:
