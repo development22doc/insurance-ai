@@ -39,6 +39,9 @@ EXPOSE 8082
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS http://localhost:${SERVICE_PORT}/actuator/health || curl -fsS http://localhost:${SERVICE_PORT}/ || exit 1
 
-USER app
+# Numeric UID:GID (not `USER app`) so `runAsNonRoot: true` in the Kubernetes
+# securityContext can verify a non-root identity without resolving image user names.
+# Alpine's `addgroup -S app` / `adduser -S -G app app` assign GID 1000 / UID 1000.
+USER 1000:1000
 
 ENTRYPOINT ["sh","-c","exec java -Dapp.name=claims-service -XX:MaxRAMPercentage=${JAVA_RAM_PERCENTAGE} -Duser.timezone=${TZ} $JAVA_OPTS -jar /app/app.jar"]

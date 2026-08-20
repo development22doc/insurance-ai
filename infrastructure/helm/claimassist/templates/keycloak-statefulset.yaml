@@ -29,6 +29,36 @@ spec:
         {{- include "claimassist.labels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak
     spec:
+      # Deterministic dependency: do not start Keycloak (or crash-loop against a
+      # still-initializing DB) until the dedicated Keycloak PostgreSQL accepts
+      # connections. Polls pg_isready via Service DNS; runs as the postgres image's
+      # own tooling but as a non-root numeric uid with dropped caps.
+      initContainers:
+        - name: wait-for-db
+          image: "{{ .Values.keycloak.postgresql.image.registry }}{{ if .Values.keycloak.postgresql.image.registry }}/{{ end }}{{ .Values.keycloak.postgresql.image.repository }}:{{ .Values.keycloak.postgresql.image.tag }}"
+          imagePullPolicy: {{ .Values.keycloak.postgresql.image.pullPolicy }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -h {{ .Values.keycloak.postgresql.serviceName }} -p {{ .Values.keycloak.postgresql.port }} -U "$KC_DB_USERNAME" -d {{ .Values.keycloak.postgresql.database }} >/dev/null 2>&1; do
+                echo "waiting for {{ .Values.keycloak.postgresql.serviceName }}:{{ .Values.keycloak.postgresql.port }} ({{ .Values.keycloak.postgresql.database }}) to be ready..."
+                sleep 5
+              done
+              echo "{{ .Values.keycloak.postgresql.serviceName }} is ready"
+          env:
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.postgresql.credentials.secretName }}
+                  key: POSTGRES_USER
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       volumes:
         - name: realm-import
           configMap:
@@ -38,7 +68,12 @@ spec:
         - name: keycloak
           image: "{{ .Values.keycloak.image.registry }}{{ if .Values.keycloak.image.registry }}/{{ end }}{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}"
           imagePullPolicy: {{ .Values.keycloak.image.pullPolicy }}
-          command: ["start", "--import-realm"]
+          # `args` (NOT `command`): the Keycloak image ENTRYPOINT is
+          # /opt/keycloak/bin/kc.sh, and `command` would REPLACE that entrypoint,
+          # making kubelet exec an executable named `start` that is not on $PATH
+          # (-> CrashLoopBackOff). `args` appends to the entrypoint, yielding the
+          # correct `kc.sh start --import-realm`.
+          args: ["start", "--import-realm"]
           # Container-level securityContext (NOT pod-level): every key here
           # (runAsNonRoot, allowPrivilegeEscalation, readOnlyRootFilesystem,
           # capabilities, seccompProfile) is a CONTAINER securityContext field.

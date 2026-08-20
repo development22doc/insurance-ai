@@ -55,8 +55,9 @@ spec:
               value: "1"
             - name: KAFKA_PROCESS_ROLES
               value: "broker,controller"
-            # Internal listeners. Advertised broker + controller quorum use the
-            # K8s Service DNS (claimassist-kafka), never localhost / 127.0.0.1.
+            # Internal listeners. The ADVERTISED broker listener uses the K8s
+            # Service DNS (claimassist-kafka) so external clients (apps) resolve
+            # the broker through the ClusterIP Service.
             - name: KAFKA_LISTENERS
               value: "PLAINTEXT://:{{ .Values.kafka.internalPort }},CONTROLLER://:{{ .Values.kafka.controllerPort }}"
             - name: KAFKA_ADVERTISED_LISTENERS
@@ -67,8 +68,19 @@ spec:
               value: "PLAINTEXT"
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
               value: "CONTROLLER"
+            # SINGLE-NODE KRaft SELF-QUORUM. The combined broker+controller must be
+            # able to reach the controller quorum BEFORE this pod is Ready. The
+            # ClusterIP Service (claimassist-kafka) only gets an endpoint once the
+            # pod passes readiness, and readiness requires KRaft startup to finish -
+            # a cycle that dead-locks the "controller acknowledge caught up" step and
+            # CrashLoopBackOffs the broker. Using the loopback address for the
+            # single-node controller quorum breaks that cycle: the controller
+            # listener binds :9093 on all interfaces, so the broker reaches its own
+            # controller via 127.0.0.1 regardless of Service/endpoint status. The
+            # controller listener is internal-only and never advertised to clients,
+            # so loopback is safe for a single combined node.
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              value: "1@{{ .Values.kafka.serviceName }}:{{ .Values.kafka.controllerPort }}"
+              value: "1@127.0.0.1:{{ .Values.kafka.controllerPort }}"
             # Single broker => RF and ISR must be 1 everywhere (matches LOCAL
             # and the application's replication-factor:1 / min-isr:1 outbox topics).
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
