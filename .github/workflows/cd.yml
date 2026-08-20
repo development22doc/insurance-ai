@@ -361,7 +361,14 @@ jobs:
     name: Build Images
     permissions:
       contents: read
-    if: needs.resolve-targets.outputs.run_build == 'true'
+    # Explicit status function required: detect-changes is SKIPPED on
+    # workflow_dispatch, and GitHub implicitly prepends success() to an if that
+    # has none. success() scans the transitive needs closure, sees the skipped
+    # detect-changes, and would skip this job even when run_build=true. !cancelled()
+    # disables that implicit success() so the build runs on run_build==true.
+    if: |
+      !cancelled() &&
+      needs.resolve-targets.outputs.run_build == 'true'
     needs: resolve-targets
     uses: ./.github/workflows/docker-build.yaml
     with:
