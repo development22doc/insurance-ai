@@ -17,7 +17,7 @@
 #   The chart's image helper supports a PER-SERVICE tag (`services.<name>.imageTag`).
 #   Deploying one service runs:
 #       helm upgrade <release> <chart> -n <ns> \
-#         --set image.registry=<user> \
+#         --set image.registry=claimassistdev \
 #         --set services.<svc>.imageTag=<git-sha>
 #   Because `helm upgrade` merges over the previous release values, ONLY the
 #   targeted service's pod template changes -> only that Deployment rolls out.
@@ -293,7 +293,7 @@ jobs:
       CHART: infrastructure/helm/claimassist
       NAMESPACE: claimassist-dev
       RELEASE: claimassist-dev
-      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_REGISTRY: claimassistdev
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -373,7 +373,7 @@ jobs:
       cancel-in-progress: false
     env:
       NAMESPACE: claimassist-dev
-      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_REGISTRY: claimassistdev
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -392,11 +392,11 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Verify immutable image exists
         env:
-          IMAGE: ${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:${{ github.sha }}
+          IMAGE: claimassistdev/${{ matrix.service }}:${{ github.sha }}
         run: |
           set -euo pipefail
           docker manifest inspect "$IMAGE" > /dev/null
-          echo "Image verified: claimassist/${{ matrix.service }}:${{ github.sha }}"
+          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ github.sha }}"
       - name: Configure kubectl (DEV credentials only)
         env:
           KUBE_CONFIG: ${{ secrets.DEV_KUBE_CONFIG }}
@@ -473,7 +473,7 @@ jobs:
       cancel-in-progress: false
     env:
       NAMESPACE: claimassist-stage
-      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_REGISTRY: claimassistdev
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -492,11 +492,11 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Verify immutable image exists
         env:
-          IMAGE: ${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:${{ github.sha }}
+          IMAGE: claimassistdev/${{ matrix.service }}:${{ github.sha }}
         run: |
           set -euo pipefail
           docker manifest inspect "$IMAGE" > /dev/null
-          echo "Image verified: claimassist/${{ matrix.service }}:${{ github.sha }}"
+          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ github.sha }}"
       - name: Configure kubectl (STAGE credentials only)
         env:
           KUBE_CONFIG: ${{ secrets.STAGE_KUBE_CONFIG }}
@@ -566,7 +566,7 @@ jobs:
       cancel-in-progress: false
     env:
       NAMESPACE: claimassist-prod
-      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_REGISTRY: claimassistdev
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -585,11 +585,11 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Verify immutable image exists
         env:
-          IMAGE: ${{ secrets.DOCKER_USERNAME }}/claimassist/${{ matrix.service }}:${{ github.sha }}
+          IMAGE: claimassistdev/${{ matrix.service }}:${{ github.sha }}
         run: |
           set -euo pipefail
           docker manifest inspect "$IMAGE" > /dev/null
-          echo "Image verified: claimassist/${{ matrix.service }}:${{ github.sha }}"
+          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ github.sha }}"
       - name: Configure kubectl (PROD credentials only)
         env:
           KUBE_CONFIG: ${{ secrets.PROD_KUBE_CONFIG }}

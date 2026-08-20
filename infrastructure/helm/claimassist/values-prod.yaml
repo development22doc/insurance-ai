@@ -9,8 +9,8 @@ global:
   managedBy: helm
 
 image:
-  registry: ""              # OCIR placeholder - set at deploy time
-  repository: claimassist
+  registry: ""              # set to claimassistdev at deploy time (see cd.yml)
+  repository: claimassist     # local-only fallback when registry is empty
   tag: "1.0.0"              # matches Task 6A-3 built images (prod tag convention later)
   pullPolicy: IfNotPresent
   pullSecret: ""
