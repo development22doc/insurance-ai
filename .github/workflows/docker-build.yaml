@@ -2,7 +2,9 @@
 # ClaimAssist - Reusable container image build (Docker)
 # =============================================================================
 # Builds ONLY the affected application images as IMMUTABLE tags (git SHA) and
-# pushes them to Docker Hub: `claimassistdev/<service>:<sha>`.
+# pushes them to Docker Hub: `claimassistdev/<service>:<sha>`, as a
+# MULTI-PLATFORM OCI image index (linux/amd64 + linux/arm64) so a service can
+# run on both x86_64 and ARM64 nodes (the DEV cluster is ARM64).
 # Invoked by .github/workflows/cd.yml (`build-images` job) so that a deployment
 # can never start before the exact immutable image for the commit exists.
 # `ref` tells the checkout WHICH commit to build: on automatic (workflow_run) CD
@@ -68,6 +70,11 @@ jobs:
           # checkout is required and `path:` context is not used.
           ref: ${{ inputs.ref }}
 
+      - name: Set up QEMU for cross-arch builds
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8
+        # Registers binfmt handlers so Buildx can execute arm64 build stages
+        # (mvn package) on the amd64 runner when building the linux/arm64 target.
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
 
@@ -83,6 +90,11 @@ jobs:
           context: .
           file: ${{ matrix.service }}/Dockerfile
           push: true
+          # Multi-platform OCI image index so the image can run on BOTH x86_64
+          # and ARM64 nodes (the DEV cluster is ARM64). The Java/Dockerfiles are
+          # arch-agnostic; Buildx pulls the arch-specific temurin/maven bases per
+          # target and emulates the Maven RUN stage for arm64 via QEMU.
+          platforms: linux/amd64,linux/arm64
           tags: >
             claimassistdev/${{ matrix.service }}:${{ inputs.tag }}
           # Buildx-local build cache (GHA cache backend) avoids re-downloading
