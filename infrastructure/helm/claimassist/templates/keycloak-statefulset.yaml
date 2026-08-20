@@ -29,10 +29,6 @@ spec:
         {{- include "claimassist.labels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak
     spec:
-      {{- with .Values.keycloak.securityContext }}
-      securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       volumes:
         - name: realm-import
           configMap:
@@ -43,6 +39,15 @@ spec:
           image: "{{ .Values.keycloak.image.registry }}{{ if .Values.keycloak.image.registry }}/{{ end }}{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}"
           imagePullPolicy: {{ .Values.keycloak.image.pullPolicy }}
           command: ["start", "--import-realm"]
+          # Container-level securityContext (NOT pod-level): every key here
+          # (runAsNonRoot, allowPrivilegeEscalation, readOnlyRootFilesystem,
+          # capabilities, seccompProfile) is a CONTAINER securityContext field.
+          # Rendering them at spec.template.spec.securityContext is a Kubernetes
+          # schema error and is rejected by the API server.
+          {{- with .Values.keycloak.securityContext.container }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.keycloak.port }}

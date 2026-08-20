@@ -454,23 +454,79 @@ jobs:
           # No image.tag / imageTag overrides -> helm re-renders the whole chart
           # from saved release values, applying the changed chart/values, while
           # every application keeps its already-deployed SHA (no rollout).
+          # --install --create-namespace keep this idempotent for both an existing
+          # release and a (re)-create on a fresh cluster: Helm owns the Namespace.
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            --install \
+            --create-namespace \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
             --wait \
             --timeout 10m
       - name: Bootstrap DEV environment (full install, all services at SHA)
         if: needs.resolve-targets.outputs.force_deploy == 'true'
+        env:
+          # Deployment-time DEV credentials. Provided as GitHub secrets (scoped to
+          # the `dev` environment). A fresh bootstrap has NO prior Helm state to
+          # inherit credentials from, so they MUST be injected here or the rendered
+          # Secrets come out empty and PostgreSQL / Keycloak DB / Keycloak / Flyway
+          # / all apps fail to start. They are referenced - never committed - and are
+          # idempotent on retries (same values -> no drift).
+          DEV_POSTGRES_USER: ${{ secrets.DEV_POSTGRES_USER }}
+          DEV_POSTGRES_PASSWORD: ${{ secrets.DEV_POSTGRES_PASSWORD }}
+          DEV_KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.DEV_KEYCLOAK_ADMIN_PASSWORD }}
+          DEV_KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.DEV_KEYCLOAK_ADMIN_CLIENT_SECRET }}
+          DEV_KEYCLOAK_DB_USER: ${{ secrets.DEV_KEYCLOAK_DB_USER }}
+          DEV_KEYCLOAK_DB_PASSWORD: ${{ secrets.DEV_KEYCLOAK_DB_PASSWORD }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         run: |
           set -euo pipefail
+          # Guard: fail loudly is any required credential is unset. A bootstrap with
+          # an empty password would render an unusable StatefulSet and only fail
+          # later inside Kubernetes with a confusing CrashLoopBackOff.
+          for v in DEV_POSTGRES_USER DEV_POSTGRES_PASSWORD \
+                    DEV_KEYCLOAK_ADMIN_PASSWORD DEV_KEYCLOAK_ADMIN_CLIENT_SECRET \
+                    DEV_KEYCLOAK_DB_USER DEV_KEYCLOAK_DB_PASSWORD; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::$v (GitHub secret, dev environment) is required for the DEV bootstrap."
+              exit 1
+            fi
+          done
+          if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
+            echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD are required to create the imagePullSecret so the ARM64 node can pull claimassistdev images from Docker Hub."
+            exit 1
+          fi
+          # Idempotent docker-registry imagePullSecret referenced by every Deployment
+          # (values.image.pullSecret=claimassist-registry-credentials) so pulls on the
+          # ARM64 node need no out-of-band kubectl. --dry-run=client | apply avoids
+          # clobbering the secret's own .dockercfg token on retries.
+          kubectl create secret docker-registry claimassist-registry-credentials \
+            --namespace "$NAMESPACE" \
+            --docker-server=docker.io \
+            --docker-username="$DOCKER_USERNAME" \
+            --docker-password="$DOCKER_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
           # FIRST-EVER DEV bootstrap: install the whole chart (shared infra +
           # all four application Deployments) in ONE helm upgrade, pinning EVERY
           # service to the immutable SHA so no Deployment falls back to the
           # default image.tag (1.0.0). Runs only after build-images has pushed
           # all four images at $TARGET_SHA (== CI-validated head_sha on auto).
+          # --install --create-namespace make this idempotent: Helm owns the
+          # Namespace, so no manual kubectl label/annotate is ever required and a
+          # retry does not depend on prior Helm state or a pre-existing release.
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            --install \
+            --create-namespace \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
+            --set postgresql.credentials.postgresUsername="$DEV_POSTGRES_USER" \
+            --set postgresql.credentials.postgresPassword="$DEV_POSTGRES_PASSWORD" \
+            --set keycloak.credentials.adminUsername="admin" \
+            --set keycloak.credentials.adminPassword="$DEV_KEYCLOAK_ADMIN_PASSWORD" \
+            --set keycloak.credentials.adminClientSecret="$DEV_KEYCLOAK_ADMIN_CLIENT_SECRET" \
+            --set keycloak.postgresql.credentials.username="$DEV_KEYCLOAK_DB_USER" \
+            --set keycloak.postgresql.credentials.password="$DEV_KEYCLOAK_DB_PASSWORD" \
             --set services.api-gateway.imageTag="$TARGET_SHA" \
             --set services.customer-service.imageTag="$TARGET_SHA" \
             --set services.claims-service.imageTag="$TARGET_SHA" \
@@ -564,7 +620,13 @@ jobs:
           set -euo pipefail
           CHART=infrastructure/helm/claimassist
           RELEASE=claimassist-dev
+          # --install --create-namespace: idempotent. After the first bootstrap the
+          # release already exists and Helm merges over it (bumping ONLY the targeted
+          # service's imageTag to the immutable SHA); untouched services keep their
+          # already-deployed SHA, so there is NO drift and NO 1.0.0 fallback.
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            --install \
+            --create-namespace \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
             --set "services.${{ matrix.service }}.imageTag=${{ needs.resolve-targets.outputs.target_sha }}" \

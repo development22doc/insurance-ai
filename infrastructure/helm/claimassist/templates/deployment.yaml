@@ -121,6 +121,13 @@ spec:
             # ddl-auto is explicitly none (schema owned by Flyway).
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:postgresql://{{ $root.Values.postgresql.serviceName }}:{{ $root.Values.postgresql.port }}/{{ $svc.database }}"
+            # Explicit JDBC driver. agent-service's packaged application.yaml
+            # defaults driver-class-name to org.h2.Driver (${SPRING_DATASOURCE_DRIVER:...});
+            # without this override it would try to open a Postgres URL with the H2
+            # driver and fail to start. Setting it for every DB service is the robust
+            # (and harmless) fix.
+            - name: SPRING_DATASOURCE_DRIVER
+              value: "org.postgresql.Driver"
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:

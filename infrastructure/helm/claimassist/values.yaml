@@ -392,6 +392,9 @@ postgresql:
         - V1__init_customer_schema.sql
         - V2__keycloak_migration.sql
         - V3__add_refresh_tokens_table.sql
+        - V4__add_policy_customer_index.sql
+        - V5__widen_refresh_token_column.sql
+        - V6__drop_duplicate_refresh_token_index.sql
     - name: claimassist_claims
       service: claims-service
       migrations:
@@ -402,6 +405,10 @@ postgresql:
         - V5__add_saga_orchestrator_tables.sql
         - V6__add_saga_recovery_tracking.sql
         - V7__add_outbox_trace_context.sql
+        - V8__add_query_indexes.sql
+        - V9__add_claim_version.sql
+        - V10__fix_claim_version_type.sql
+        - V11__add_history_document_indexes.sql
     - name: claimassist_agent
       service: agent-service
       migrations:
@@ -410,6 +417,7 @@ postgresql:
         - V3__add_event_processing.sql
         - V4__enhance_outbox_reliability.sql
         - V5__add_outbox_trace_context.sql
+        - V6__add_query_indexes.sql
   # Credentials are NEVER committed. Created as a Kubernetes Secret when
   # `credentials.create` is true; real values must be supplied at deploy time via
   # -f overrides / --set (works here because rendering uses empty placeholders).
@@ -616,9 +624,18 @@ kafka:
 # KeycloakUserProvisioningService signup flow; no committed credentials).
 #
 # SECURITY CONTEXT: the official quay.io/keycloak/keycloak image (>=25) runs as a
-# non-root user (uid 1000) by default, so we do NOT force runAsNonRoot=true.
-# We harden by dropping ALL capabilities, disabling privilege escalation and
-# applying the RuntimeDefault seccomp profile (all configurable).
+# non-root user (uid 1000) by default. We harden by dropping ALL capabilities,
+# disabling privilege escalation, applying the RuntimeDefault seccomp profile and
+# forcing non-root (all configurable).
+#
+# CRITICAL (Kubernetes schema): container-level fields (runAsNonRoot,
+# allowPrivilegeEscalation, readOnlyRootFilesystem, capabilities,
+# seccompProfile) MUST be rendered under the CONTAINER's securityContext, NOT the
+# pod's spec.securityContext. Putting them at pod level is rejected by the API
+# server (unknown field). The previous single flat `securityContext:` map was
+# rendered at pod level and caused exactly that schema rejection. Only pod-level
+# fields (e.g. seccompProfile for the whole pod) belong there; we keep the hardened
+# settings on the container instead.
 #
 # LEARNING-TIER (replicas: 1, no Keycloak HA). Annual OCI Always-Free resources are
 # finite and shared with K3s + 4 apps + PostgreSQL + Redis + Kafka, so Keycloak
@@ -639,12 +656,17 @@ keycloak:
     tag: "26.0"                     # pinned, matching LOCAL docker-compose keycloak:26.0
     pullPolicy: IfNotPresent
   securityContext:
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: false
-    capabilities:
-      drop: ["ALL"]
-    seccompProfile:
-      type: RuntimeDefault
+    # Container-level hardening (valid keys only: runAsNonRoot,
+    # allowPrivilegeEscalation, readOnlyRootFilesystem, capabilities,
+    # seccompProfile). Rendered under the keycloak container securityContext.
+    container:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
   resources:
     requests: { cpu: 100m, memory: 512Mi }
     limits: { cpu: 500m, memory: 1024Mi }
