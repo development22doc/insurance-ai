@@ -34,14 +34,12 @@ public class CustomerSecurityConfig {
         log.info ("Initializing Customer Service Security Filter Chain.");
 
         httpSecurity
-                // Stateless JWT-bearer resource server behind the API gateway:
-                // this service has no cookie/session-based authentication and
-                // is not browser-reachable externally. CSRF relies on ambient
-                // browser credentials (cookies/sessions) which this service
-                // does not use. Consistent with claims-service, agent-service,
-                // config-service, discovery-service, and the API gateway,
-                // CSRF is explicitly disabled.
-                .csrf(csrf -> csrf.disable())
+                // Stateless JWT-bearer resource server behind the API gateway: this
+                // service has no cookie/session-based authentication and is not
+                // browser-reachable externally, so CSRF (which relies on ambient
+                // browser credentials) provides no protection here. Consistent with
+                // claims-service and the gateway, CSRF is disabled.
+                .csrf (AbstractHttpConfigurer :: disable)
                 .cors (cors -> cors.configurationSource (corsConfigurationSource))
                 .headers (headers -> {
                         headers.frameOptions (frameOptions -> frameOptions.deny ());
