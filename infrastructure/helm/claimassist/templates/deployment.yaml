@@ -228,7 +228,12 @@ spec:
           resources:
             {{- toYaml $svc.resources | nindent 12 }}
           securityContext:
+            # Numeric UID/GID matching the runtime image user (`USER 1000:1000` in
+            # the Dockerfiles). runAsNonRoot then verifies a non-root identity
+            # without having to resolve a non-numeric image USER name.
             runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
             capabilities:
               drop:
