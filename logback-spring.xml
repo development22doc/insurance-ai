@@ -4,7 +4,7 @@
 
     <!-- Use Spring Boot's property resolution for spring.application.name -->
     <!-- This allows Logback to access Spring properties during initialization -->
-    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="${APP_NAME:-application}" />
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="application" />
 
     <!-- Console appender with JSON structured logging -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
@@ -43,54 +43,14 @@
         </encoder>
     </appender>
 
-    <!-- Rolling file appender for centralized logging collection -->
-    <!-- Directories are created automatically by Logback -->
-    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>logs/${APP_NAME}/${APP_NAME}.log</file>
-        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
-            <providers>
-                <timestamp>
-                    <fieldName>timestamp</fieldName>
-                    <timeZone>UTC</timeZone>
-                </timestamp>
-                <version>
-                    <fieldName>version</fieldName>
-                </version>
-                <loggerName>
-                    <fieldName>logger</fieldName>
-                </loggerName>
-                <threadName>
-                    <fieldName>thread</fieldName>
-                </threadName>
-                <logLevel>
-                    <fieldName>level</fieldName>
-                </logLevel>
-                <message>
-                    <fieldName>message</fieldName>
-                </message>
-                <mdc>
-                    <includeMdcKeyName>correlationId</includeMdcKeyName>
-                    <includeMdcKeyName>requestId</includeMdcKeyName>
-                    <includeMdcKeyName>traceId</includeMdcKeyName>
-                    <includeMdcKeyName>spanId</includeMdcKeyName>
-                </mdc>
-                <stackTrace>
-                    <fieldName>exception</fieldName>
-                </stackTrace>
-            </providers>
-        </encoder>
-        <!-- Rolling policy: rotate daily or when file reaches 100MB -->
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>logs/${APP_NAME}/${APP_NAME}-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
-            <maxFileSize>100MB</maxFileSize>
-            <maxHistory>30</maxHistory>
-            <totalSizeCap>5GB</totalSizeCap>
-        </rollingPolicy>
-    </appender>
+    <!-- Kubernetes-native structured logging: emit to stdout/stderr ONLY.
+         Local log-file writing is intentionally NOT configured so the pods never
+         depend on a writable filesystem at /app/logs (an unwritable log dir
+         aborts Logback before Tomcat binds and would CrashLoopBackOff the pod).
+         The JSON encoder on STDOUT is what the cluster/Prometheus/collectors ingest. -->
 
     <root level="INFO">
         <appender-ref ref="STDOUT" />
-        <appender-ref ref="FILE" />
     </root>
 </configuration>
 

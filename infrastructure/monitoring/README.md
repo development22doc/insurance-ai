@@ -89,11 +89,9 @@ Complete production-grade observability implementation for the ClaimAssist micro
 - **Location**: `common-lib/src/main/resources/logback-spring.xml`
 - **Features**:
   - JSON structured logging (logstash-logback-encoder)
-  - Console output (real-time debugging)
-  - File output with rolling policy
-    - Location: `logs/<service-name>.log`
-    - Rotation: Daily or 100MB
-    - Retention: 30 days max / 5GB total
+  - Console output to **stdout/stderr only** (Kubernetes-native; no local log file is
+    written, so pods never depend on a writable `/app/logs` filesystem). The JSON
+    stream is what the cluster ships via Promtail → Loki → Grafana.
   
 ### Log Format
 Structured JSON with fields:
