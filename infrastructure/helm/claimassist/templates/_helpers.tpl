@@ -68,7 +68,11 @@ Context:
        keep their already-deployed image and are not rolled out. */ -}}
 {{- $tag := $svc.imageTag | default $root.Values.image.tag -}}
 {{- if $registry -}}
-{{- printf "%s/%s/%s:%s" $registry $root.Values.image.repository $img $tag -}}
+{{- /* Registry set (Kubernetes deploy): <ns>/<service>:<tag>.
+       The verified Docker Hub namespace claimassistdev owns the per-service
+       repositories directly (e.g. claimassistdev/api-gateway). The old
+       intermediate `claimassist` repository segment is intentionally dropped. */ -}}
+{{- printf "%s/%s:%s" $registry $img $tag -}}
 {{- else -}}
 {{- printf "%s/%s:%s" $root.Values.image.repository $img $tag -}}
 {{- end -}}

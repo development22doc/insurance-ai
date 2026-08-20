@@ -56,8 +56,11 @@ global:
 # Actual Docker Hub coordinates are configured at deploy time; never hardcoded here.
 # -----------------------------------------------------------------------------
 image:
-  registry: ""              # e.g. <username>.docker.io (set later)
-  repository: claimassist
+  # Verified Docker Hub namespace (owner of the per-service repositories
+  # claimassistdev/api-gateway|customer-service|claims-service|agent-service).
+  # The CD workflow sets `image.registry=claimassistdev` at deploy time.
+  registry: ""              # set to claimassistdev at deploy time (see cd.yml)
+  repository: claimassist     # local-only fallback when registry is empty
   tag: "1.0.0"              # matches the Task 6A-3 built images; overridden per env
   pullPolicy: IfNotPresent
   pullSecret: ""            # named docker-registry imagePullSecret (created on the

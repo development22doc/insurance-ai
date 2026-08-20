@@ -69,7 +69,7 @@ jobs:
       contents: read
 
     env:
-      DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_REGISTRY: claimassistdev
 
     steps:
     - name: Enforce DEV-only rollback target and valid service
