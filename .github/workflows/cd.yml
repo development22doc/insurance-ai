@@ -26,6 +26,13 @@
 #   Deployments, so a later Helm operation can never "revert" a kubectl side-effect
 #   (there are none).
 #
+# * CI -> CD ordering (no race):
+#   Automatic CD is gated on the COMPLETED post-merge CI run via `workflow_run`
+#   (see `on:` below), so CD can never start before CI finishes on the same commit.
+#   CD then deploys the exact head_sha that CI validated (resolve-targets outputs
+#   `target_sha`). The old `push:[dev]` auto-trigger was removed to avoid running
+#   CI and CD concurrently on the same event.
+#
 # * IMAGE -> CD ordering (no race):
 #   Image building lives in the reusable work flow .github/workflows/docker-build.yaml
 #   and is invoked by this workflow (job `build-images`). Automatic deploy jobs
@@ -70,8 +77,14 @@
 name: CD
 
 on:
-  # Automatic deployment on the repository's dev branch (change-detected).
-  push:
+  # Automatic CD keys off the COMPLETED post-merge CI run on dev (NOT the push
+  # itself), so CD can never start before CI finishes. workflow_run fires after
+  # CI completes; CD deploys exactly the head_sha that CI validated. PR-CI runs
+  # are excluded below via branches:[dev] plus a job-level head_branch == 'dev'
+  # and event == 'push' guard in resolve-targets.
+  workflow_run:
+    workflows: [ "CI" ]
+    types: [ completed ]
     branches: [ dev ]
   # Manual deployment: pick environment + service (independent, no "all-or-nothing").
   workflow_dispatch:
@@ -115,14 +128,17 @@ on:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Job 1 - Change detection (automatic push only)
+  # Job 1 - Change detection (automatic CI-triggered runs only)
   # ---------------------------------------------------------------------------
   detect-changes:
     name: Detect Changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    if: github.event_name == 'push'
+    # Only a completed CI run triggers CD. On a failed CI run there is nothing to
+    # deploy, so change detection is skipped (deployment is refused downstream in
+    # resolve-targets). workflow_dispatch (manual) never runs change detection.
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     outputs:
       api-gateway: ${{ steps.filter.outputs.api-gateway }}
       customer-service: ${{ steps.filter.outputs.customer-service }}
@@ -130,13 +146,30 @@ jobs:
       agent-service: ${{ steps.filter.outputs.agent-service }}
       infra: ${{ steps.filter.outputs.infra }}
     steps:
-      - name: Checkout code
+      - name: Checkout code at CI head SHA
         uses: actions/checkout@v4
+        with:
+          # Diff exactly the commit CI validated, not the default-branch head.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Resolve diff base
+        id: base
+        run: |
+          # GitHub expressions cannot express HEAD~1, so compute it in the shell.
+          # First parent of the CI-validated commit = the prior dev tip = exactly
+          # the base for what the merged PR (or push) introduced.
+          BASE_REF="$(git rev-parse "$GITHUB_SHA"^ 2>/dev/null || echo 'HEAD')"
+          echo "base=$BASE_REF" >> "$GITHUB_OUTPUT"
+          echo "Resolved diff base: $BASE_REF"
 
       - name: Detect changed services
         id: filter
         uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad
         with:
+          # Under workflow_run there is no implicit base, so provide it explicitly.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          base: ${{ steps.base.outputs.base }}
           # Service filters fan out shared code:
           #  - common-lib/** and pom.xml -> all four (all depend on them)
           filters: |
@@ -169,12 +202,13 @@ jobs:
     permissions:
       contents: read
     needs: detect-changes
-    # detect-changes is SKIPPED on workflow_dispatch (its `if` is push-only). A
-    # job's implicit success() would otherwise treat that skip as a failure and
-    # skip this resolver, breaking manual deploys. Including a status function
-    # (`!cancelled()`) plus an explicit result check makes this run for BOTH
-    # triggers (detect-changes succeeded on push, or skipped on dispatch) while
-    # still being skipped if change detection genuinely failed.
+    # detect-changes is SKIPPED on workflow_dispatch (its `if` requires a
+    # workflow_run success) AND on failed CI runs. A job's implicit success()
+    # would otherwise treat that skip as a failure and skip this resolver,
+    # breaking manual deploys. Including a status function (`!cancelled()`) plus
+    # an explicit result check makes this run for BOTH triggers (detect-changes
+    # succeeded on a green CI run, or skipped on dispatch / failed CI) while still
+    # being skipped if change detection genuinely failed.
     if: |
       !cancelled() &&
       (needs.detect-changes.result == 'success' || needs.detect-changes.result == 'skipped')
@@ -187,6 +221,7 @@ jobs:
       build_only: ${{ steps.resolve.outputs.build_only }}
       force_deploy: ${{ steps.resolve.outputs.force_deploy }}
       run_deploy: ${{ steps.resolve.outputs.run_deploy }}
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
     steps:
       - name: Compute deployment target
         id: resolve
@@ -194,7 +229,7 @@ jobs:
           DISPATCH_ACTION: ${{ github.event.inputs.action }}
           DISPATCH_ENV: ${{ github.event.inputs.environment }}
           DISPATCH_SERVICE: ${{ github.event.inputs.service }}
-          FORCE_DEPLOY: ${{ github.event.inputs.force_deploy }}
+          FORCE_DEPLOY: ${{ inputs.force_deploy }}
           CH_API: ${{ needs.detect-changes.outputs.api-gateway }}
           CH_CUSTOMER: ${{ needs.detect-changes.outputs.customer-service }}
           CH_CLAIMS: ${{ needs.detect-changes.outputs.claims-service }}
@@ -209,9 +244,18 @@ jobs:
             # Force deploy = full-environment bootstrap (build + deploy ALL four
             # services + install infra) in a single run. Only valid for DEV. It
             # intentionally bypasses change detection and the pre-built-image check.
-            if [ "$ACTION" = "deploy" ] && [ "${FORCE_DEPLOY:-false}" = "true" ]; then
-              if [ "$ENV" != "dev" ]; then
-                echo "::error::force_deploy is only supported for environment=dev."
+            #
+            # Robust boolean detection: FORCE_DEPLOY is bound to the TYPED
+            # `inputs.force_deploy` context (stringifies to exactly "true"/"false"),
+            # NOT the raw `github.event.inputs.force_deploy` string, so an enabled
+            # checkbox can never be misrepresented and silently dropped.
+            FORCE="${FORCE_DEPLOY:-false}"
+            if [ "$FORCE" = "true" ]; then
+              # An enabled force_deploy must NEVER silently fall through to a normal
+              # manual deploy: fail loudly unless it is exactly the DEV bootstrap it
+              # is meant for (action=deploy, environment=dev).
+              if [ "$ACTION" != "deploy" ] || [ "$ENV" != "dev" ]; then
+                echo "::error::force_deploy=true requires action=deploy and environment=dev."
                 exit 1
               fi
               {
@@ -222,6 +266,7 @@ jobs:
                 echo "run_build=true"
                 echo "run_infra_sync=true"
                 echo "force_deploy=true"
+                echo "target_sha=${{ github.sha }}"
                 echo 'app_services=["api-gateway","customer-service","claims-service","agent-service"]'
               } >> "$GITHUB_OUTPUT"
               exit 0
@@ -230,6 +275,7 @@ jobs:
               echo "environment=$ENV"
               echo "run_infra_sync=false"
               echo "force_deploy=false"
+              echo "target_sha=${{ github.sha }}"
             } >> "$GITHUB_OUTPUT"
             if [ "$ACTION" = "build-only" ]; then
               # Build & push immutable SHA images, then STOP. No deployment.
@@ -256,13 +302,35 @@ jobs:
             exit 0
           fi
 
-          # Automatic push -> DEV only (deploy path, unchanged behavior).
+          # Automatic CI-triggered run -> DEV only.
+          # This is a `workflow_run` event. Only a SUCCESS post-merge (push) CI run
+          # on dev may deploy; anything else (failed CI, PR-CI, other branch) is
+          # refused here and degrades to a no-op run with no build/deploy.
+          if [ "${{ github.event.workflow_run.conclusion }}" != "success" ] || \
+             [ "${{ github.event.workflow_run.event }}" != "push" ] || \
+             [ "${{ github.event.workflow_run.head_branch }}" != "dev" ]; then
+            {
+              echo "environment=dev"
+              echo "trigger_kind=auto"
+              echo "build_only=false"
+              echo "force_deploy=false"
+              echo "run_deploy=false"
+              echo "run_build=false"
+              echo "run_infra_sync=false"
+              echo "target_sha=${{ github.event.workflow_run.head_sha }}"
+              echo 'app_services=[]'
+            } >> "$GITHUB_OUTPUT"
+            echo "Skipping deployment: CI not a green post-merge run on dev."
+            exit 0
+          fi
+
           {
             echo "environment=dev"
             echo "trigger_kind=auto"
             echo "build_only=false"
             echo "force_deploy=false"
             echo "run_deploy=true"
+            echo "target_sha=${{ github.event.workflow_run.head_sha }}"
           } >> "$GITHUB_OUTPUT"
           if [ "$CH_INFRA" = "true" ]; then
             echo "run_infra_sync=true" >> "$GITHUB_OUTPUT"
@@ -298,7 +366,10 @@ jobs:
     uses: ./.github/workflows/docker-build.yaml
     with:
       services: ${{ needs.resolve-targets.outputs.app_services }}
-      tag: ${{ github.sha }}
+      # Build exactly the commit CI validated (target_sha), not the default-branch
+      # head. On auto runs this is workflow_run.head_sha; on manual it is github.sha.
+      ref: ${{ needs.resolve-targets.outputs.target_sha }}
+      tag: ${{ needs.resolve-targets.outputs.target_sha }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------
@@ -333,9 +404,15 @@ jobs:
       NAMESPACE: claimassist-dev
       RELEASE: claimassist-dev
       DOCKER_REGISTRY: claimassistdev
+      # The exact commit being deployed (workflow_run.head_sha on auto runs,
+      # github.sha on manual/force dispatch). GITHUB_SHA is unreliable under
+      # workflow_run, so the SHA always comes from resolve-targets.
+      TARGET_SHA: ${{ needs.resolve-targets.outputs.target_sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-targets.outputs.target_sha }}
       - name: Set up kubectl
         uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8
         with:
@@ -383,14 +460,14 @@ jobs:
           # all four application Deployments) in ONE helm upgrade, pinning EVERY
           # service to the immutable SHA so no Deployment falls back to the
           # default image.tag (1.0.0). Runs only after build-images has pushed
-          # all four images at $GITHUB_SHA.
+          # all four images at $TARGET_SHA (== CI-validated head_sha on auto).
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
-            --set services.api-gateway.imageTag="$GITHUB_SHA" \
-            --set services.customer-service.imageTag="$GITHUB_SHA" \
-            --set services.claims-service.imageTag="$GITHUB_SHA" \
-            --set services.agent-service.imageTag="$GITHUB_SHA" \
+            --set services.api-gateway.imageTag="$TARGET_SHA" \
+            --set services.customer-service.imageTag="$TARGET_SHA" \
+            --set services.claims-service.imageTag="$TARGET_SHA" \
+            --set services.agent-service.imageTag="$TARGET_SHA" \
             --wait \
             --timeout 10m
       - name: Verify rollout
@@ -441,6 +518,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-targets.outputs.target_sha }}
       - name: Set up kubectl
         uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8
         with:
@@ -456,11 +535,11 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Verify immutable image exists
         env:
-          IMAGE: claimassistdev/${{ matrix.service }}:${{ github.sha }}
+          IMAGE: claimassistdev/${{ matrix.service }}:${{ needs.resolve-targets.outputs.target_sha }}
         run: |
           set -euo pipefail
           docker manifest inspect "$IMAGE" > /dev/null
-          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ github.sha }}"
+          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ needs.resolve-targets.outputs.target_sha }}"
       - name: Configure kubectl (DEV credentials only)
         env:
           KUBE_CONFIG: ${{ secrets.DEV_KUBE_CONFIG }}
@@ -481,7 +560,7 @@ jobs:
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
-            --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
+            --set "services.${{ matrix.service }}.imageTag=${{ needs.resolve-targets.outputs.target_sha }}" \
             --wait \
             --timeout 10m
       - name: Wait for rollout to complete
@@ -723,6 +802,7 @@ jobs:
           echo "Environment        : ${{ needs.resolve-targets.outputs.environment }}"
           echo "Services involved  : ${{ needs.resolve-targets.outputs.app_services }}"
           echo "Trigger            : ${{ needs.resolve-targets.outputs.trigger_kind }} (${{ github.event_name }})"
+          echo "Target SHA         : ${{ needs.resolve-targets.outputs.target_sha }}"
           echo "Build ran          : ${{ needs.resolve-targets.outputs.run_build }}"
           echo "Deploy ran         : ${{ needs.resolve-targets.outputs.run_deploy }}"
           echo "Infra sync ran     : ${{ needs.resolve-targets.outputs.run_infra_sync }}"
