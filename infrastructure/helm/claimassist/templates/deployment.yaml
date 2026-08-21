@@ -114,6 +114,12 @@ spec:
             # Setting SPRING_CONFIG_IMPORT="" here clears the import before any YAML is read.
             - name: SPRING_CONFIG_IMPORT
               value: ""
+            # SPRING_CLOUD_CONFIG_ENABLED=false disables Spring Cloud Config Client entirely.
+            # SPRING_CONFIG_IMPORT="" alone is NOT sufficient in Spring Boot 3.5.16 to prevent
+            # ConfigServerConfigDataLoader from attempting to connect to localhost:8888.
+            # This env var is Kubernetes-only; local development (profile 'local') is unchanged.
+            - name: SPRING_CLOUD_CONFIG_ENABLED
+              value: "false"
             {{- if $svc.k8sConfig }}
             - name: SPRING_CONFIG_ADDITIONAL_LOCATIONS
               value: "file:/etc/claimassist/config/"
