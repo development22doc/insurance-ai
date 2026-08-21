@@ -106,6 +106,14 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "k8s"
+            # SPRING_CONFIG_IMPORT must be set as an env var (NOT just in profile-specific
+            # application-k8s.yaml) because Spring Boot processes spring.config.import
+            # during the bootstrap phase, BEFORE profile-specific config is loaded.
+            # The packaged application.yaml has spring.config.import: configserver:... which
+            # would cause the Config Client to attempt localhost:8888 connection at startup.
+            # Setting SPRING_CONFIG_IMPORT="" here clears the import before any YAML is read.
+            - name: SPRING_CONFIG_IMPORT
+              value: ""
             {{- if $svc.k8sConfig }}
             - name: SPRING_CONFIG_ADDITIONAL_LOCATIONS
               value: "file:/etc/claimassist/config/"
