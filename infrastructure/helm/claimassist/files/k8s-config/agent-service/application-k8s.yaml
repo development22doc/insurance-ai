@@ -7,6 +7,12 @@
 spring:
   config:
     import: ""
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI}
   cloud:
     discovery:
       enabled: false

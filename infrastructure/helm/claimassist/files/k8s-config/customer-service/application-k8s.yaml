@@ -6,6 +6,12 @@ spring:
     # Empty override removes the packaged `optional:configserver:` import so no
     # Config Server dependency exists at runtime.
     import: ""
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI}
   cloud:
     discovery:
       enabled: false

@@ -117,7 +117,7 @@ spec:
           {{- with .Values.kafka.probes.startup }}
           startupProbe:
             exec:
-              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "claimassist-kafka:9092"]
             initialDelaySeconds: {{ .initialDelaySeconds }}
             periodSeconds: {{ .periodSeconds }}
             failureThreshold: {{ .failureThreshold }}
@@ -126,7 +126,7 @@ spec:
           {{- with .Values.kafka.probes.readiness }}
           readinessProbe:
             exec:
-              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "claimassist-kafka:9092"]
             initialDelaySeconds: {{ .initialDelaySeconds }}
             periodSeconds: {{ .periodSeconds }}
             failureThreshold: {{ .failureThreshold }}
@@ -135,7 +135,7 @@ spec:
           {{- with .Values.kafka.probes.liveness }}
           livenessProbe:
             exec:
-              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "claimassist-kafka:9092"]
             periodSeconds: {{ .periodSeconds }}
             failureThreshold: {{ .failureThreshold }}
             timeoutSeconds: {{ .timeoutSeconds }}
