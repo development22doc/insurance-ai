@@ -137,20 +137,33 @@ function Establish-Tunnel {
     $forwardSpec = "127.0.0.1:${LocalPort}:${RemoteHost}:${RemotePort}"
     $sshArgs = "-i `"$SshKey`" -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -N -L $forwardSpec $OciUser@$OciHost"
 
-    # Run under cmd.exe so we can redirect stderr to a logfile (PowerShell Start-Process redirection support
-    # may vary across PS versions). The cmd string will redirect stderr to the log path.
-    $cmdString = "$sshArgs 2> `"$logPath`""
+    # Prepare per-tunnel stdout/stderr paths
+    $outPath = Join-Path $logDir ("ssh-tunnel-$($Name)-$LocalPort.out")
+    $errPath = $logPath
+
+    # Build ssh argument array to avoid any shell parsing/quoting issues
+    $sshArgsArray = @(
+        "-i", $SshKey,
+        "-o", "IdentitiesOnly=yes",
+        "-o", "ExitOnForwardFailure=yes",
+        "-o", "ServerAliveInterval=30",
+        "-o", "ServerAliveCountMax=3",
+        "-N",
+        "-L", $forwardSpec,
+        "$OciUser@$OciHost"
+    )
 
     try {
-        $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $cmdString -WindowStyle Hidden -PassThru
+        # Start ssh.exe directly and redirect stdout/stderr to log files. This avoids cmd.exe argument parsing issues
+        $proc = Start-Process -FilePath "ssh.exe" -ArgumentList $sshArgsArray -WindowStyle Hidden -PassThru -RedirectStandardOutput $outPath -RedirectStandardError $errPath
         Start-Sleep -Seconds 2
 
         # Check whether the local port is listening
         if (Test-PortInUse $LocalPort) {
-            Write-Host "[$Name] [OK] Tunnel established (pid=$($proc.Id)), log=$logPath" -ForegroundColor Green
+            Write-Host "[$Name] [OK] Tunnel established (pid=$($proc.Id)), out=$outPath err=$errPath" -ForegroundColor Green
             return $true
         } else {
-            Write-Host "[$Name] [ERROR] Failed to establish tunnel; see $logPath" -ForegroundColor Red
+            Write-Host "[$Name] [ERROR] Failed to establish tunnel; see $errPath" -ForegroundColor Red
             return $false
         }
     } catch {
