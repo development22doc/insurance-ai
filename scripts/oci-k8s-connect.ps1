@@ -133,7 +133,9 @@ function Establish-Tunnel {
     $logPath = Join-Path $logDir ("ssh-tunnel-$($Name)-$LocalPort.log")
 
     # Use ExitOnForwardFailure and keepalive settings to ensure the tunnel fails fast on problems
-    $sshArgs = "-i `"$SshKey`" -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -N -L 127.0.0.1:$LocalPort:$RemoteHost:$RemotePort $OciUser@$OciHost"
+    # Build the forward specification separately to avoid PowerShell interpolation ambiguity (e.g. $LocalPort:)
+    $forwardSpec = "127.0.0.1:${LocalPort}:${RemoteHost}:${RemotePort}"
+    $sshArgs = "-i `"$SshKey`" -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -N -L $forwardSpec $OciUser@$OciHost"
 
     # Run under cmd.exe so we can redirect stderr to a logfile (PowerShell Start-Process redirection support
     # may vary across PS versions). The cmd string will redirect stderr to the log path.
