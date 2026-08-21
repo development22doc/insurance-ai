@@ -128,12 +128,16 @@ rbac:
 services:
   api-gateway:
     replicas: 1
+    k8sConfig: true
   customer-service:
     replicas: 1
+    k8sConfig: true
   claims-service:
     replicas: 1
+    k8sConfig: true
   agent-service:
     replicas: 1
+    k8sConfig: true
 
 # Task 6A-14B-3 + TASK 6A-14B-4B: HPA (DEV). Low-cost learning environment:
 # 1 baseline replica, bounded ceiling of 2. If a spike raises CPU above the 70%
