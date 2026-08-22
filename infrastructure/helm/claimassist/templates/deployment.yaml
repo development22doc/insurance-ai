@@ -1,5 +1,5 @@
 {{- range $name, $svc := .Values.services }}
-{{- $root := $ }}
+  {{- $root := $ }}
 ---
 # Deployment for {{ $name }}
 apiVersion: apps/v1
@@ -44,29 +44,29 @@ spec:
         prometheus.io/port: "{{ $svc.port }}"
     spec:
       serviceAccountName: {{ $name }}-sa
-      {{- /* Task 6A-3 / IMAGE PULL: every application Deployment must actually
-          consume the image pull credentials. The global image.pullSecret (created
-          out-of-band via `kubectl create secret docker-registry` for the Docker Hub
-          Registry) is wired in here so it is USED, not merely defined. Per-service
-          imagePullSecrets (values.services.<name>.imagePullSecrets) are merged on
-          top for any additional registries. */}}
-      {{- $pullSecrets := list }}
-      {{- if $root.Values.image.pullSecret }}
-      {{- $pullSecrets = append $pullSecrets $root.Values.image.pullSecret }}
-      {{- end }}
-      {{- range $s := $svc.imagePullSecrets }}
-      {{- $pullSecrets = append $pullSecrets $s }}
-      {{- end }}
-      {{- if $pullSecrets }}
+      {{/* Task 6A-3 / IMAGE PULL: every application Deployment must actually
+      consume the image pull credentials. The global image.pullSecret (created
+      out-of-band via `kubectl create secret docker-registry` for the Docker Hub
+      Registry) is wired in here so it is USED, not merely defined. Per-service
+      imagePullSecrets (values.services.<name>.imagePullSecrets) are merged on
+      top for any additional registries. */}}
+      {{ $pullSecrets := list }}
+      {{ if $root.Values.image.pullSecret }}
+      {{ $pullSecrets = append $pullSecrets $root.Values.image.pullSecret }}
+      {{ end }}
+      {{ range $s := $svc.imagePullSecrets }}
+      {{ $pullSecrets = append $pullSecrets $s }}
+      {{ end }}
+      {{ if $pullSecrets }}
       imagePullSecrets:
-        {{- range $s := $pullSecrets | uniq }}
+        {{ range $s := $pullSecrets | uniq }}
         - name: {{ $s }}
-        {{- end }}
-      {{- end }}
+        {{ end }}
+      {{ end }}
       securityContext:
         runAsNonRoot: true
       terminationGracePeriodSeconds: {{ $root.Values.terminationGracePeriodSeconds | default 60 }}
-      {{- if $root.Values.global.ha.scheduling.enabled }}
+      {{ if $root.Values.global.ha.scheduling.enabled }}
       # Task 6A-12 - STATELESS APPLICATION-LEVEL HA SCHEDULING (soft / preferred).
       # topologySpreadConstraints spreads replicas evenly across nodes when more
       # than one exists; whenUnsatisfiable: ScheduleAnyway keeps the current
@@ -94,7 +94,7 @@ spec:
                     app.kubernetes.io/name: {{ include "claimassist.name" $root | quote }}
                     app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
                     app.kubernetes.io/component: {{ $name }}
-      {{- end }}
+      {{ end }}
       containers:
         - name: {{ $name }}
           image: {{ include "claimassist.image" (dict "root" $root "name" $name "svc" $svc) | quote }}
@@ -113,16 +113,25 @@ spec:
             # would cause the Config Client to attempt localhost:8888 connection at startup.
             # Setting SPRING_CONFIG_IMPORT="" here clears the import before any YAML is read.
             - name: SPRING_CONFIG_IMPORT
-              value: ""
-            {{- if $svc.k8sConfig }}
+              value: {{ "" | quote }}
+            - name: SPRING_CLOUD_CONFIG_ENABLED
+              value: {{ "false" | quote }}
+            {{ if $svc.k8sConfig }}
             - name: SPRING_CONFIG_ADDITIONAL_LOCATIONS
               value: "file:/etc/claimassist/config/"
-            {{- end }}
-            {{- range $e := $svc.env }}
+            {{ end }}
+            {{ range $e := $svc.env }}
+            {{/* Avoid rendering duplicate or null-valued SPRING_CONFIG_IMPORT entries that
+            may be supplied inadvertently via values files. Ensure every env value is
+            rendered as a quoted string so an explicit empty string becomes `value: ""`
+            in the final manifest (prevents Kubernetes from creating an env with only
+            a name and no value). */}}
+            {{ if ne $e.name "SPRING_CONFIG_IMPORT" }}
             - name: {{ $e.name }}
-              value: {{ $e.value | quote }}
-            {{- end }}
-            {{- if and $svc.database $root.Values.postgresql.enabled }}
+              value: {{ default "" $e.value | quote }}
+            {{ end }}
+            {{ end }}
+            {{ if and $svc.database $root.Values.postgresql.enabled }}
             # Task 6A-7: PostgreSQL wiring for this service (uses the K8s Service
             # DNS, never localhost). Username/password come from the Secret;
             # Flyway is DISABLED at app startup (migration is the separate Job);
@@ -150,8 +159,8 @@ spec:
               value: "false"
             - name: SPRING_JPA_HIBERNATE_DDL_AUTO
               value: "none"
-            {{- end }}
-            {{- if and $svc.redis $root.Values.redis.enabled }}
+            {{ end }}
+            {{ if and $svc.redis $root.Values.redis.enabled }}
             # Task 6A-8: Redis wiring for this service. Uses the K8s Service DNS
             # (claimassist-redis:6379), never localhost. No password env is set:
             # Redis AUTH is intentionally NOT enabled (LOCAL uses no password, and
@@ -160,16 +169,16 @@ spec:
               value: {{ $root.Values.redis.serviceName }}
             - name: SPRING_DATA_REDIS_PORT
               value: {{ $root.Values.redis.port | quote }}
-            {{- end }}
-            {{- if and $svc.kafka $root.Values.kafka.enabled }}
+            {{ end }}
+            {{ if and $svc.kafka $root.Values.kafka.enabled }}
             # Task 6A-9: Kafka wiring for this service. Uses the K8s Service DNS
             # (claimassist-kafka:9092), never localhost / docker-compose service
             # names. Single property override feeds OutboxKafkaConfig's outbox
             # producer + all outbox consumers (spring.kafka.bootstrap-servers).
             - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
               value: "{{ $root.Values.kafka.serviceName }}:{{ $root.Values.kafka.internalPort }}"
-            {{- end }}
-            {{- if and (eq $name "api-gateway") $root.Values.keycloak.enabled }}
+            {{ end }}
+            {{ if and (eq $name "api-gateway") $root.Values.keycloak.enabled }}
             # Task 6A-10: Keycloak wiring for api-gateway (reactive resource server).
             # The gateway validates JWTs against the internal Keycloak JWKS via
             # spring.security.oauth2.resourceserver.jwt.jwk-set-uri (the code reads
@@ -179,10 +188,10 @@ spec:
               value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}"
             - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
               value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/certs"
-            {{- end }}
-            {{- if and (ne $name "api-gateway") $root.Values.keycloak.enabled }}
+            {{ end }}
+            {{ if and (ne $name "api-gateway") $root.Values.keycloak.enabled }}
             # Task 6A-10: Keycloak wiring for the servlet resource services.
-            # sprin.security.oauth2.resourceserver.jwt issuer + JWKS are discovered
+            # spring.security.oauth2.resourceserver.jwt issuer + JWKS are discovered
             # from KEYCLOAK_ISSUER_URI/KEYCLOAK_JWKS_URI (these exact env placeholders
             # exist in the packaged application YAML and config-repo). The customer
             # public client (claimassist-customer-app) and the confidential admin
@@ -195,6 +204,10 @@ spec:
             - name: KEYCLOAK_ISSUER_URI
               value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}"
             - name: KEYCLOAK_JWKS_URI
+              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/certs"
+            # Explicit Spring Security resource-server JWKS URI. This is required
+            # for Claims/Customer/Agent services to auto-create JwtDecoder.
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
               value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/certs"
             - name: KEYCLOAK_TOKEN_URI
               value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/token"
@@ -214,27 +227,23 @@ spec:
                 secretKeyRef:
                   name: {{ $root.Values.keycloak.credentials.secretName }}
                   key: KEYCLOAK_ADMIN_CLIENT_SECRET
-            {{- end }}
-            {{- if and (eq $name "customer-service") $root.Values.keycloak.enabled }}
-            # Task 6A-10: customer-service also drives the Authorization Code + PKCE
-            # flow (OAuth2AuthorizationService) using the PUBLIC customer client and
-            # provisions users via the confidential admin client. The redirect URI
-            # must match one registered in the environment's realm import.
+            {{ end }}
+            {{ if and (eq $name "customer-service") $root.Values.keycloak.enabled }}
             - name: KEYCLOAK_CLIENT_ID
               value: {{ $root.Values.keycloak.client.customerClientId | quote }}
             - name: KEYCLOAK_TOKEN_CLIENT_ID
               value: {{ $root.Values.keycloak.client.customerClientId | quote }}
             - name: KEYCLOAK_REDIRECT_URI
               value: {{ first $root.Values.keycloak.client.redirectUris | quote }}
-            {{- end }}
-          {{- if $svc.k8sConfig }}
+            {{ end }}
+          {{ if $svc.k8sConfig }}
           volumeMounts:
             - name: config
               mountPath: /etc/claimassist/config
               readOnly: true
-          {{- end }}
+          {{ end }}
           resources:
-            {{- toYaml $svc.resources | nindent 12 }}
+            {{ toYaml $svc.resources | nindent 12 }}
           securityContext:
             # Numeric UID/GID matching the runtime image user (`USER 1000:1000` in
             # the Dockerfiles). runAsNonRoot then verifies a non-root identity
@@ -267,13 +276,17 @@ spec:
             periodSeconds: {{ $root.Values.probes.readiness.periodSeconds }}
             failureThreshold: {{ $root.Values.probes.readiness.failureThreshold }}
             timeoutSeconds: {{ $root.Values.probes.readiness.timeoutSeconds }}
-            {{- if $root.Values.probes.readiness.initialDelaySeconds }}
+            {{ if $root.Values.probes.readiness.initialDelaySeconds }}
             initialDelaySeconds: {{ $root.Values.probes.readiness.initialDelaySeconds }}
-            {{- end }}
+            {{ end }}
+          {{ if $svc.k8sConfig }}
+          {{/* volumeMounts are rendered inside the container above. */}}
+          {{ end }}
+      {{- /* Render volumes at spec.template.spec level (outside the container) */ -}}
       {{- if $svc.k8sConfig }}
       volumes:
         - name: config
           configMap:
             name: claimassist-{{ $name }}-config
       {{- end }}
-{{- end }}
+        {{ end }}

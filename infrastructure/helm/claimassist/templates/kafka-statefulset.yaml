@@ -117,7 +117,12 @@ spec:
           {{- with .Values.kafka.probes.startup }}
           startupProbe:
             exec:
-              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "claimassist-kafka:9092"]
+              # Prefer a simple local TCP probe using bash if available (avoids
+              # relying on Kafka metadata which may advertise the Service DNS
+              # before endpoints are ready). If /bin/bash is not present in the
+              # image, fall back to the existing kafka-broker-api-versions.sh
+              # probe so we do not assume additional binaries.
+              command: ["/bin/sh", "-c", "if [ -x /bin/bash ]; then /bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9092'; else /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092; fi"]
             initialDelaySeconds: {{ .initialDelaySeconds }}
             periodSeconds: {{ .periodSeconds }}
             failureThreshold: {{ .failureThreshold }}
@@ -126,7 +131,7 @@ spec:
           {{- with .Values.kafka.probes.readiness }}
           readinessProbe:
             exec:
-              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "claimassist-kafka:9092"]
+              command: ["/bin/sh", "-c", "if [ -x /bin/bash ]; then /bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9092'; else /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092; fi"]
             initialDelaySeconds: {{ .initialDelaySeconds }}
             periodSeconds: {{ .periodSeconds }}
             failureThreshold: {{ .failureThreshold }}
@@ -135,7 +140,7 @@ spec:
           {{- with .Values.kafka.probes.liveness }}
           livenessProbe:
             exec:
-              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "claimassist-kafka:9092"]
+              command: ["/bin/sh", "-c", "if [ -x /bin/bash ]; then /bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9092'; else /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092; fi"]
             periodSeconds: {{ .periodSeconds }}
             failureThreshold: {{ .failureThreshold }}
             timeoutSeconds: {{ .timeoutSeconds }}

@@ -17,4 +17,4 @@ spring:
   config:
     # Require Config Server import so gateway will not start with missing remote configuration.
     # Changed from `optional:configserver:` to `configserver:` to make the import mandatory.
-    import: configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}

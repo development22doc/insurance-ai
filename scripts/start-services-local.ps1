@@ -5,17 +5,41 @@
 # immediately) and its readiness is verified via port + /actuator/health with a
 # bounded timeout. Healthy services are reused (never restarted).
 #
+# Supports both LOCAL and LOCAL-K8S profiles:
+#   LOCAL:     services connect to docker-compose dependencies on Windows
+#   LOCAL-K8S: services connect to OCI K3s dependencies via SSH tunnels
+#
 # Usage:
-#   powershell -File ./scripts/start-services-local.ps1 [-ServiceList discovery,config,gateway,customer,claims,agent]
+#   powershell -File ./scripts/start-services-local.ps1 [-ServiceList discovery,config,gateway,customer,claims,agent] [-Profile local]
+#   powershell -File ./scripts/start-services-local.ps1 -Profile local-k8s
+#
+# Examples:
+#   .\scripts\start-services-local.ps1                     # LOCAL profile (default)
+#   .\scripts\start-services-local.ps1 -Profile local       # LOCAL profile (explicit)
+#   .\scripts\start-services-local.ps1 -Profile local-k8s   # LOCAL-K8S profile (requires tunnels)
 
 param(
-    [string]$ServiceList = "discovery,config,gateway,customer,claims,agent"
+    [string]$ServiceList = "discovery,config,gateway,customer,claims,agent",
+    [ValidateSet("local", "local-k8s")]
+    [string]$Profile = "local"
 )
 
 $ErrorActionPreference = "Continue"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $logDir = Join-Path $repoRoot "logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+
+Write-Host "Using profile: $Profile" -ForegroundColor Cyan
+
+# Validate LOCAL-K8S prerequisites if needed
+if ($Profile -eq "local-k8s") {
+    Write-Host "Checking LOCAL-K8S prerequisites..." -ForegroundColor Yellow
+    $connectScript = Join-Path $repoRoot "scripts\oci-k8s-status.ps1"
+    if (Test-Path $connectScript) {
+        # Run status check (non-fatal if some checks fail)
+        & $connectScript
+    }
+}
 
 function Test-PortListening {
     param([int]$port)
@@ -51,13 +75,16 @@ function Wait-Healthy {
 
 # Ordered service definitions. NOTE: the parameter is named $ServiceList (not
 # $Services) to avoid a case-insensitive variable collision with this array.
+#
+# profile is set dynamically based on the -Profile parameter, supporting both
+# LOCAL and LOCAL-K8S profiles.
 $services = @(
     @{ Name = "discovery"; Jar = "discovery-service/target/discovery-service-1.0.0.jar"; Port = 8761; Profile = "" },
     @{ Name = "config";    Jar = "config-service/target/config-service-1.0.0.jar";          Port = 8888; Profile = "native" },
-    @{ Name = "gateway";   Jar = "api-gateway/target/api-gateway-1.0.0.jar";                 Port = 8080; Profile = "local" },
-    @{ Name = "customer";  Jar = "customer-service/target/customer-service-1.0.0.jar";       Port = 8081; Profile = "local" },
-    @{ Name = "claims";    Jar = "claims-service/target/claims-service-1.0.0.jar";           Port = 8082; Profile = "local" },
-    @{ Name = "agent";     Jar = "agent-service/target/agent-service-1.0.0-exec.jar";        Port = 8083; Profile = "local" }
+    @{ Name = "gateway";   Jar = "api-gateway/target/api-gateway-1.0.0.jar";                 Port = 8080; Profile = $Profile },
+    @{ Name = "customer";  Jar = "customer-service/target/customer-service-1.0.0.jar";       Port = 8081; Profile = $Profile },
+    @{ Name = "claims";    Jar = "claims-service/target/claims-service-1.0.0.jar";           Port = 8082; Profile = $Profile },
+    @{ Name = "agent";     Jar = "agent-service/target/agent-service-1.0.0-exec.jar";        Port = 8083; Profile = $Profile }
 )
 
 $selected = @()
