@@ -26,43 +26,6 @@ param(
 
 $ErrorActionPreference = "Continue"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-
-# Load environment variables for LOCAL-K8S profile.
-if ($Profile -eq "local-k8s") {
-    $envFile = Join-Path $repoRoot ".env.local-k3s"
-
-    if (-not (Test-Path $envFile)) {
-        throw "LOCAL-K8S environment file not found: $envFile"
-    }
-
-    Write-Host "Loading LOCAL-K8S environment: $envFile" -ForegroundColor Cyan
-
-    Get-Content $envFile | ForEach-Object {
-        $line = $_.Trim()
-
-        if ([string]::IsNullOrWhiteSpace($line)) { return }
-        if ($line.StartsWith("#")) { return }
-
-        if ($line -match '^([^=]+)=(.*)$') {
-            $name = $matches[1].Trim()
-            $value = $matches[2].Trim()
-
-            # Remove optional surrounding quotes.
-            if ($value.Length -ge 2) {
-                if (($value.StartsWith('"') -and $value.EndsWith('"')) -or
-                    ($value.StartsWith("'") -and $value.EndsWith("'"))) {
-                    $value = $value.Substring(1, $value.Length - 2)
-                }
-            }
-
-            [Environment]::SetEnvironmentVariable($name, $value, "Process")
-        }
-    }
-
-    Write-Host "[ENV] POSTGRES_HOST=$env:POSTGRES_HOST" -ForegroundColor DarkGray
-    Write-Host "[ENV] POSTGRES_PORT=$env:POSTGRES_PORT" -ForegroundColor DarkGray
-    Write-Host "[ENV] POSTGRES_USER=$env:POSTGRES_USER" -ForegroundColor DarkGray
-}
 $logDir = Join-Path $repoRoot "logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -129,7 +92,7 @@ $services = @(
     @{ Name = "gateway";   Jar = "api-gateway/target/api-gateway-1.0.0.jar";                 Port = 8080; Profile = $Profile },
     @{ Name = "customer";  Jar = "customer-service/target/customer-service-1.0.0.jar";       Port = 8081; Profile = $Profile },
     @{ Name = "claims";    Jar = "claims-service/target/claims-service-1.0.0.jar";           Port = 8082; Profile = $Profile },
-    @{ Name = "agent";     Jar = "agent-service/target/agent-service-1.0.0.jar";        Port = 8083; Profile = $Profile }
+    @{ Name = "agent";     Jar = "agent-service/target/agent-service-1.0.0-exec.jar";        Port = 8083; Profile = $Profile }
 )
 
 $selected = @()
@@ -161,7 +124,7 @@ foreach ($svc in $services) {
     }
 
     $logFile = Join-Path $logDir "$($svc.Name).log"
-    $startArgs = @("-Duser.timezone=Asia/Kolkata", "-Dserver.port=$port", "-jar", $jar)
+    $startArgs = @("-Duser.timezone=Asia/Kolkata", "-jar", $jar)
     if ($svc.Profile) {
         $startArgs += "--spring.profiles.active=$($svc.Profile)"
     }

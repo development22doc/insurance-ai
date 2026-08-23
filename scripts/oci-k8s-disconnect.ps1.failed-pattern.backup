@@ -69,7 +69,6 @@ foreach ($port in $ports) {
 
 Write-Host ""
 Write-Host ""
-Write-Host ""
 Write-Host "[OCI-PORT-FORWARDS] Cleaning up ClaimAssist OCI port-forwards..." -ForegroundColor Cyan
 
 $cleanupOciHost = if ($env:OCI_HOST) { $env:OCI_HOST } else { "144.24.116.166" }
@@ -80,22 +79,7 @@ if (-not (Test-Path $cleanupSshKey)) {
     Write-Host "[WARN] SSH key not found: $cleanupSshKey" -ForegroundColor Yellow
 }
 else {
-
-    $remoteCleanup = 'for port in 15432 16379 9092 18080; do
-    pids=$(ss -lntp 2>/dev/null | grep ":${port} " | sed -n ''s/.*pid=\([0-9]*\).*/\1/p'' | sort -u)
-
-    for pid in $pids; do
-        if [ -n "$pid" ]; then
-            echo "[STOP] Port $port -> PID $pid"
-            kill "$pid" 2>/dev/null || true
-        fi
-    done
-done
-
-sleep 2
-
-echo "[VERIFY] Remaining dependency listeners:"
-ss -lntp 2>/dev/null | grep -E '':15432 |:16379 |:9092 |:18080 '' || true'
+    $remoteCleanup = 'for port in 15432 16379 9092 18080; do pids=$(ss -lntp 2>/dev/null | grep ":${port} " | sed -n ''s/.*pid=\([0-9]*\).*/\1/p'' | sort -u); for pid in $pids; do if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ]; then cmd=$(tr ''\0'' '' '' < /proc/$pid/cmdline 2>/dev/null || true); case "$cmd" in *kubectl*port-forward*claimassist-*) echo "[STOP] ClaimAssist port-forward PID=$pid PORT=$port"; kill "$pid" 2>/dev/null || true ;; *) echo "[SKIP] PID=$pid PORT=$port is not a ClaimAssist port-forward" ;; esac; fi; done; done; sleep 1; echo "[VERIFY] Remaining dependency listeners:"; ss -lntp 2>/dev/null | grep -E '':15432 |:16379 |:9092 |:18080 '' || true'
 
     & ssh.exe `
         -i $cleanupSshKey `

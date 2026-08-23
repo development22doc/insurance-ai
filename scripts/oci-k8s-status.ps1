@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
     Shows the status of OCI K3s developer tunnels and connectivity.
@@ -42,10 +42,10 @@ function Test-PortListening {
 
 # Function to test TCP connectivity
 function Test-TcpConnection {
-    param([string]$Host, [int]$Port)
+    param([string]$TargetHost, [int]$Port)
     try {
         $tcpClient = New-Object System.Net.Sockets.TcpClient
-        $result = $tcpClient.BeginConnect($Host, $Port, $null, $null)
+        $result = $tcpClient.BeginConnect($TargetHost, $Port, $null, $null)
         $connected = $result.AsyncWaitHandle.WaitOne(2000)
         if ($connected -and $tcpClient.Connected) {
             $tcpClient.Close()
@@ -63,10 +63,10 @@ foreach ($tunnel in $tunnels) {
     $listening = Test-PortListening $tunnel.LocalPort
 
     if ($listening) {
-        Write-Host "  ✓ $($tunnel.Name) listening on localhost:$($tunnel.LocalPort)" -ForegroundColor Green
+        Write-Host "  [OK] $($tunnel.Name) listening on localhost:$($tunnel.LocalPort)" -ForegroundColor Green
         $tunnelStatus += $true
     } else {
-        Write-Host "  ✗ $($tunnel.Name) NOT listening on localhost:$($tunnel.LocalPort)" -ForegroundColor Red
+        Write-Host "  [FAIL] $($tunnel.Name) NOT listening on localhost:$($tunnel.LocalPort)" -ForegroundColor Red
         $tunnelStatus += $false
     }
 }
@@ -80,9 +80,9 @@ foreach ($tunnel in $tunnels) {
     $connected = Test-TcpConnection "localhost" $tunnel.LocalPort
 
     if ($connected) {
-        Write-Host "  ✓ $($tunnel.Name) (localhost:$($tunnel.LocalPort)) responding" -ForegroundColor Green
+        Write-Host "  [OK] $($tunnel.Name) (localhost:$($tunnel.LocalPort)) responding" -ForegroundColor Green
     } else {
-        Write-Host "  ✗ $($tunnel.Name) (localhost:$($tunnel.LocalPort)) not responding" -ForegroundColor Yellow
+        Write-Host "  [FAIL] $($tunnel.Name) (localhost:$($tunnel.LocalPort)) not responding" -ForegroundColor Yellow
     }
 }
 
@@ -94,13 +94,13 @@ try {
     $resolved = [System.Net.Dns]::GetHostAddresses("claimassist-kafka")
     if ($resolved) {
         foreach ($ip in $resolved) {
-            Write-Host "  ✓ claimassist-kafka resolves to $ip" -ForegroundColor Green
+            Write-Host "  [OK] claimassist-kafka resolves to $ip" -ForegroundColor Green
         }
     } else {
-        Write-Host "  ✗ claimassist-kafka does not resolve" -ForegroundColor Yellow
+        Write-Host "  [FAIL] claimassist-kafka does not resolve" -ForegroundColor Yellow
     }
 } catch {
-    Write-Host "  ✗ Failed to resolve claimassist-kafka: $_" -ForegroundColor Yellow
+    Write-Host "  [FAIL] Failed to resolve claimassist-kafka: $_" -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -112,9 +112,9 @@ $kafkaEntry = "127.0.0.1 claimassist-kafka"
 $hasEntry = Get-Content $hostsPath -ErrorAction SilentlyContinue | Where-Object { $_ -eq $kafkaEntry }
 
 if ($hasEntry) {
-    Write-Host "  ✓ Kafka entry present in hosts file" -ForegroundColor Green
+    Write-Host "  [OK] Kafka entry present in hosts file" -ForegroundColor Green
 } else {
-    Write-Host "  ✗ Kafka entry NOT in hosts file" -ForegroundColor Red
+    Write-Host "  [FAIL] Kafka entry NOT in hosts file" -ForegroundColor Red
     Write-Host "    Run as Administrator or execute:" -ForegroundColor Yellow
     Write-Host "    .\scripts\oci-k8s-connect.ps1" -ForegroundColor Yellow
 }
@@ -127,9 +127,9 @@ $OciHost = $env:OCI_HOST
 $OciUser = $env:OCI_USER
 $SshKey = $env:SSH_KEY
 
-if (-not $OciHost) { $OciHost = "oci-vm" }
-if (-not $OciUser) { $OciUser = "ubuntu" }
-if (-not $SshKey) { $SshKey = "$env:USERPROFILE\.ssh\id_rsa" }
+if (-not $OciHost) { $OciHost = "144.24.116.166" }
+if (-not $OciUser) { $OciUser = "opc" }
+if (-not $SshKey) { $SshKey = "$env:USERPROFILE\.ssh\github-actions-oci-dev" }
 
 Write-Host "  Configured: $OciUser@$OciHost" -ForegroundColor Cyan
 
@@ -140,12 +140,12 @@ if (Test-Path $SshKey) {
     try {
         $result = ssh -i $SshKey -o ConnectTimeout=3 "$OciUser@$OciHost" "echo ok" 2>$null
         if ($result -eq "ok") {
-            Write-Host "  ✓ SSH connection successful" -ForegroundColor Green
+            Write-Host "  [OK] SSH connection successful" -ForegroundColor Green
         } else {
-            Write-Host "  ✗ SSH connection failed" -ForegroundColor Red
+            Write-Host "  [FAIL] SSH connection failed" -ForegroundColor Red
         }
     } catch {
-        Write-Host "  ✗ SSH connection error" -ForegroundColor Red
+        Write-Host "  [FAIL] SSH connection error" -ForegroundColor Red
     }
 } else {
     Write-Host "  SSH key: $SshKey (NOT FOUND)" -ForegroundColor Red
@@ -156,7 +156,7 @@ Write-Host ""
 # kubectl check
 Write-Host "[KUBECTL]" -ForegroundColor Cyan
 if (Get-Command kubectl -ErrorAction SilentlyContinue) {
-    Write-Host "  ✓ kubectl found in PATH" -ForegroundColor Green
+    Write-Host "  [OK] kubectl found in PATH" -ForegroundColor Green
 
     # Try to get K3s version
     try {
@@ -166,7 +166,7 @@ if (Get-Command kubectl -ErrorAction SilentlyContinue) {
         }
     } catch {}
 } else {
-    Write-Host "  ✗ kubectl NOT found in PATH" -ForegroundColor Red
+    Write-Host "  [FAIL] kubectl NOT found in PATH" -ForegroundColor Red
 }
 
 Write-Host ""
@@ -181,12 +181,12 @@ $listeningCount = ($tunnelStatus | Where-Object { $_ -eq $true } | Measure-Objec
 Write-Host "Tunnels: $listeningCount / $($tunnels.Count) listening"
 
 if ($listeningCount -eq $tunnels.Count) {
-    Write-Host "Status: ✓ READY - All tunnels established" -ForegroundColor Green
+    Write-Host "Status: [OK] READY - All tunnels established" -ForegroundColor Green
 } elseif ($listeningCount -gt 0) {
-    Write-Host "Status: ⚠ PARTIAL - Some tunnels missing" -ForegroundColor Yellow
+    Write-Host "Status: âš  PARTIAL - Some tunnels missing" -ForegroundColor Yellow
     Write-Host "Run: .\scripts\oci-k8s-connect.ps1" -ForegroundColor Yellow
 } else {
-    Write-Host "Status: ✗ OFFLINE - No tunnels established" -ForegroundColor Red
+    Write-Host "Status: [FAIL] OFFLINE - No tunnels established" -ForegroundColor Red
     Write-Host "Run: .\scripts\oci-k8s-connect.ps1" -ForegroundColor Yellow
 }
 
