@@ -449,8 +449,26 @@ jobs:
             --set image.registry="$DOCKER_REGISTRY" > /dev/null
       - name: Apply infrastructure change via Helm (DEV)
         if: needs.resolve-targets.outputs.force_deploy != 'true'
+        env:
+          DEV_POSTGRES_USER: ${{ secrets.DEV_POSTGRES_USER }}
+          DEV_POSTGRES_PASSWORD: ${{ secrets.DEV_POSTGRES_PASSWORD }}
+          DEV_KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.DEV_KEYCLOAK_ADMIN_PASSWORD }}
+          DEV_KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.DEV_KEYCLOAK_ADMIN_CLIENT_SECRET }}
+          DEV_KEYCLOAK_DB_USER: ${{ secrets.DEV_KEYCLOAK_DB_USER }}
+          DEV_KEYCLOAK_DB_PASSWORD: ${{ secrets.DEV_KEYCLOAK_DB_PASSWORD }}
         run: |
           set -euo pipefail
+          # Fail fast if any required DEV credential is missing. A normal infra sync
+          # can overwrite Kubernetes Secrets with empty values if these are not
+          # explicitly passed to the Helm upgrade.
+          for v in DEV_POSTGRES_USER DEV_POSTGRES_PASSWORD \
+                    DEV_KEYCLOAK_ADMIN_PASSWORD DEV_KEYCLOAK_ADMIN_CLIENT_SECRET \
+                    DEV_KEYCLOAK_DB_USER DEV_KEYCLOAK_DB_PASSWORD; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::$v (GitHub secret, dev environment) is required for DEV infrastructure sync."
+              exit 1
+            fi
+          done
           # No image.tag / imageTag overrides -> helm re-renders the whole chart
           # from saved release values, applying the changed chart/values, while
           # every application keeps its already-deployed SHA (no rollout).
@@ -461,6 +479,13 @@ jobs:
             --create-namespace \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
+            --set postgresql.credentials.postgresUsername="$DEV_POSTGRES_USER" \
+            --set postgresql.credentials.postgresPassword="$DEV_POSTGRES_PASSWORD" \
+            --set keycloak.credentials.adminUsername="admin" \
+            --set keycloak.credentials.adminPassword="$DEV_KEYCLOAK_ADMIN_PASSWORD" \
+            --set keycloak.credentials.adminClientSecret="$DEV_KEYCLOAK_ADMIN_CLIENT_SECRET" \
+            --set keycloak.postgresql.credentials.username="$DEV_KEYCLOAK_DB_USER" \
+            --set keycloak.postgresql.credentials.password="$DEV_KEYCLOAK_DB_PASSWORD" \
             --wait \
             --timeout 10m
       - name: Bootstrap DEV environment (full install, all services at SHA)
