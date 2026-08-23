@@ -13,8 +13,15 @@
 #   Keycloak:   localhost:18080 → claimassist-keycloak:8080
 
 spring:
+  cloud:
+    config:
+      enabled: false
+    discovery:
+      enabled: false
+  config:
+    import: ""
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:15432}/claimassist_customer
+    url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:15432}/claimassist_customer?serverTimezone=UTC
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD:claimassist}
     hikari:
@@ -71,8 +78,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-issuer-uri: ${KEYCLOAK_ISSUER_URI:http://127.0.0.1:18080/realms/claimassist-dev}
-           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://127.0.0.1:18080/realms/claimassist-dev/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://127.0.0.1:18080/realms/claimassist-dev}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://127.0.0.1:18080/realms/claimassist-dev/protocol/openid-connect/certs}
 
       client:
         registration:
@@ -88,19 +95,15 @@ issuer-uri: ${KEYCLOAK_ISSUER_URI:http://127.0.0.1:18080/realms/claimassist-dev}
 
 eureka:
   client:
-    service-url:
-      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
-    register-with-eureka: true
-    fetch-registry: true
-
-  instance:
-    prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
-    hostname: ${EUREKA_HOSTNAME:localhost}
-
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
 logging:
   level:
     com.claimassist: DEBUG
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
+
+
 
