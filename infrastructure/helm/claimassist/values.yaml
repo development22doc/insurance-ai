@@ -285,7 +285,17 @@ services:
     # Task 6A-8: api-gateway uses Redis (Spring Cloud Gateway Redis rate limiter +
     # redis metrics). Wires SPRING_DATA_REDIS_HOST/PORT to claimassist-redis:6379.
     redis: true
-    env: []
+    # FINAL K3S FIX: Public routes for /actuator/* health probes. Spring security
+    # requires explicit pathMatchers.permitAll() for public endpoints; the ConfigMap
+    # app.security.public-routes binding did not work until these env vars were set.
+    # After manual fix in DEV K3s, all probes passed and Gateway became Ready.
+    env:
+      - name: APP_SECURITY_PUBLIC_ROUTES_0
+        value: /actuator/health
+      - name: APP_SECURITY_PUBLIC_ROUTES_1
+        value: /actuator/health/**
+      - name: APP_SECURITY_PUBLIC_ROUTES_2
+        value: /actuator/info
     resources:
       requests: { cpu: 100m, memory: 192Mi }
       limits: { cpu: 500m, memory: 512Mi }

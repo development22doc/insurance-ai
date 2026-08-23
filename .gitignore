@@ -43,6 +43,7 @@ logs/*
 
 startup-log.txt
 .env
+.env.local-k3s
 master_change_log.md
 
 # ============================================================

@@ -69,7 +69,7 @@ public class ClaimUpdateConsumer {
     @Transactional
     @KafkaListener(
             topics = "claim-update-request-event",
-            groupId = "claims-group",
+            groupId = "${app.kafka.consumer-groups.claims:claims-group}",
             containerFactory = "stringKafkaListenerContainerFactory")
     public void consumeClaimUpdateRequest(
             @Payload String rawMessage,
