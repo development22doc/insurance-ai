@@ -15,6 +15,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.KafkaContainer;
@@ -46,6 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         KafkaEventDrivenIntegrationTest.PoisonListener.class
 })
 @Testcontainers(disabledWithoutDocker = true)
+@ActiveProfiles("testcontainers")
 class KafkaEventDrivenIntegrationTest {
 
     @Container
