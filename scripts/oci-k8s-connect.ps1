@@ -47,10 +47,10 @@ if (-not $SshKey) { $SshKey = "$env:USERPROFILE\.ssh\id_rsa" }
 
 # Tunnel configuration
 $tunnels = @(
-    @{ LocalPort = 15432; RemoteHost = "claimassist-postgresql"; RemotePort = 5432; Name = "PostgreSQL" },
-    @{ LocalPort = 16379; RemoteHost = "claimassist-redis";       RemotePort = 6379; Name = "Redis" },
-    @{ LocalPort = 9092;  RemoteHost = "claimassist-kafka";       RemotePort = 9092; Name = "Kafka" },
-    @{ LocalPort = 18080; RemoteHost = "claimassist-keycloak";    RemotePort = 8080; Name = "Keycloak" },
+    @{ LocalPort = 15432; RemoteHost = "127.0.0.1"; RemotePort = 15432; Name = "PostgreSQL" },
+    @{ LocalPort = 16379; RemoteHost = "127.0.0.1";       RemotePort = 16379; Name = "Redis" },
+    @{ LocalPort = 9092;  RemoteHost = "127.0.0.1";       RemotePort = 9092; Name = "Kafka" },
+    @{ LocalPort = 18080; RemoteHost = "127.0.0.1";    RemotePort = 18080; Name = "Keycloak" },
     # K3s API server forwarding (remote binds to 127.0.0.1:6443 on the OCI VM)
     # We forward it to an unprivileged local port by default to avoid collisions with local k8s
     @{ LocalPort = 16443; RemoteHost = "127.0.0.1";                 RemotePort = 6443; Name = "K3s-API" }

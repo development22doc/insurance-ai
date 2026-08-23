@@ -19,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.lang.reflect.Method;
@@ -41,6 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * ownership rules verified in the query/command service tests.
  */
 @WebMvcTest(ClaimController.class)
+@ActiveProfiles("test")
 class ClaimControllerTest {
 
     @Autowired

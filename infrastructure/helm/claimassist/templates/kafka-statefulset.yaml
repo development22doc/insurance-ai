@@ -46,6 +46,9 @@ spec:
             - name: kafka
               containerPort: {{ .Values.kafka.internalPort }}
               protocol: TCP
+            - name: external
+              containerPort: {{ .Values.kafka.externalPort }}
+              protocol: TCP
             - name: controller
               containerPort: {{ .Values.kafka.controllerPort }}
               protocol: TCP
@@ -59,11 +62,11 @@ spec:
             # Service DNS (claimassist-kafka) so external clients (apps) resolve
             # the broker through the ClusterIP Service.
             - name: KAFKA_LISTENERS
-              value: "PLAINTEXT://:{{ .Values.kafka.internalPort }},CONTROLLER://:{{ .Values.kafka.controllerPort }}"
+              value: "PLAINTEXT://:{{ .Values.kafka.internalPort }},DEV://:{{ .Values.kafka.externalPort }},CONTROLLER://:{{ .Values.kafka.controllerPort }}"
             - name: KAFKA_ADVERTISED_LISTENERS
-              value: "PLAINTEXT://{{ .Values.kafka.serviceName }}:{{ .Values.kafka.internalPort }}"
+              value: "PLAINTEXT://{{ .Values.kafka.serviceName }}:{{ .Values.kafka.internalPort }},DEV://localhost:{{ .Values.kafka.externalPort }}"
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-              value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+              value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,DEV:PLAINTEXT"
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
               value: "PLAINTEXT"
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
@@ -160,3 +163,5 @@ spec:
           requests:
             storage: {{ .Values.kafka.storageSize | quote }}
 {{- end }}
+
+

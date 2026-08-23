@@ -17,7 +17,7 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   config:
-    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+    import: ""
   jpa:
     open-in-view: false
   flyway:
@@ -96,3 +96,5 @@ resilience4j:
           - feign.FeignException.Unauthorized
           - feign.FeignException.NotFound
           - feign.FeignException.BadRequest
+
+

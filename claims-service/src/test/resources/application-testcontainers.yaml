@@ -9,7 +9,6 @@ spring:
     url: jdbc:tc:postgresql:16-alpine:///testdb
     username: test
     password: test
-    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
 
   main:
     allow-bean-definition-overriding: true

@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # ClaimAssist Helm Chart - values (default)
 # One K3s cluster, namespaces claimassist-dev/stage/prod. LOCAL = Docker Compose
 # (this chart is not used for LOCAL).
@@ -564,6 +564,7 @@ kafka:
   replicaCount: 1
   serviceName: claimassist-kafka   # K8s Service DNS used by app deployments (claimassist-kafka:9092)
   internalPort: 9092               # broker listener / client port
+  externalPort: 19092              # DEV/local listener port
   controllerPort: 9093             # controller listener (internal-only; single-node quorum)
   image:
     registry: ""                   # empty => docker.io default
@@ -754,3 +755,4 @@ keycloak:
         periodSeconds: 10
         failureThreshold: 3
         timeoutSeconds: 5
+

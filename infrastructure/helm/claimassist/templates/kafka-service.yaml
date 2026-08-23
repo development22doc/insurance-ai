@@ -23,6 +23,10 @@ spec:
       port: {{ .Values.kafka.internalPort }}
       targetPort: kafka
       protocol: TCP
+    - name: external
+      port: {{ .Values.kafka.externalPort }}
+      targetPort: external
+      protocol: TCP
     - name: controller
       port: {{ .Values.kafka.controllerPort }}
       targetPort: controller
