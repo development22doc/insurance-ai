@@ -503,7 +503,8 @@ jobs:
             --set keycloak.postgresql.credentials.username="$DEV_KEYCLOAK_DB_USER" \
             --set keycloak.postgresql.credentials.password="$DEV_KEYCLOAK_DB_PASSWORD" \
             --wait \
-            --timeout 10m      - name: Bootstrap DEV environment (full install, all services at SHA)
+            --timeout 10m
+      - name: Bootstrap DEV environment (full install, all services at SHA)
         if: needs.resolve-targets.outputs.force_deploy == 'true'
         env:
           # Deployment-time DEV credentials. Provided as GitHub secrets (scoped to
