@@ -458,9 +458,8 @@ jobs:
           DEV_KEYCLOAK_DB_PASSWORD: ${{ secrets.DEV_KEYCLOAK_DB_PASSWORD }}
         run: |
           set -euo pipefail
-          # Fail fast if any required DEV credential is missing. A normal infra sync
-          # can overwrite Kubernetes Secrets with empty values if these are not
-          # explicitly passed to the Helm upgrade.
+
+          # Fail fast if any required DEV credential is missing.
           for v in DEV_POSTGRES_USER DEV_POSTGRES_PASSWORD \
                     DEV_KEYCLOAK_ADMIN_PASSWORD DEV_KEYCLOAK_ADMIN_CLIENT_SECRET \
                     DEV_KEYCLOAK_DB_USER DEV_KEYCLOAK_DB_PASSWORD; do
@@ -469,16 +468,33 @@ jobs:
               exit 1
             fi
           done
-          # No image.tag / imageTag overrides -> helm re-renders the whole chart
-          # from saved release values, applying the changed chart/values, while
-          # every application keeps its already-deployed SHA (no rollout).
-          # --install --create-namespace keep this idempotent for both an existing
-          # release and a (re)-create on a fresh cluster: Helm owns the Namespace.
+
+          # values-dev.yaml defines the services map. Because Helm merges that map,
+          # omitted imageTag values can otherwise replace previously saved service
+          # imageTags and cause the chart to fall back to image.tag (1.0.0).
+          # Preserve every currently saved immutable service imageTag explicitly.
+          IMAGE_TAG_ARGS=()
+
+          RELEASE_VALUES_JSON="$(helm get values "$RELEASE" -n "$NAMESPACE" -o json)"
+
+          for svc in api-gateway customer-service claims-service agent-service; do
+            current_tag="$(printf '%s' "$RELEASE_VALUES_JSON" | \
+              python3 -c 'import json,sys; d=json.load(sys.stdin); svc=sys.argv[1]; print(d.get("services",{}).get(svc,{}).get("imageTag",""))' "$svc")"
+
+            if [ -n "$current_tag" ]; then
+              IMAGE_TAG_ARGS+=("--set" "services.$svc.imageTag=$current_tag")
+            else
+              echo "::error::No existing imageTag found for $svc during infrastructure sync."
+              exit 1
+            fi
+          done
+
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
             --install \
             --create-namespace \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
+            "${IMAGE_TAG_ARGS[@]}" \
             --set postgresql.credentials.postgresUsername="$DEV_POSTGRES_USER" \
             --set postgresql.credentials.postgresPassword="$DEV_POSTGRES_PASSWORD" \
             --set keycloak.credentials.adminUsername="admin" \
@@ -487,8 +503,7 @@ jobs:
             --set keycloak.postgresql.credentials.username="$DEV_KEYCLOAK_DB_USER" \
             --set keycloak.postgresql.credentials.password="$DEV_KEYCLOAK_DB_PASSWORD" \
             --wait \
-            --timeout 10m
-      - name: Bootstrap DEV environment (full install, all services at SHA)
+            --timeout 10m      - name: Bootstrap DEV environment (full install, all services at SHA)
         if: needs.resolve-targets.outputs.force_deploy == 'true'
         env:
           # Deployment-time DEV credentials. Provided as GitHub secrets (scoped to
