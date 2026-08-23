@@ -14,7 +14,7 @@
 
 spring:
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:15432}/claimassist_claims
+    url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:15432}/claimassist_claims
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD:claimassist}
     hikari:
@@ -39,7 +39,7 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:16379}
       password: ${REDIS_PASSWORD:}
       timeout: 2s
@@ -71,8 +71,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:18080/realms/claimassist}
-          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:18080/realms/claimassist/protocol/openid-connect/certs}
+issuer-uri: ${KEYCLOAK_ISSUER_URI:http://127.0.0.1:18080/realms/claimassist-dev}
+           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://127.0.0.1:18080/realms/claimassist-dev/protocol/openid-connect/certs}
 
       client:
         registration:
@@ -84,7 +84,7 @@ spring:
 
         provider:
           keycloak:
-            token-uri: ${SERVICE_TOKEN_URI:http://localhost:18080/realms/claimassist/protocol/openid-connect/token}
+            token-uri: ${SERVICE_TOKEN_URI:http://127.0.0.1:18080/realms/claimassist-dev/protocol/openid-connect/token}
 
 eureka:
   client:
@@ -96,6 +96,14 @@ eureka:
   instance:
     prefer-ip-address: ${EUREKA_PREFER_IP_ADDRESS:true}
     hostname: ${EUREKA_HOSTNAME:localhost}
+
+app:
+  kafka:
+    consumer-groups:
+      claims: claims-group-local-${CLAIMASSIST_DEV_ID:local}
+      cqrs-read-model-sync: cqrs-read-model-sync-group-local-${CLAIMASSIST_DEV_ID:local}
+      claims-saga-orchestrator: claims-saga-orchestrator-group-local-${CLAIMASSIST_DEV_ID:local}
+      claims-saga-step-processor: claims-saga-step-processor-group-local-${CLAIMASSIST_DEV_ID:local}
 
 logging:
   level:

@@ -19,7 +19,7 @@ public class ClaimSagaStepProcessorListener {
     @Transactional
     @KafkaListener(
             topics = ClaimSagaOrchestratorService.STEP_COMMAND_TOPIC,
-            groupId = "claims-saga-step-processor-group",
+            groupId = "${app.kafka.consumer-groups.claims-saga-step-processor:claims-saga-step-processor-group}",
             containerFactory = "stringKafkaListenerContainerFactory")
     public void onStepCommand(String rawMessage, Acknowledgment ack) throws Exception {
         ClaimSagaStepCommandEvent command =

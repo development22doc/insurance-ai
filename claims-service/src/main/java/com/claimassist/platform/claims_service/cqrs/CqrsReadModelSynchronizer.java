@@ -37,7 +37,7 @@ public class CqrsReadModelSynchronizer {
     @Transactional
     @KafkaListener(
             topics = "claim-update-response-event",
-            groupId = "cqrs-read-model-sync-group",
+            groupId = "${app.kafka.consumer-groups.cqrs-read-model-sync:cqrs-read-model-sync-group}",
             containerFactory = "stringKafkaListenerContainerFactory")
     public void synchronizeClaimReadModelOnUpdate(String rawMessage, Acknowledgment ack) throws Exception {
         try {
@@ -67,7 +67,7 @@ public class CqrsReadModelSynchronizer {
     @Transactional
     @KafkaListener(
             topics = "claim-saga-orchestration-result-event",
-            groupId = "cqrs-read-model-sync-group",
+            groupId = "${app.kafka.consumer-groups.cqrs-read-model-sync:cqrs-read-model-sync-group}",
             containerFactory = "stringKafkaListenerContainerFactory")
     public void synchronizeClaimReadModelOnSagaCompletion(String rawMessage, Acknowledgment ack) throws Exception {
         try {

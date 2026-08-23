@@ -42,7 +42,7 @@ public class AgentSagaResponseHandler {
     @Transactional
     @KafkaListener(
             topics = "claim-update-response-event",
-            groupId = "agent-group",
+            groupId = "${app.kafka.consumer-groups.agent:agent-group}",
             containerFactory = "stringKafkaListenerContainerFactory")
     public void handleClaimUpdateResponse(
             @Payload String rawMessage,

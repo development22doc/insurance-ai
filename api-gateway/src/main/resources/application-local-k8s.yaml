@@ -19,7 +19,7 @@ server:
 spring:
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:16379}
       timeout: 2s
       lettuce:
@@ -32,11 +32,41 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:18080/realms/claimassist}
-          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:18080/realms/claimassist/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://127.0.0.1:18080/realms/claimassist-dev}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://127.0.0.1:18080/realms/claimassist-dev/protocol/openid-connect/certs}
 
   lifecycle:
     timeout-per-shutdown-phase: 15s
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: customer-service
+              uri: http://localhost:8081
+              predicates:
+                - Path=/customer/**
+              filters:
+                - StripPrefix=1
+            - id: claims-service
+              uri: http://localhost:8082
+              predicates:
+                - Path=/claims/**
+              filters:
+                - StripPrefix=1
+            - id: agent-service
+              uri: http://localhost:8083
+              predicates:
+                - Path=/agent/**
+              filters:
+                - StripPrefix=1
+            - id: policy-service
+              uri: http://localhost:8081
+              predicates:
+                - Path=/policies/**
+              filters:
+                - StripPrefix=1
 
 eureka:
   client:

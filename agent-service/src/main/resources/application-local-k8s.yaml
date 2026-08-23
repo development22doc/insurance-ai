@@ -14,7 +14,7 @@
 
 spring:
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:15432}/claimassist_agent
+    url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:15432}/claimassist_agent
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD:claimassist}
     driver-class-name: org.postgresql.Driver
@@ -42,7 +42,7 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:16379}
       password: ${REDIS_PASSWORD:}
       timeout: 2s
@@ -77,15 +77,15 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:18080/realms/claimassist}
-          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:18080/realms/claimassist/protocol/openid-connect/certs}
+issuer-uri: ${KEYCLOAK_ISSUER_URI:http://127.0.0.1:18080/realms/claimassist-dev}
+           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://127.0.0.1:18080/realms/claimassist-dev/protocol/openid-connect/certs}
 
 security:
   service-client:
     registration-id: internal-service
     client-id: ${SERVICE_CLIENT_ID:internal-service-client}
     client-secret: ${SERVICE_CLIENT_SECRET:internal-service-secret}
-    token-uri: ${SERVICE_TOKEN_URI:http://localhost:18080/realms/claimassist/protocol/openid-connect/token}
+    token-uri: ${SERVICE_TOKEN_URI:http://127.0.0.1:18080/realms/claimassist-dev/protocol/openid-connect/token}
 
 eureka:
   client:
@@ -103,6 +103,11 @@ outbox:
     poll-interval-ms: 999999999
     batch-size: 10
     max-attempts: 3
+
+app:
+  kafka:
+    consumer-groups:
+      agent: agent-group-local-${CLAIMASSIST_DEV_ID:local}
 
 logging:
   level:

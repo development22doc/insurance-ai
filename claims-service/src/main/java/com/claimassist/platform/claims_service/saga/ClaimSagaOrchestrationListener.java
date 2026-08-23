@@ -25,7 +25,7 @@ public class ClaimSagaOrchestrationListener {
     @Transactional
     @KafkaListener(
             topics = ClaimSagaOrchestratorService.ORCHESTRATION_REQUEST_TOPIC,
-            groupId = "claims-saga-orchestrator-group",
+            groupId = "${app.kafka.consumer-groups.claims-saga-orchestrator:claims-saga-orchestrator-group}",
             containerFactory = "stringKafkaListenerContainerFactory")
     public void onOrchestrationRequest(
             @Payload String rawMessage,
@@ -52,7 +52,7 @@ public class ClaimSagaOrchestrationListener {
     @Transactional
     @KafkaListener(
             topics = ClaimSagaOrchestratorService.STEP_RESULT_TOPIC,
-            groupId = "claims-saga-orchestrator-group",
+            groupId = "${app.kafka.consumer-groups.claims-saga-orchestrator:claims-saga-orchestrator-group}",
             containerFactory = "stringKafkaListenerContainerFactory")
     public void onStepResult(
             @Payload String rawMessage,
