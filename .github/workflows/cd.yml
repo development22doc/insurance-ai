@@ -475,7 +475,28 @@ jobs:
           # Preserve every currently saved immutable service imageTag explicitly.
           IMAGE_TAG_ARGS=()
 
-          RELEASE_VALUES_JSON="$(helm get values "$RELEASE" -n "$NAMESPACE" -o json)"
+          # Read imageTags from the latest successful Helm revision, not the
+          # current revision. The current revision can be FAILED after a
+          # previous infrastructure sync timed out.
+          DEPLOYED_REVISION="$(helm history "$RELEASE" -n "$NAMESPACE" -o json | \
+            python3 -c '
+import json,sys
+history=json.load(sys.stdin)
+deployed=[r for r in history if r.get("status") == "deployed"]
+print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed else "")
+')"
+
+          if [ -z "$DEPLOYED_REVISION" ]; then
+            echo "::error::No successful Helm revision found for $RELEASE during infrastructure sync."
+            exit 1
+          fi
+
+          echo "Using latest successful Helm revision: $DEPLOYED_REVISION"
+
+          RELEASE_VALUES_JSON="$(helm get values "$RELEASE" \
+            -n "$NAMESPACE" \
+            --revision "$DEPLOYED_REVISION" \
+            -o json)"
 
           for svc in api-gateway customer-service claims-service agent-service; do
             current_tag="$(printf '%s' "$RELEASE_VALUES_JSON" | \
