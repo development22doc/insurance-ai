@@ -241,6 +241,11 @@ jobs:
       run_deploy: ${{ steps.resolve.outputs.run_deploy }}
       target_sha: ${{ steps.resolve.outputs.target_sha }}
     steps:
+      - name: Checkout repository for stale-run verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Compute deployment target
         id: resolve
         env:
