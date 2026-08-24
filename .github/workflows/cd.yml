@@ -324,13 +324,39 @@ jobs:
             exit 0
           fi
 
+          # Guard against a CI/CD race during PR merge. A successful CI run
+          # must still correspond to the current tip of dev before CD deploys.
+          CI_SHA="${{ github.event.workflow_run.head_sha }}"
+
+          git fetch origin dev --quiet
+          DEV_SHA="$(git rev-parse origin/dev)"
+
+          echo "CI validated SHA: $CI_SHA"
+          echo "Current dev SHA:  $DEV_SHA"
+
+          if [ "$CI_SHA" != "$DEV_SHA" ]; then
+            echo "::warning::Ignoring stale CI run. CI validated $CI_SHA but current dev is $DEV_SHA."
+            {
+              echo "environment=dev"
+              echo "trigger_kind=auto"
+              echo "build_only=false"
+              echo "force_deploy=false"
+              echo "run_deploy=false"
+              echo "run_build=false"
+              echo "run_infra_sync=false"
+              echo "target_sha=$CI_SHA"
+              echo 'app_services=[]'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           {
             echo "environment=dev"
             echo "trigger_kind=auto"
             echo "build_only=false"
             echo "force_deploy=false"
             echo "run_deploy=true"
-            echo "target_sha=${{ github.event.workflow_run.head_sha }}"
+            echo "target_sha=$CI_SHA"
           } >> "$GITHUB_OUTPUT"
           if [ "$CH_INFRA" = "true" ]; then
             echo "run_infra_sync=true" >> "$GITHUB_OUTPUT"
