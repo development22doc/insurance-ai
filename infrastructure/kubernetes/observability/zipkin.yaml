@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # ZIPKIN - OPTIONAL (Task 6A-14B-4B).
 #
 # STATUS: DISABLED BY DEFAULT on the Always-Free (2 OCPU / 12GB) profile.
@@ -35,13 +35,12 @@ spec:
       labels:
         app: zipkin
     spec:
-      securityContext:
-        runAsNonRoot: true
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop: ["ALL"]
       containers:
         - name: zipkin
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           image: openzipkin/zipkin:3.4
           ports:
             - containerPort: 9411
