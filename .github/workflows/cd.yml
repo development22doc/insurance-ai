@@ -774,12 +774,102 @@ jobs:
           # release already exists and Helm merges over it (bumping ONLY the targeted
           # service's imageTag to the immutable SHA); untouched services keep their
           # already-deployed SHA, so there is NO drift and NO 1.0.0 fallback.
+          # Read the latest DEPLOYED Helm revision.
+          # Never use a FAILED revision because it may contain incomplete values.
+          DEPLOYED_REVISION="$(helm history "$RELEASE" -n "$NAMESPACE" -o json | \
+            python3 -c 'import json,sys; h=json.load(sys.stdin); d=[r for r in h if r.get("status")=="deployed"]; print(max(d,key=lambda r:int(r["revision"]))["revision"] if d else "")')"
+
+          if [ -z "$DEPLOYED_REVISION" ]; then
+            echo "::error::No DEPLOYED Helm revision found for $RELEASE."
+            exit 1
+          fi
+
+          echo "Using deployed Helm revision: $DEPLOYED_REVISION"
+
+          # Preserve the existing immutable imageTag for every service.
+          RELEASE_VALUES_JSON="$(helm get values "$RELEASE" \
+            -n "$NAMESPACE" \
+            --revision "$DEPLOYED_REVISION" \
+            -o json)"
+
+          get_image_tag() {
+            local svc="$1"
+            printf '%s' "$RELEASE_VALUES_JSON" | \
+              python3 -c 'import json,sys; d=json.load(sys.stdin); svc=sys.argv[1]; print(d.get("services",{}).get(svc,{}).get("imageTag",""))' "$svc"
+          }
+
+          API_TAG="$(get_image_tag api-gateway)"
+          CUSTOMER_TAG="$(get_image_tag customer-service)"
+          CLAIMS_TAG="$(get_image_tag claims-service)"
+          AGENT_TAG="$(get_image_tag agent-service)"
+
+          for pair in \
+            "api-gateway:$API_TAG" \
+            "customer-service:$CUSTOMER_TAG" \
+            "claims-service:$CLAIMS_TAG" \
+            "agent-service:$AGENT_TAG"; do
+
+            svc="${pair%%:*}"
+            tag="${pair#*:}"
+
+            if [ -z "$tag" ]; then
+              echo "::error::No existing imageTag found for $svc in deployed revision $DEPLOYED_REVISION."
+              exit 1
+            fi
+          done
+
+          # Update ONLY the service represented by this matrix job.
+          case "${{ matrix.service }}" in
+            api-gateway)
+              API_TAG="${{ needs.resolve-targets.outputs.target_sha }}"
+              ;;
+            customer-service)
+              CUSTOMER_TAG="${{ needs.resolve-targets.outputs.target_sha }}"
+              ;;
+            claims-service)
+              CLAIMS_TAG="${{ needs.resolve-targets.outputs.target_sha }}"
+              ;;
+            agent-service)
+              AGENT_TAG="${{ needs.resolve-targets.outputs.target_sha }}"
+              ;;
+            *)
+              echo "::error::Unknown service: ${{ matrix.service }}"
+              exit 1
+              ;;
+          esac
+
+          echo "Final image tags:"
+          echo "  api-gateway=$API_TAG"
+          echo "  customer-service=$CUSTOMER_TAG"
+          echo "  claims-service=$CLAIMS_TAG"
+          echo "  agent-service=$AGENT_TAG"
+
+          # Verify all four immutable images before changing the release.
+          for pair in \
+            "api-gateway:$API_TAG" \
+            "customer-service:$CUSTOMER_TAG" \
+            "claims-service:$CLAIMS_TAG" \
+            "agent-service:$AGENT_TAG"; do
+
+            svc="${pair%%:*}"
+            tag="${pair#*:}"
+            IMAGE="claimassistdev/${svc}:${tag}"
+
+            echo "Verifying image: $IMAGE"
+            docker manifest inspect "$IMAGE" > /dev/null
+          done
+
+          # Explicitly pass ALL four imageTags.
+          # This prevents Helm from falling back to image.tag=1.0.0.
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
             --install \
             --create-namespace \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" \
-            --set "services.${{ matrix.service }}.imageTag=${{ needs.resolve-targets.outputs.target_sha }}" \
+            --set "services.api-gateway.imageTag=$API_TAG" \
+            --set "services.customer-service.imageTag=$CUSTOMER_TAG" \
+            --set "services.claims-service.imageTag=$CLAIMS_TAG" \
+            --set "services.agent-service.imageTag=$AGENT_TAG" \
             --wait \
             --timeout 10m
       - name: Wait for rollout to complete
