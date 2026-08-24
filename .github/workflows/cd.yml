@@ -125,6 +125,24 @@ on:
 
 # Generic no-op job anchors are avoided; each matrix deploy job below declares its
 # own environment-scoped, namespace-level concurrency lock.
+#
+# Concurrency strategy (SAFE DESIGN):
+# - Workflow-level: UNIQUE group per run (cd-auto-{run_id} or cd-manual-{run_id})
+#   with cancel-in-progress: FALSE. This NEVER cancels an in-progress Helm operation.
+#   Each workflow run gets its own concurrency group so multiple runs can coexist.
+# - Job-level: namespace-level lock `cd-deploy-<env>` with cancel-in-progress: FALSE.
+#   This serializes Helm mutations across ALL runs (auto + manual) for the same env.
+#   An in-progress `helm upgrade --wait` is NEVER interrupted.
+# - Stale-run detection: In resolve-targets, auto runs compare CI_SHA vs origin/dev.
+#   If stale (CI_SHA != origin/dev), the run exits early with run_deploy=false.
+#   This makes stale runs no-ops WITHOUT cancelling them mid-Helm-operation.
+# - Result: Rapid merges queue at the job-level lock. Latest commit wins because
+#   stale runs become no-ops; the non-stale run acquires the lock and deploys.
+#   Manual deployments wait for the lock but are never auto-cancelled.
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_run' && format('cd-auto-{0}', github.run_id) || format('cd-manual-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -473,6 +491,21 @@ jobs:
           helm template "$RELEASE" "$CHART" -n "$NAMESPACE" \
             -f infrastructure/helm/claimassist/values-dev.yaml \
             --set image.registry="$DOCKER_REGISTRY" > /dev/null
+      - name: Final stale check (auto runs only)
+        if: github.event_name == 'workflow_run'
+        run: |
+          set -euo pipefail
+          TARGET_SHA="${{ needs.resolve-targets.outputs.target_sha }}"
+          echo "Final stale check: target_sha=$TARGET_SHA"
+          git fetch origin dev --quiet
+          CURRENT_DEV_SHA="$(git rev-parse origin/dev)"
+          echo "Current origin/dev: $CURRENT_DEV_SHA"
+          if [ "$TARGET_SHA" != "$CURRENT_DEV_SHA" ]; then
+            echo "::warning::Stale deployment detected. Target SHA $TARGET_SHA != current dev $CURRENT_DEV_SHA."
+            echo "::warning::Skipping infrastructure sync. A newer commit has been merged."
+            exit 0
+          fi
+          echo "Freshness confirmed. Proceeding with Helm upgrade."
       - name: Apply infrastructure change via Helm (DEV)
         if: needs.resolve-targets.outputs.force_deploy != 'true'
         env:
@@ -501,23 +534,22 @@ jobs:
           # Preserve every currently saved immutable service imageTag explicitly.
           IMAGE_TAG_ARGS=()
 
-          # Read imageTags from the latest successful Helm revision, not the
-          # current revision. The current revision can be FAILED after a
-          # previous infrastructure sync timed out.
+          # Read imageTags from the latest DEPLOYED Helm revision ONLY.
+          # A FAILED revision's values may contain partial/incomplete configuration
+          # from an interrupted upgrade and MUST NOT be used for imageTag preservation.
+          # If no deployed revision exists, this is a first-ever or broken state:
+          # require force_deploy=true which explicitly provides all imageTags.
           DEPLOYED_REVISION="$(helm history "$RELEASE" -n "$NAMESPACE" -o json | \
-            python3 -c '
-import json,sys
-history=json.load(sys.stdin)
-deployed=[r for r in history if r.get("status") == "deployed"]
-print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed else "")
-')"
+            python3 -c 'import json,sys; h=json.load(sys.stdin); d=[r for r in h if r.get("status")=="deployed"]; print(max(d,key=lambda r:int(r["revision"]))["revision"] if d else "")')"
 
           if [ -z "$DEPLOYED_REVISION" ]; then
-            echo "::error::No successful Helm revision found for $RELEASE during infrastructure sync."
+            echo "::error::No DEPLOYED Helm revision found for $RELEASE during infrastructure sync."
+            echo "::error::This happens on first-ever deployment or if all revisions failed."
+            echo "::error::Use workflow_dispatch with action=deploy, environment=dev, force_deploy=true to bootstrap."
             exit 1
           fi
 
-          echo "Using latest successful Helm revision: $DEPLOYED_REVISION"
+          echo "Using latest DEPLOYED Helm revision for imageTag preservation: $DEPLOYED_REVISION"
 
           RELEASE_VALUES_JSON="$(helm get values "$RELEASE" \
             -n "$NAMESPACE" \
@@ -531,7 +563,7 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
             if [ -n "$current_tag" ]; then
               IMAGE_TAG_ARGS+=("--set" "services.$svc.imageTag=$current_tag")
             else
-              echo "::error::No existing imageTag found for $svc during infrastructure sync."
+              echo "::error::No existing imageTag found for $svc during infrastructure sync (revision $DEPLOYED_REVISION)."
               exit 1
             fi
           done
@@ -595,6 +627,16 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
             --docker-username="$DOCKER_USERNAME" \
             --docker-password="$DOCKER_PASSWORD" \
             --dry-run=client -o yaml | kubectl apply -f -
+          # Verify all four immutable images exist before deploying.
+          for svc in api-gateway customer-service claims-service agent-service; do
+            IMAGE="claimassistdev/${svc}:${TARGET_SHA}"
+            echo "Verifying image exists: $IMAGE"
+            docker manifest inspect "$IMAGE" > /dev/null || {
+              echo "::error::Image $IMAGE not found in registry. Build may have failed."
+              exit 1
+            }
+            echo "Image verified: $IMAGE"
+          done
           # FIRST-EVER DEV bootstrap: install the whole chart (shared infra +
           # all four application Deployments) in ONE helm upgrade, pinning EVERY
           # service to the immutable SHA so no Deployment falls back to the
@@ -703,6 +745,21 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
           mkdir -p "$HOME/.kube"
           echo "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
+      - name: Final stale check (auto runs only)
+        if: github.event_name == 'workflow_run'
+        run: |
+          set -euo pipefail
+          TARGET_SHA="${{ needs.resolve-targets.outputs.target_sha }}"
+          echo "Final stale check: target_sha=$TARGET_SHA"
+          git fetch origin dev --quiet
+          CURRENT_DEV_SHA="$(git rev-parse origin/dev)"
+          echo "Current origin/dev: $CURRENT_DEV_SHA"
+          if [ "$TARGET_SHA" != "$CURRENT_DEV_SHA" ]; then
+            echo "::warning::Stale deployment detected. Target SHA $TARGET_SHA != current dev $CURRENT_DEV_SHA."
+            echo "::warning::Skipping service deployment. A newer commit has been merged."
+            exit 0
+          fi
+          echo "Freshness confirmed. Proceeding with Helm upgrade."
       - name: Deploy ${{ matrix.service }} via Helm (immutable image)
         run: |
           set -euo pipefail
@@ -776,8 +833,10 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
       NAMESPACE: claimassist-stage
       DOCKER_REGISTRY: claimassistdev
     steps:
-      - name: Checkout code
+      - name: Checkout code at target SHA
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-targets.outputs.target_sha }}
       - name: Set up kubectl
         uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8
         with:
@@ -793,11 +852,11 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Verify immutable image exists
         env:
-          IMAGE: claimassistdev/${{ matrix.service }}:${{ github.sha }}
+          IMAGE: claimassistdev/${{ matrix.service }}:${{ needs.resolve-targets.outputs.target_sha }}
         run: |
           set -euo pipefail
           docker manifest inspect "$IMAGE" > /dev/null
-          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ github.sha }}"
+          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ needs.resolve-targets.outputs.target_sha }}"
       - name: Configure kubectl (STAGE credentials only)
         env:
           KUBE_CONFIG: ${{ secrets.STAGE_KUBE_CONFIG }}
@@ -817,7 +876,7 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
           RELEASE=claimassist-stage
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
             --set image.registry="$DOCKER_REGISTRY" \
-            --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
+            --set "services.${{ matrix.service }}.imageTag=${{ needs.resolve-targets.outputs.target_sha }}" \
             --wait \
             --timeout 10m
       - name: Wait for rollout to complete
@@ -869,8 +928,10 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
       NAMESPACE: claimassist-prod
       DOCKER_REGISTRY: claimassistdev
     steps:
-      - name: Checkout code
+      - name: Checkout code at target SHA
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-targets.outputs.target_sha }}
       - name: Set up kubectl
         uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8
         with:
@@ -886,11 +947,11 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Verify immutable image exists
         env:
-          IMAGE: claimassistdev/${{ matrix.service }}:${{ github.sha }}
+          IMAGE: claimassistdev/${{ matrix.service }}:${{ needs.resolve-targets.outputs.target_sha }}
         run: |
           set -euo pipefail
           docker manifest inspect "$IMAGE" > /dev/null
-          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ github.sha }}"
+          echo "Image verified: claimassistdev/${{ matrix.service }}:${{ needs.resolve-targets.outputs.target_sha }}"
       - name: Configure kubectl (PROD credentials only)
         env:
           KUBE_CONFIG: ${{ secrets.PROD_KUBE_CONFIG }}
@@ -910,7 +971,7 @@ print(max(deployed, key=lambda r: int(r["revision"]))["revision"] if deployed el
           RELEASE=claimassist-prod
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
             --set image.registry="$DOCKER_REGISTRY" \
-            --set "services.${{ matrix.service }}.imageTag=${{ github.sha }}" \
+            --set "services.${{ matrix.service }}.imageTag=${{ needs.resolve-targets.outputs.target_sha }}" \
             --wait \
             --timeout 10m
       - name: Wait for rollout to complete
