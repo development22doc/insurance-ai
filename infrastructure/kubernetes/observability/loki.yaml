@@ -9,6 +9,14 @@ data:
     server:
       http_listen_port: 3100
       grpc_listen_port: 9095
+    ingester:
+      wal:
+        enabled: true
+        dir: /loki/wal
+    common:
+      ring:
+        kvstore:
+          store: inmemory
     schema_config:
       configs:
         - from: 2020-10-15
@@ -22,7 +30,6 @@ data:
       tsdb_shipper:
         active_index_directory: /loki/index
         cache_location: /loki/cache
-        shared_store: filesystem
       filesystem:
         directory: /loki/chunks
     compactor:
@@ -53,9 +60,6 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop: ["ALL"]
       containers:
         - name: loki
           image: grafana/loki:3.2.1
@@ -86,6 +90,10 @@ spec:
               mountPath: /etc/loki
             - name: storage
               mountPath: /loki
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       volumes:
         - name: config
           configMap:
