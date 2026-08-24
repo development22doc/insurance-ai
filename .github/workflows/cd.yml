@@ -540,15 +540,7 @@ jobs:
           # If no deployed revision exists, this is a first-ever or broken state:
           # require force_deploy=true which explicitly provides all imageTags.
           DEPLOYED_REVISION="$(helm history "$RELEASE" -n "$NAMESPACE" -o json | \
-            python3 -c '
-import json,sys
-history=json.load(sys.stdin)
-deployed=[r for r in history if r.get("status") == "deployed"]
-if deployed:
-    print(max(deployed, key=lambda r: int(r["revision"]))["revision"])
-else:
-    print("")
-')"
+            python3 -c 'import json,sys; h=json.load(sys.stdin); d=[r for r in h if r.get("status")=="deployed"]; print(max(d,key=lambda r:int(r["revision"]))["revision"] if d else "")')"
 
           if [ -z "$DEPLOYED_REVISION" ]; then
             echo "::error::No DEPLOYED Helm revision found for $RELEASE during infrastructure sync."
@@ -834,7 +826,7 @@ else:
       fail-fast: false
       matrix:
         service: ${{ fromJSON(needs.resolve-targets.outputs.app_services) }}
-concurrency:
+    concurrency:
       group: cd-deploy-stage
       cancel-in-progress: false
     env:
