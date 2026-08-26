@@ -23,6 +23,15 @@ data:
         editable: false
         jsonData:
           maxLines: 1000
+      - name: Zipkin
+        type: zipkin
+        access: proxy
+        url: http://zipkin-service.claimassist-observability.svc.cluster.local:9411
+        isDefault: false
+        editable: false
+        jsonData:
+          nodeGraph:
+            enabled: true
   dashboards.yaml: |
     apiVersion: 1
     providers:

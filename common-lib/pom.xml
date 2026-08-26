@@ -97,6 +97,12 @@
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash.encoder.version}</version>
         </dependency>
+        <!-- Loki logback appender for pushing local dev logs to Loki -->
+        <dependency>
+            <groupId>com.github.loki4j</groupId>
+            <artifactId>loki-logback-appender</artifactId>
+            <version>1.6.1</version>
+        </dependency>
 
 						<!-- Micrometer Tracing APIs - Bridge implementations (e.g., brave) should be provided by the application runtime -->
 						<dependency>

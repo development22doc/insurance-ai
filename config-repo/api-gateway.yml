@@ -204,6 +204,8 @@ management:
 
     tags:
       application: ${spring.application.name}
+      environment: local
+      source: intellij
 
   prometheus:
     metrics:

@@ -16,3 +16,12 @@ datasources:
     editable: true
     jsonData:
       maxLines: 1000
+  - name: Zipkin
+    type: zipkin
+    access: proxy
+    url: http://zipkin:9411
+    isDefault: false
+    editable: true
+    jsonData:
+      nodeGraph:
+        enabled: true
