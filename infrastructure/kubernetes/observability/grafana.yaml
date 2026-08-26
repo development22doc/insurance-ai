@@ -63,6 +63,7 @@ data:
             "name": "environment",
             "type": "custom",
             "options": [
+              { "text": "local", "value": "local", "selected": false },
               { "text": "dev", "value": "dev", "selected": true },
               { "text": "stage", "value": "stage", "selected": false },
               { "text": "prod", "value": "prod", "selected": false }
@@ -179,9 +180,14 @@ spec:
                   optional: true
           volumeMounts:
             - name: provisioning
-              mountPath: /etc/grafana/provisioning
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              subPath: datasources.yaml
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              subPath: dashboards.yaml
             - name: dashboards
-              mountPath: /etc/grafana/provisioning/dashboards
+              mountPath: /etc/grafana/provisioning/dashboards/claimassist-overview.json
+              subPath: claimassist-overview.json
           ports:
             - containerPort: 3000
           readinessProbe:

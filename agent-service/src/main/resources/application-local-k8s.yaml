@@ -101,6 +101,14 @@ eureka:
     register-with-eureka: false
     fetch-registry: false
 
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:19411/api/v2/spans}
+
 outbox:
   publisher:
     poll-interval-ms: 999999999

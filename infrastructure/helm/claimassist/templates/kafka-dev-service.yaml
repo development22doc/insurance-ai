@@ -1,0 +1,30 @@
+{{- if and .Values.kafka.enabled .Values.kafka.devExternalAccess }}
+# Kafka DEV NodePort Service - Task 6A-VPN-1. DEV-only VPN Kafka exposure.
+# Exposes the DEV listener (container port 19092) on a NodePort so Tailscale
+# VPN clients can reach the broker via the MagicDNS hostname:NodePort.
+# Rendered ONLY when kafka.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the DEV listener. The internal
+# PLAINTEXT (9092) and controller (9093) listeners remain ClusterIP-only
+# via the existing claimassist-kafka Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.kafka.serviceName }}-dev
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: kafka
+  ports:
+    - name: external
+      port: {{ .Values.kafka.externalPort }}
+      targetPort: external
+      nodePort: {{ .Values.kafka.devNodePort }}
+      protocol: TCP
+{{- end }}

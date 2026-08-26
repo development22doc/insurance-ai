@@ -49,8 +49,66 @@
          aborts Logback before Tomcat binds and would CrashLoopBackOff the pod).
          The JSON encoder on STDOUT is what the cluster/Prometheus/collectors ingest. -->
 
+    <!-- ====================================================================== -->
+    <!-- LOCAL-K8S profile: file appender for Alloy log collection.              -->
+    <!-- Writes structured JSON to logs/<service>/<service>.log so Grafana       -->
+    <!-- Alloy can tail these files and push to Loki. Only active when the       -->
+    <!-- local-k8s Spring profile is active. K8s pods remain STDOUT-only.        -->
+    <!-- ====================================================================== -->
+    <springProfile name="local-k8s">
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>logs/${APP_NAME}/${APP_NAME}.log</file>
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp>
+                        <fieldName>timestamp</fieldName>
+                        <timeZone>UTC</timeZone>
+                    </timestamp>
+                    <version>
+                        <fieldName>version</fieldName>
+                    </version>
+                    <loggerName>
+                        <fieldName>logger</fieldName>
+                    </loggerName>
+                    <threadName>
+                        <fieldName>thread</fieldName>
+                    </threadName>
+                    <logLevel>
+                        <fieldName>level</fieldName>
+                    </logLevel>
+                    <message>
+                        <fieldName>message</fieldName>
+                    </message>
+                    <mdc>
+                        <includeMdcKeyName>correlationId</includeMdcKeyName>
+                        <includeMdcKeyName>requestId</includeMdcKeyName>
+                        <includeMdcKeyName>traceId</includeMdcKeyName>
+                        <includeMdcKeyName>spanId</includeMdcKeyName>
+                    </mdc>
+                    <stackTrace>
+                        <fieldName>exception</fieldName>
+                    </stackTrace>
+                </providers>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>logs/${APP_NAME}/${APP_NAME}-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>7</maxHistory>
+                <totalSizeCap>2GB</totalSizeCap>
+            </rollingPolicy>
+        </appender>
+    </springProfile>
+
     <root level="INFO">
         <appender-ref ref="STDOUT" />
+        <!-- FILE appender is only referenced inside the local-k8s profile above -->
     </root>
+
+    <springProfile name="local-k8s">
+        <root level="INFO">
+            <appender-ref ref="STDOUT" />
+            <appender-ref ref="FILE" />
+        </root>
+    </springProfile>
 </configuration>
 

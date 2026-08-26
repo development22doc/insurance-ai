@@ -1,0 +1,29 @@
+{{- if and .Values.redis.enabled .Values.redis.devExternalAccess }}
+# Redis DEV NodePort Service - DEV-only VPN Redis access.
+# Exposes Redis (container port 6379) on a NodePort so Tailscale
+# VPN clients can reach the cache via the MagicDNS hostname:NodePort.
+# Rendered ONLY when redis.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-redis.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.redis.serviceName }}-dev
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: {{ .Values.redis.port }}
+      targetPort: redis
+      nodePort: {{ .Values.redis.devNodePort }}
+      protocol: TCP
+{{- end }}

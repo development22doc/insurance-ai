@@ -183,10 +183,9 @@ ss -lntp 2>/dev/null | grep -E ':15432|:16379|:9092|:18080|:18081|:13000|:19090|
 }
 
 Write-Host ""
-Write-Host "[HOSTS] Cleaning up Kafka hostname..." -ForegroundColor Cyan
+Write-Host "[HOSTS] Cleaning up Kafka hostname entries..." -ForegroundColor Cyan
 
 $hostsPath = "C:\Windows\System32\drivers\etc\hosts"
-$kafkaEntry = "127.0.0.1 claimassist-kafka"
 $marker = "# CLAIMASSIST-OCI-K8S-DEV"
 
 try {
@@ -201,24 +200,18 @@ try {
         Write-Host "  [WARN] Not running as Administrator - hosts file not changed" -ForegroundColor Yellow
     }
     else {
-        $hostsContent = @(Get-Content $hostsPath -ErrorAction SilentlyContinue)
+        # Read entire file as raw text — preserves original encoding and line endings
+        $content = [System.IO.File]::ReadAllText($hostsPath)
 
-        $newContent = @()
+        # Remove the marker line (with any line ending)
+        $content = [regex]::Replace($content, '(?m)^\s*# CLAIMASSIST-OCI-K8S-DEV\s*\r?\n?', '')
 
-        foreach ($line in $hostsContent) {
-            if ($line -eq $marker -or $line -eq $kafkaEntry) {
-                continue
-            }
+        # Remove any claimassist-kafka hosts entry line (current combined or old single-name)
+        $content = [regex]::Replace($content, '(?m)^\s*127\.0\.0\.1\s+claimassist-kafka[^\r\n]*\r?\n?', '')
 
-            $newContent += $line
-        }
+        [System.IO.File]::WriteAllText($hostsPath, $content)
 
-        $newContent | Set-Content `
-            -Path $hostsPath `
-            -Encoding UTF8 `
-            -ErrorAction Stop
-
-        Write-Host "  [OK] Kafka hosts entry cleaned" -ForegroundColor Green
+        Write-Host "  [OK] Kafka hosts entries cleaned (short name + FQDN)" -ForegroundColor Green
     }
 }
 catch {

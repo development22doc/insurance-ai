@@ -9,9 +9,9 @@ global:
   managedBy: helm
 
 image:
-  registry: ""              # set to claimassistdev at deploy time (see cd.yml)
+  registry: claimassistdev   # deployed by CD; matches running pods on OCI
   repository: claimassist     # local-only fallback when registry is empty
-  tag: "1.0.0"              # matches Task 6A-3 built images (dev tag convention later)
+  tag: "b781cebe484a01fc9150f59cff7c5b9fc6ad2d0d"   # current running image on OCI (set by CD at deploy time)
   pullPolicy: Always
   # docker-registry imagePullSecret consumed by every application Deployment.
   # The DEV bootstrap creates it idempotently from the DOCKER_USERNAME/DOCKER_PASSWORD
@@ -46,6 +46,13 @@ postgresql:
     requests: { cpu: 200m, memory: 256Mi }
     limits: { cpu: 500m, memory: 512Mi }
   securityContext: {}
+  # DEV-only VPN PostgreSQL external access.
+  # When enabled, a NodePort Service exposes PostgreSQL (5432) on the K3s
+  # node so Tailscale VPN clients can reach the database at the MagicDNS
+  # hostname. Disabled in values.yaml (global); only DEV enables it.
+  devExternalAccess: true
+  devExternalHost: vnic.taild219f3.ts.net
+  devNodePort: 30432
 
 # Task 6A-8: Redis for DEV (namespace claimassist-dev). One internal Deployment +
 # ClusterIP Service. Cache only (no PVC / no persistence). Conservative free-tier
@@ -55,6 +62,13 @@ redis:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 250m, memory: 256Mi }
+  # DEV-only VPN Redis external access.
+  # When enabled, a NodePort Service exposes Redis (6379) on the K3s
+  # node so Tailscale VPN clients can reach the cache at the MagicDNS
+  # hostname. Disabled in values.yaml (global); only DEV enables it.
+  devExternalAccess: true
+  devExternalHost: vnic.taild219f3.ts.net
+  devNodePort: 30379
 
 # Task 6A-9: Kafka for DEV (namespace claimassist-dev). One KRaft broker
 # StatefulSet + internal ClusterIP Service + PVC. Free-learning-tier (NOT HA):
@@ -64,6 +78,13 @@ kafka:
   resources:
     requests: { cpu: 100m, memory: 512Mi }
     limits: { cpu: 500m, memory: 1Gi }
+  # DEV-only VPN Kafka external access (Task 6A-VPN-1).
+  # When enabled, a NodePort Service exposes the DEV listener (19092) on the
+  # K3s node so Tailscale VPN clients can reach the broker at the MagicDNS
+  # hostname. Disabled in values.yaml (global); only DEV enables it.
+  devExternalAccess: true
+  devExternalHost: vnic.taild219f3.ts.net
+  devNodePort: 30092
 
 flyway:
   enabled: true
@@ -80,6 +101,13 @@ keycloak:
   resources:
     requests: { cpu: 100m, memory: 512Mi }
     limits: { cpu: 500m, memory: 1024Mi }
+  # DEV-only VPN Keycloak external access.
+  # When enabled, a NodePort Service exposes Keycloak HTTP (8080) on the
+  # K3s node so Tailscale VPN clients can reach the admin console at the
+  # MagicDNS hostname. Disabled in values.yaml (global); only DEV enables it.
+  devExternalAccess: true
+  devExternalHost: vnic.taild219f3.ts.net
+  devNodePort: 30080
   postgresql:
     enabled: true
     storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided

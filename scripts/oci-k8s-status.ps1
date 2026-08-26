@@ -102,19 +102,23 @@ foreach ($tunnel in $tunnels) {
 
 Write-Host ""
 
-# Check Kafka hostname resolution
+# Check Kafka hostname resolution (short name and FQDN)
 Write-Host "[KAFKA DNS]" -ForegroundColor Cyan
-try {
-    $resolved = [System.Net.Dns]::GetHostAddresses("claimassist-kafka")
-    if ($resolved) {
-        foreach ($ip in $resolved) {
-            Write-Host "  [OK] claimassist-kafka resolves to $ip" -ForegroundColor Green
+
+$kafkaHostnames = @("claimassist-kafka", "claimassist-kafka.claimassist-dev.svc.cluster.local")
+foreach ($hostname in $kafkaHostnames) {
+    try {
+        $resolved = [System.Net.Dns]::GetHostAddresses($hostname)
+        if ($resolved) {
+            foreach ($ip in $resolved) {
+                Write-Host "  [OK] $hostname resolves to $ip" -ForegroundColor Green
+            }
+        } else {
+            Write-Host "  [FAIL] $hostname does not resolve" -ForegroundColor Yellow
         }
-    } else {
-        Write-Host "  [FAIL] claimassist-kafka does not resolve" -ForegroundColor Yellow
+    } catch {
+        Write-Host "  [FAIL] Failed to resolve ${hostname}: $_" -ForegroundColor Yellow
     }
-} catch {
-    Write-Host "  [FAIL] Failed to resolve claimassist-kafka: $_" -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -122,13 +126,16 @@ Write-Host ""
 # Show hosts file entry
 Write-Host "[HOSTS FILE]" -ForegroundColor Cyan
 $hostsPath = "C:\Windows\System32\drivers\etc\hosts"
-$kafkaEntry = "127.0.0.1 claimassist-kafka"
-$hasEntry = Get-Content $hostsPath -ErrorAction SilentlyContinue | Where-Object { $_ -eq $kafkaEntry }
+$hostsRaw = Get-Content $hostsPath -ErrorAction SilentlyContinue
+$hasShortEntry = $hostsRaw | Where-Object { $_ -match '^\s*127\.0\.0\.1\s+claimassist-kafka\s' }
+$hasFqdnEntry = $hostsRaw | Where-Object { $_ -match 'claimassist-kafka\.claimassist-dev\.svc\.cluster\.local' }
 
-if ($hasEntry) {
-    Write-Host "  [OK] Kafka entry present in hosts file" -ForegroundColor Green
+if ($hasShortEntry -and $hasFqdnEntry) {
+    Write-Host "  [OK] Kafka entries present in hosts file (short + FQDN)" -ForegroundColor Green
+} elseif ($hasShortEntry) {
+    Write-Host "  [WARN] Kafka short name present but FQDN missing - run connect script" -ForegroundColor Yellow
 } else {
-    Write-Host "  [FAIL] Kafka entry NOT in hosts file" -ForegroundColor Red
+    Write-Host "  [FAIL] Kafka entries NOT in hosts file" -ForegroundColor Red
     Write-Host "    Run as Administrator or execute:" -ForegroundColor Yellow
     Write-Host "    .\scripts\oci-k8s-connect.ps1" -ForegroundColor Yellow
 }
