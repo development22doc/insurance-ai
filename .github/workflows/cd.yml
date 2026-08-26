@@ -21,10 +21,44 @@
 #         --set services.<svc>.imageTag=<git-sha>
 #   Because `helm upgrade` merges over the previous release values, ONLY the
 #   targeted service's pod template changes -> only that Deployment rolls out.
-#   Untouched services keep their already-deployed immutable SHA tag (Helm state
-#   always equals live state => NO drift). Helm is the only mutator of the
-#   Deployments, so a later Helm operation can never "revert" a kubectl side-effect
-#   (there are none).
+#   Untouched services keep their already-deployed immutable SHA tag.
+#
+# * IMAGE-STATE RESOLUTION (KUBERNETES-AUTHORITATIVE):
+#   ** THE AUTHORITATIVE SOURCE OF DEPLOYED IMAGE STATE IS THE KUBERNETES **
+#   ** DEPLOYMENT RUNTIME STATE, NOT HELM USER-SUPPLIED VALUES.            **
+#
+#   Helm user-supplied values (`helm get values`) may be incomplete, stale,
+#   or absent entirely (e.g. after a partial deployment or a failed revision).
+#   The actual Kubernetes Deployment spec.template.spec.containers[0].image
+#   always reflects what is truly running.
+#
+#   The CD workflow uses the reusable resolve-deployed-images.sh script to:
+#     1. Read actual image tags from Kubernetes Deployments (authoritative)
+#     2. Validate image format: <registry>/<service>:<SHA>
+#     3. Reject invalid tags (latest, 1.0.0, dev, empty, wrong registry)
+#     4. Handle bootstrap (force_deploy) and broken states explicitly
+#   This resolution happens WHILE HOLDING the deployment lock to prevent races.
+#
+# * DEPLOYMENT FLOW (per service):
+#   acquire environment deployment lock (cd-deploy-<env>)
+#     -> record pre-deployment image state (race detection snapshot)
+#     -> resolve current deployed images from Kubernetes (authoritative)
+#     -> apply requested service override(s)
+#     -> verify all four resulting images
+#     -> helm upgrade --wait
+#     -> verify post-deployment image state (all four services)
+#     -> verify Helm release is in 'deployed' state
+#     -> release lock
+#
+# * INFRASTRUCTURE SYNC:
+#   Infrastructure changes preserve ALL four application images:
+#     1. acquire environment deployment lock
+#     2. record pre-deployment image state
+#     3. resolve actual current images from Kubernetes Deployments
+#     4. pass all four preserved image tags to Helm explicitly
+#     5. apply the infrastructure/chart change
+#     6. verify that application images did NOT change
+#   This guarantees infrastructure-only changes never bump application images.
 #
 # * CI -> CD ordering (no race):
 #   Automatic CD is gated on the COMPLETED post-merge CI run via `workflow_run`
@@ -50,15 +84,6 @@
 #   build-only does not initialize Helm, does not call kubectl, and does not require any
 #   kubeconfig secret (it only needs the repo-level DOCKER_USERNAME / DOCKER_PASSWORD).
 #
-# * Infra synchronization:
-#   - application change                    -> service-wise helm upgrade (this service only)
-#   - common-lib/** or root pom.xml change   -> all four services (they all depend on it)
-#   - infrastructure/** chart change         -> a dedicated infra `helm upgrade`
-#                                              (no image tags -> applies the chart change,
-#                                              preserves every service's deployed SHA)
-#   The infra sync re-renders the whole chart from the SAVED release values so
-#   application images are NOT bumped.
-#
 # * Concurrency: namespace-level lock `cd-deploy-<env>` for every job that mutates
 #   that environment's single Helm release (deploy, infra-sync, rollback). Two
 #   different services are independent/serializable, "all" cannot race a service
@@ -67,6 +92,19 @@
 # * Failure isolation: all service matrices use `fail-fast: false`; an independent
 #   service failure does NOT cancel its peers. Each service job fails (and is
 #   reported) independently.
+#
+# * POST-DEPLOYMENT VERIFICATION: after every Helm upgrade, the CD verifies:
+#     1. All four Kubernetes Deployment images match the calculated desired state
+#     2. Helm release is in 'deployed' state
+#     3. For service deploys: sibling services were NOT modified
+#     4. For infra sync: ALL four application images are unchanged
+#   This catches state drift, failed upgrades, and concurrency issues.
+#
+# * FIRST-EVER BOOTSTRAP / BROKEN ENVIRONMENTS:
+#   If any Deployment is missing or has an invalid image, the resolver fails
+#   with a clear diagnostic. Recovery requires force_deploy=true which
+#   explicitly supplies all four image tags. The resolver never guesses or
+#   falls back to default values.
 #
 # * Environments: dev/stage/prod namespaces + env-scoped kubeconfig secrets:
 #     dev   -> claimassist-dev   (DEV_KUBE_CONFIG)
@@ -511,6 +549,20 @@ jobs:
             exit 0
           fi
           echo "Freshness confirmed. Proceeding with Helm upgrade."
+      - name: Record pre-deployment image state
+        id: pre-state
+        run: |
+          set -euo pipefail
+          echo "Recording pre-deployment image state for infrastructure sync verification..."
+          for svc in api-gateway customer-service claims-service agent-service; do
+            DEP="claimassist-$svc"
+            if kubectl get deployment "$DEP" -n "$NAMESPACE" &>/dev/null; then
+              TAG=$(kubectl -n "$NAMESPACE" get deployment "$DEP" \
+                -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
+              echo "PRE_${svc//-/_}_TAG=$TAG" >> "$GITHUB_ENV"
+              echo "  $svc: $TAG"
+            fi
+          done
       - name: Apply infrastructure change via Helm (DEV)
         if: needs.resolve-targets.outputs.force_deploy != 'true'
         env:
@@ -533,45 +585,31 @@ jobs:
             fi
           done
 
-          # values-dev.yaml defines the services map. Because Helm merges that map,
-          # omitted imageTag values can otherwise replace previously saved service
-          # imageTags and cause the chart to fall back to image.tag (1.0.0).
-          # Preserve every currently saved immutable service imageTag explicitly.
-          IMAGE_TAG_ARGS=()
+          # Resolve CURRENT deployed images from Kubernetes Deployments (authoritative runtime state).
+          # This happens WHILE HOLDING the deployment lock, preventing races with concurrent CD runs.
+          # Helm values are NOT used for image-state resolution (they may be incomplete).
+          # The resolver validates image format and rejects invalid tags (latest, 1.0.0, etc.).
+          # If Deployments don't exist (first-ever bootstrap), use force_deploy=true instead.
+          echo "Resolving current deployed images from Kubernetes Deployments..."
 
-          # Read imageTags from the latest DEPLOYED Helm revision ONLY.
-          # A FAILED revision's values may contain partial/incomplete configuration
-          # from an interrupted upgrade and MUST NOT be used for imageTag preservation.
-          # If no deployed revision exists, this is a first-ever or broken state:
-          # require force_deploy=true which explicitly provides all imageTags.
-          DEPLOYED_REVISION="$(helm history "$RELEASE" -n "$NAMESPACE" -o json | \
-            python3 -c 'import json,sys; h=json.load(sys.stdin); d=[r for r in h if r.get("status")=="deployed"]; print(max(d,key=lambda r:int(r["revision"]))["revision"] if d else "")')"
+          RESOLVED_TAGS=$(.github/scripts/resolve-deployed-images.sh "$NAMESPACE" "$DOCKER_REGISTRY")
 
-          if [ -z "$DEPLOYED_REVISION" ]; then
-            echo "::error::No DEPLOYED Helm revision found for $RELEASE during infrastructure sync."
-            echo "::error::This happens on first-ever deployment or if all revisions failed."
-            echo "::error::Use workflow_dispatch with action=deploy, environment=dev, force_deploy=true to bootstrap."
-            exit 1
-          fi
+          # Parse resolved tags into array
+          read -r API_TAG CUSTOMER_TAG CLAIMS_TAG AGENT_TAG <<< "$RESOLVED_TAGS"
 
-          echo "Using latest DEPLOYED Helm revision for imageTag preservation: $DEPLOYED_REVISION"
+          echo "Resolved current deployed images:"
+          echo "  api-gateway: $API_TAG"
+          echo "  customer-service: $CUSTOMER_TAG"
+          echo "  claims-service: $CLAIMS_TAG"
+          echo "  agent-service: $AGENT_TAG"
 
-          RELEASE_VALUES_JSON="$(helm get values "$RELEASE" \
-            -n "$NAMESPACE" \
-            --revision "$DEPLOYED_REVISION" \
-            -o json)"
-
-          for svc in api-gateway customer-service claims-service agent-service; do
-            current_tag="$(printf '%s' "$RELEASE_VALUES_JSON" | \
-              python3 -c 'import json,sys; d=json.load(sys.stdin); svc=sys.argv[1]; print(d.get("services",{}).get(svc,{}).get("imageTag",""))' "$svc")"
-
-            if [ -n "$current_tag" ]; then
-              IMAGE_TAG_ARGS+=("--set" "services.$svc.imageTag=$current_tag")
-            else
-              echo "::error::No existing imageTag found for $svc during infrastructure sync (revision $DEPLOYED_REVISION)."
-              exit 1
-            fi
-          done
+          # Build explicit image tag arguments for Helm
+          IMAGE_TAG_ARGS=(
+            "--set" "services.api-gateway.imageTag=$API_TAG"
+            "--set" "services.customer-service.imageTag=$CUSTOMER_TAG"
+            "--set" "services.claims-service.imageTag=$CLAIMS_TAG"
+            "--set" "services.agent-service.imageTag=$AGENT_TAG"
+          )
 
           helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
             --install \
@@ -670,6 +708,45 @@ jobs:
             --timeout 10m
       - name: Verify rollout
         run: kubectl rollout status deployment -n "$NAMESPACE" --timeout=5m
+      - name: Verify infrastructure sync preserved application images
+        run: |
+          set -euo pipefail
+          echo "=== Infrastructure sync verification: app images unchanged ==="
+          CHANGED=0
+          for svc in api-gateway customer-service claims-service agent-service; do
+            DEP="claimassist-$svc"
+            if ! kubectl get deployment "$DEP" -n "$NAMESPACE" &>/dev/null; then
+              echo "::error::INFRA-SYNC VERIFICATION FAILED: $DEP does not exist after infra sync."
+              exit 1
+            fi
+            ACTUAL_IMAGE=$(kubectl -n "$NAMESPACE" get deployment "$DEP" \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
+            ACTUAL_TAG="${ACTUAL_IMAGE##*:}"
+            ENV_VAR="PRE_${svc//-/_}_TAG"
+            EXPECTED_TAG="${!ENV_VAR:-}"
+            if [ -n "$EXPECTED_TAG" ] && [ "$ACTUAL_TAG" != "$EXPECTED_TAG" ]; then
+              echo "::error::INFRA-SYNC VERIFICATION FAILED: $svc image changed during infra-only sync!"
+              echo "::error::  Before: $EXPECTED_TAG"
+              echo "::error::  After:  $ACTUAL_TAG"
+              CHANGED=1
+            else
+              echo "  $svc: $ACTUAL_TAG (unchanged) [OK]"
+            fi
+          done
+          if [ "$CHANGED" -ne 0 ]; then
+            echo "::error::Infrastructure sync unexpectedly modified application images."
+            exit 1
+          fi
+          echo "All four application images preserved after infrastructure sync."
+      - name: Verify Helm release deployed state
+        run: |
+          set -euo pipefail
+          RELEASE_STATUS=$(helm status claimassist-dev -n "$NAMESPACE" -o json | jq -r '.info.status')
+          echo "Helm release status: $RELEASE_STATUS"
+          if [ "$RELEASE_STATUS" != "deployed" ]; then
+            echo "::error::Helm release not in 'deployed' state ($RELEASE_STATUS)."
+            exit 1
+          fi
 
   # ===========================================================================
   # Per-environment, per-service deployment (SERVICE-WISE, parallel matrix)
@@ -765,6 +842,23 @@ jobs:
             exit 0
           fi
           echo "Freshness confirmed. Proceeding with Helm upgrade."
+      - name: Record pre-deployment image state (race detection snapshot)
+        id: pre-state
+        run: |
+          set -euo pipefail
+          echo "Recording pre-deployment image state for race detection..."
+          for svc in api-gateway customer-service claims-service agent-service; do
+            DEP="claimassist-$svc"
+            if kubectl get deployment "$DEP" -n "$NAMESPACE" &>/dev/null; then
+              TAG=$(kubectl -n "$NAMESPACE" get deployment "$DEP" \
+                -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
+              echo "PRE_${svc//-/_}_TAG=$TAG" >> "$GITHUB_ENV"
+              echo "  $svc: $TAG"
+            else
+              echo "PRE_${svc//-/_}_TAG=" >> "$GITHUB_ENV"
+              echo "  $svc: (not deployed)"
+            fi
+          done
       - name: Deploy ${{ matrix.service }} via Helm (immutable image)
         run: |
           set -euo pipefail
@@ -774,51 +868,27 @@ jobs:
           # release already exists and Helm merges over it (bumping ONLY the targeted
           # service's imageTag to the immutable SHA); untouched services keep their
           # already-deployed SHA, so there is NO drift and NO 1.0.0 fallback.
-          # Read the latest DEPLOYED Helm revision.
-          # Never use a FAILED revision because it may contain incomplete values.
-          DEPLOYED_REVISION="$(helm history "$RELEASE" -n "$NAMESPACE" -o json | \
-            python3 -c 'import json,sys; h=json.load(sys.stdin); d=[r for r in h if r.get("status")=="deployed"]; print(max(d,key=lambda r:int(r["revision"]))["revision"] if d else "")')"
 
-          if [ -z "$DEPLOYED_REVISION" ]; then
-            echo "::error::No DEPLOYED Helm revision found for $RELEASE."
-            exit 1
-          fi
+          # Resolve CURRENT deployed images from Kubernetes Deployments (authoritative runtime state).
+          # This happens WHILE HOLDING the deployment lock, preventing races with concurrent CD runs.
+          # Helm values are NOT used for image-state resolution (they may be incomplete).
+          # The resolver validates image format and rejects invalid tags (latest, 1.0.0, etc.).
+          # If Deployments don't exist (first-ever bootstrap), use force_deploy=true instead.
+          echo "Resolving current deployed images from Kubernetes Deployments..."
 
-          echo "Using deployed Helm revision: $DEPLOYED_REVISION"
+          RESOLVED_TAGS=$(.github/scripts/resolve-deployed-images.sh "$NAMESPACE" "$DOCKER_REGISTRY")
 
-          # Preserve the existing immutable imageTag for every service.
-          RELEASE_VALUES_JSON="$(helm get values "$RELEASE" \
-            -n "$NAMESPACE" \
-            --revision "$DEPLOYED_REVISION" \
-            -o json)"
+          # Parse resolved tags into array
+          read -r API_TAG CUSTOMER_TAG CLAIMS_TAG AGENT_TAG <<< "$RESOLVED_TAGS"
 
-          get_image_tag() {
-            local svc="$1"
-            printf '%s' "$RELEASE_VALUES_JSON" | \
-              python3 -c 'import json,sys; d=json.load(sys.stdin); svc=sys.argv[1]; print(d.get("services",{}).get(svc,{}).get("imageTag",""))' "$svc"
-          }
-
-          API_TAG="$(get_image_tag api-gateway)"
-          CUSTOMER_TAG="$(get_image_tag customer-service)"
-          CLAIMS_TAG="$(get_image_tag claims-service)"
-          AGENT_TAG="$(get_image_tag agent-service)"
-
-          for pair in \
-            "api-gateway:$API_TAG" \
-            "customer-service:$CUSTOMER_TAG" \
-            "claims-service:$CLAIMS_TAG" \
-            "agent-service:$AGENT_TAG"; do
-
-            svc="${pair%%:*}"
-            tag="${pair#*:}"
-
-            if [ -z "$tag" ]; then
-              echo "::error::No existing imageTag found for $svc in deployed revision $DEPLOYED_REVISION."
-              exit 1
-            fi
-          done
+          echo "Resolved current deployed images:"
+          echo "  api-gateway: $API_TAG"
+          echo "  customer-service: $CUSTOMER_TAG"
+          echo "  claims-service: $CLAIMS_TAG"
+          echo "  agent-service: $AGENT_TAG"
 
           # Update ONLY the service represented by this matrix job.
+          # Override the resolved current tag with the target SHA for this service.
           case "${{ matrix.service }}" in
             api-gateway)
               API_TAG="${{ needs.resolve-targets.outputs.target_sha }}"
@@ -838,7 +908,7 @@ jobs:
               ;;
           esac
 
-          echo "Final image tags:"
+          echo "Final image tags (after applying target service override):"
           echo "  api-gateway=$API_TAG"
           echo "  customer-service=$CUSTOMER_TAG"
           echo "  claims-service=$CLAIMS_TAG"
@@ -887,6 +957,49 @@ jobs:
             kubectl -n "$NAMESPACE" get pods -l "app.kubernetes.io/component=${{ matrix.service }}"
             exit 1
           fi
+      - name: Verify post-deployment image state (all four services)
+        run: |
+          set -euo pipefail
+          echo "=== Post-deployment image verification ==="
+          EXPECTED_TAG="${{ needs.resolve-targets.outputs.target_sha }}"
+          DEPLOYED_SVC="${{ matrix.service }}"
+
+          for svc in api-gateway customer-service claims-service agent-service; do
+            DEP="claimassist-$svc"
+            if ! kubectl get deployment "$DEP" -n "$NAMESPACE" &>/dev/null; then
+              echo "::error::POST-DEPLOY FAILED: $DEP does not exist."
+              exit 1
+            fi
+            ACTUAL_IMAGE=$(kubectl -n "$NAMESPACE" get deployment "$DEP" \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
+            ACTUAL_TAG="${ACTUAL_IMAGE##*:}"
+
+            if [ "$svc" = "$DEPLOYED_SVC" ]; then
+              if [ "$ACTUAL_TAG" != "$EXPECTED_TAG" ]; then
+                echo "::error::POST-DEPLOY FAILED: $svc expected '$EXPECTED_TAG' but has '$ACTUAL_TAG'"
+                exit 1
+              fi
+              echo "  $svc: $ACTUAL_TAG [UPDATED]"
+            else
+              ENV_VAR="PRE_${svc//-/_}_TAG"
+              EXPECTED_SIBLING="${!ENV_VAR:-}"
+              if [ -n "$EXPECTED_SIBLING" ] && [ "$ACTUAL_TAG" != "$EXPECTED_SIBLING" ]; then
+                echo "::error::POST-DEPLOY FAILED: Sibling $svc unexpectedly changed ($EXPECTED_SIBLING -> $ACTUAL_TAG)"
+                exit 1
+              fi
+              echo "  $svc: $ACTUAL_TAG [PRESERVED]"
+            fi
+          done
+          echo "All four service images verified."
+      - name: Verify Helm release deployed state
+        run: |
+          set -euo pipefail
+          RELEASE_STATUS=$(helm status claimassist-dev -n "$NAMESPACE" -o json | jq -r '.info.status')
+          echo "Helm release status: $RELEASE_STATUS"
+          if [ "$RELEASE_STATUS" != "deployed" ]; then
+            echo "::error::Helm release not in 'deployed' state ($RELEASE_STATUS). Check helm history."
+            exit 1
+          fi
 
   dev-validation:
     name: DEV Validation
@@ -904,8 +1017,14 @@ jobs:
     steps:
       - name: Validate DEV deployment result
         run: |
-          echo "DEV services deployed: ${{ needs.resolve-targets.outputs.app_services }}"
+          echo "=== DEV Deployment Summary ==="
+          echo "Services deployed: ${{ needs.resolve-targets.outputs.app_services }}"
           echo "Infra sync triggered: ${{ needs.resolve-targets.outputs.run_infra_sync }}"
+          echo "Target SHA: ${{ needs.resolve-targets.outputs.target_sha }}"
+          echo "Trigger kind: ${{ needs.resolve-targets.outputs.trigger_kind }}"
+          echo ""
+          echo "All deployment jobs completed successfully."
+          echo "Post-deployment image verification was performed in each deploy job."
           echo "DEV validation passed."
 
   # ------------------------------- STAGE -------------------------------------
