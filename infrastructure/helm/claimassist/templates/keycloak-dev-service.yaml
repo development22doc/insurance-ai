@@ -1,0 +1,30 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.devExternalAccess }}
+# Keycloak DEV NodePort Service - DEV-only VPN Keycloak access.
+# Exposes Keycloak HTTP (container port 8080) on a NodePort so Tailscale
+# VPN clients can reach the admin console via the MagicDNS hostname:NodePort.
+# Rendered ONLY when keycloak.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-keycloak.
+# NOTE: Keycloak PostgreSQL is NOT exposed - only the app layer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.keycloak.serviceName }}-dev
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: keycloak
+  ports:
+    - name: http
+      port: {{ .Values.keycloak.port }}
+      targetPort: http
+      nodePort: {{ .Values.keycloak.devNodePort }}
+      protocol: TCP
+{{- end }}

@@ -13,6 +13,11 @@ data:
       wal:
         enabled: true
         dir: /loki/wal
+      lifecycler:
+        ring:
+          kvstore:
+            store: inmemory
+          replication_factor: 1
     common:
       ring:
         kvstore:

@@ -1,0 +1,121 @@
+// Grafana Alloy Configuration for ClaimAssist Local IntelliJ Observability
+// Collects metrics, logs from local JVM services and forwards to OCI observability stack
+//
+// Usage:
+//   1. Install Grafana Alloy on Windows: https://grafana.com/docs/alloy/latest/set-up/install/windows/
+//   2. Run: alloy run infrastructure/monitoring/alloy/config.alloy
+//   3. Or use scripts/start-local-observability.ps1 (created separately)
+
+// =============================================================================
+// PROMETHEUS SCRAPE PIPELINE
+// Scrapes /actuator/prometheus from local JVM services
+// Forwards to OCI Prometheus via remote-write
+// =============================================================================
+
+// Remote write to OCI Prometheus (via SSH tunnel localhost:19090)
+// NOTE: Requires OCI Prometheus to have --web.enable-remote-write-receiver enabled
+prometheus.remote_write "oci_prometheus" {
+  endpoint {
+    url = "http://localhost:19090/api/v1/write"
+  }
+  // Low-cardinality labels for local IntelliJ environment
+  external_labels = {
+    environment = "local",
+    source      = "intellij",
+    host        = "dev-machine",
+    cluster     = "claimassist-dev",
+  }
+}
+
+// Scrape config for local JVM services
+prometheus.scrape "local_services" {
+  targets = [
+    // API Gateway
+    { __address__ = "localhost:8080", __metrics_path__ = "/actuator/prometheus", service = "api-gateway", instance_type = "intellij" },
+    // Customer Service
+    { __address__ = "localhost:8081", __metrics_path__ = "/actuator/prometheus", service = "customer-service", instance_type = "intellij" },
+    // Claims Service
+    { __address__ = "localhost:8082", __metrics_path__ = "/actuator/prometheus", service = "claims-service", instance_type = "intellij" },
+    // Agent Service
+    { __address__ = "localhost:8083", __metrics_path__ = "/actuator/prometheus", service = "agent-service", instance_type = "intellij" },
+  ]
+  forward_to = [prometheus.remote_write.oci_prometheus.receiver]
+  scrape_interval = "15s"
+  scrape_timeout = "10s"
+}
+
+// =============================================================================
+// LOKI LOG COLLECTION PIPELINE
+// Collects structured JSON logs from local service log files
+// Forwards to OCI Loki via HTTP push
+//
+// Pipeline: local.file_match -> loki.source.file -> loki.process -> loki.write
+// =============================================================================
+
+// Loki client for OCI (via SSH tunnel localhost:13100)
+loki.write "oci_loki" {
+  endpoint {
+    url = "http://localhost:13100/loki/api/v1/push"
+  }
+  // Low-cardinality labels only
+  external_labels = {
+    environment = "local",
+    source      = "intellij",
+    host        = "dev-machine",
+    cluster     = "claimassist-dev",
+  }
+}
+
+// Process logs through JSON parsing and label extraction
+loki.process "service_logs_processor" {
+  forward_to = [loki.write.oci_loki.receiver]
+  stage.json {
+    expressions = {
+      timestamp = "timestamp",
+      level     = "level",
+      logger    = "logger",
+      message   = "message",
+      traceId   = "traceId",
+      spanId    = "spanId",
+      correlationId = "correlationId",
+      requestId = "requestId",
+    }
+  }
+  // Keep only low-cardinality labels
+  stage.labels {
+    values = {
+      service = "service",
+      level = "level",
+    }
+  }
+}
+
+// Single file_match discovers all service log files directly.
+// Each target carries a service label for low-cardinality indexing.
+local.file_match "service_logs" {
+  path_targets = [
+    { __path__ = "logs/api-gateway.log", service = "api-gateway" },
+    { __path__ = "logs/customer-service.log", service = "customer-service" },
+    { __path__ = "logs/claims-service.log", service = "claims-service" },
+    { __path__ = "logs/agent-service.log", service = "agent-service" },
+  ]
+}
+
+// Tail the discovered files and forward to the processor
+loki.source.file "service_logs_source" {
+  targets = local.file_match.service_logs.targets
+  forward_to = [loki.process.service_logs_processor.receiver]
+}
+
+// =============================================================================
+// ZIPKIN TRACE COLLECTION
+// Applications send traces directly to Zipkin via Micrometer/Zipkin exporter
+// Alloy does not intercept traces - direct path: App -> localhost:19411 -> OCI Zipkin
+// =============================================================================
+
+// =============================================================================
+// ALLOY SERVER CONFIGURATION
+// =============================================================================
+
+// Alloy exposes its own metrics on http://localhost:12345/metrics
+// Health endpoint: http://localhost:12345/-/ready

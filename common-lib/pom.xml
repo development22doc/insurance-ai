@@ -97,7 +97,6 @@
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash.encoder.version}</version>
         </dependency>
-
 						<!-- Micrometer Tracing APIs - Bridge implementations (e.g., brave) should be provided by the application runtime -->
 						<dependency>
 							<groupId>io.micrometer</groupId>

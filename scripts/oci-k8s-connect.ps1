@@ -326,11 +326,16 @@ if ($apiTunnel -and (Test-PortInUse $apiTunnel.LocalPort)) {
 }
 
 # Manage Kafka hostname in hosts file
+# Kafka advertises PLAINTEXT://claimassist-kafka:9092 to clients. When the
+# Spring Kafka consumer receives broker metadata it gets the K8s service DNS
+# name (claimassist-kafka / claimassist-kafka.claimassist-dev.svc.cluster.local).
+# Windows cannot resolve these K8s names, so we map them to 127.0.0.1 where
+# the SSH tunnel is listening on port 9092.
 Write-Host "[HOSTS] Managing Kafka hostname resolution..." -ForegroundColor Cyan
 
 $hostsPath = "C:\Windows\System32\drivers\etc\hosts"
-$kafkaEntry = "127.0.0.1 claimassist-kafka"
 $marker = "# CLAIMASSIST-OCI-K8S-DEV"
+$targetLine = "127.0.0.1 claimassist-kafka claimassist-kafka.claimassist-dev.svc.cluster.local"
 
 try {
     $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -342,19 +347,81 @@ try {
         Write-Host "       Run as Administrator to enable:" -ForegroundColor Yellow
         Write-Host "       Start-Process powershell -Verb RunAs -ArgumentList '-File $PSCommandPath'" -ForegroundColor Yellow
     } else {
-        $hostsContent = Get-Content $hostsPath -ErrorAction SilentlyContinue
-        $kafkaLineExists = $hostsContent | Where-Object { $_ -eq $kafkaEntry }
+        # Read entire file as raw text — preserves original encoding and line endings
+        $content = [System.IO.File]::ReadAllText($hostsPath)
 
-        if ($kafkaLineExists) {
-            Write-Host "[HOSTS] [OK] Kafka entry already present" -ForegroundColor Green
+        # Pattern matches any line beginning with "127.0.0.1<whitespace>claimassist-kafka"
+        # Captures the full line including trailing whitespace/line-ending so we can
+        # replace it in-place without touching surrounding lines.
+        $entryPattern = '(?m)^127\.0\.0\.1\s+claimassist-kafka[^\r\n]*'
+
+        $existingMatch = [regex]::Match($content, $entryPattern)
+
+        if ($existingMatch.Success) {
+            if ($existingMatch.Value -eq $targetLine) {
+                # Already the correct combined entry — nothing to do
+                Write-Host "[HOSTS] [OK] Kafka entries already present (short + FQDN)" -ForegroundColor Green
+            } else {
+                # Old single-name entry found — replace that one line in-place
+                $content = $content.Substring(0, $existingMatch.Index) +
+                           $targetLine +
+                           $content.Substring($existingMatch.Index + $existingMatch.Length)
+                [System.IO.File]::WriteAllText($hostsPath, $content)
+                Write-Host "[HOSTS] [OK] Upgraded single-name entry to combined (short + FQDN)" -ForegroundColor Green
+            }
         } else {
-            $newEntry = "$marker`n$kafkaEntry"
-            Add-Content -Path $hostsPath -Value "`n$newEntry" -Encoding UTF8 -ErrorAction Stop
-            Write-Host "[HOSTS] [OK] Added Kafka hostname entry" -ForegroundColor Green
+            # No entry exists — detect line-ending style and append marker + entry
+            $le = "`r`n"
+            if (-not $content.Contains("`r`n")) { $le = "`n" }
+
+            # Trim any trailing blank lines so the append sits cleanly at the end
+            $trimmed = $content.TrimEnd()
+            $append = "${le}${marker}${le}${targetLine}${le}"
+            [System.IO.File]::WriteAllText($hostsPath, $trimmed + $append)
+            Write-Host "[HOSTS] [OK] Added Kafka hostname entries (short + FQDN)" -ForegroundColor Green
         }
     }
 } catch {
     Write-Host "[WARN] Could not modify hosts file: $_" -ForegroundColor Yellow
+}
+
+Write-Host ""
+
+# ============================================================
+# Alloy service configuration
+# ============================================================
+Write-Host "[ALLOY] Configuring Alloy service..." -ForegroundColor Cyan
+
+$alloyScript = Join-Path $PSScriptRoot "configure-alloy-service.ps1"
+$alloyOk = $true
+
+if (-not (Test-Path $alloyScript)) {
+    Write-Host "[ALLOY] [ERROR] configure-alloy-service.ps1 not found: $alloyScript" -ForegroundColor Red
+    Write-Host "        Alloy will not forward logs/metrics to OCI." -ForegroundColor Yellow
+    $alloyOk = $false
+} else {
+    # Check admin privileges — Alloy config requires HKLM registry write
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    if (-not $isAdmin) {
+        Write-Host "[ALLOY] [ERROR] Not running as Administrator — Alloy configuration skipped." -ForegroundColor Red
+        Write-Host "        Alloy must be configured to forward logs/metrics to OCI." -ForegroundColor Red
+        Write-Host "        Run as Administrator:" -ForegroundColor Yellow
+        Write-Host "          .\scripts\configure-alloy-service.ps1" -ForegroundColor Yellow
+        $alloyOk = $false
+    } else {
+        try {
+            & $alloyScript
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[ALLOY] [ERROR] configure-alloy-service.ps1 failed (exit code $LASTEXITCODE)" -ForegroundColor Red
+                $alloyOk = $false
+            }
+        } catch {
+            Write-Host "[ALLOY] [ERROR] Alloy configuration failed: $_" -ForegroundColor Red
+            $alloyOk = $false
+        }
+    }
 }
 
 Write-Host ""
@@ -398,6 +465,62 @@ if ($allConnected) {
 }
 
 Write-Host ""
+if ($alloyOk -and $allConnected) {
+    Write-Host "[OK] Environment READY" -ForegroundColor Green
+} else {
+    Write-Host "[FAIL] Environment NOT READY" -ForegroundColor Red
+    if (-not $alloyOk) {
+        Write-Host "  Alloy: fix by running as Administrator: .\scripts\configure-alloy-service.ps1" -ForegroundColor Yellow
+    }
+    if (-not $allConnected) {
+        Write-Host "  Tunnels: check SSH connectivity to OCI" -ForegroundColor Yellow
+    }
+}
+
+# Alloy status summary
+Write-Host ""
+Write-Host "[ALLOY] Status:" -ForegroundColor Cyan
+$alloySvc = Get-Service -Name Alloy -ErrorAction SilentlyContinue
+if ($alloySvc) {
+    if ($alloySvc.Status -eq "Running") {
+        Write-Host "[ALLOY] [OK] Alloy service running" -ForegroundColor Green
+    } else {
+        Write-Host "[ALLOY] [FAIL] Alloy service status: $($alloySvc.Status)" -ForegroundColor Red
+        $alloyOk = $false
+    }
+
+    # Check for project config in process command line
+    $alloyProc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match "alloy" -and $_.CommandLine -match "config\.alloy" } |
+        Select-Object -First 1
+    if ($alloyProc) {
+        Write-Host "[ALLOY] [OK] Project configuration active" -ForegroundColor Green
+    } else {
+        Write-Host "[ALLOY] [FAIL] Project config not confirmed in running process" -ForegroundColor Red
+        $alloyOk = $false
+    }
+
+    # Health endpoint
+    $alloyHealthOk = $false
+    try {
+        $hr = Invoke-WebRequest -Uri "http://localhost:12345/-/ready" -UseBasicParsing -TimeoutSec 5
+        if ($hr.StatusCode -eq 200) {
+            $alloyHealthOk = $true
+            Write-Host "[ALLOY] [OK] Alloy health check passed" -ForegroundColor Green
+        }
+    } catch {
+        # Health check failed
+    }
+    if (-not $alloyHealthOk) {
+        Write-Host "[ALLOY] [FAIL] Alloy health endpoint not responding" -ForegroundColor Red
+        $alloyOk = $false
+    }
+} else {
+    Write-Host "[ALLOY] [FAIL] Alloy service not installed" -ForegroundColor Red
+    $alloyOk = $false
+}
+
+Write-Host ""
 Write-Host "Local endpoints:" -ForegroundColor Cyan
 Write-Host "  PostgreSQL:  localhost:15432" -ForegroundColor Yellow
 Write-Host "  Redis:       localhost:16379" -ForegroundColor Yellow
@@ -408,6 +531,7 @@ Write-Host "  Grafana:     localhost:13000" -ForegroundColor Yellow
 Write-Host "  Prometheus:  localhost:19090" -ForegroundColor Yellow
 Write-Host "  Zipkin:      localhost:19411" -ForegroundColor Yellow
 Write-Host "  Loki:        localhost:13100" -ForegroundColor Yellow
+Write-Host "  Alloy:       localhost:12345 (UI / health)" -ForegroundColor Yellow
 Write-Host "  K3s API:     localhost:16443" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Kubeconfig: $KubeConfigPath" -ForegroundColor Cyan
@@ -422,3 +546,10 @@ Write-Host ""
 Write-Host "3. Disconnect tunnels when done:" -ForegroundColor Cyan
 Write-Host "   .\scripts\oci-k8s-disconnect.ps1" -ForegroundColor Yellow
 Write-Host ""
+Write-Host "4. Reconfigure Alloy (if not run as Admin above):" -ForegroundColor Cyan
+Write-Host "   .\scripts\configure-alloy-service.ps1" -ForegroundColor Yellow
+Write-Host ""
+
+if (-not $alloyOk) {
+    exit 1
+}

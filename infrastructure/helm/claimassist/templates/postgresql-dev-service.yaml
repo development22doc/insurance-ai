@@ -1,0 +1,29 @@
+{{- if and .Values.postgresql.enabled .Values.postgresql.devExternalAccess }}
+# PostgreSQL DEV NodePort Service - DEV-only VPN PostgreSQL access.
+# Exposes PostgreSQL (container port 5432) on a NodePort so Tailscale
+# VPN clients can reach the database via the MagicDNS hostname:NodePort.
+# Rendered ONLY when postgresql.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-postgresql.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.postgresql.serviceName }}-dev
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: postgresql
+  ports:
+    - name: postgresql
+      port: {{ .Values.postgresql.port }}
+      targetPort: postgresql
+      nodePort: {{ .Values.postgresql.devNodePort }}
+      protocol: TCP
+{{- end }}

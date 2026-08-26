@@ -197,6 +197,10 @@ networkPolicy:
     namespace: claimassist-observability
     selector:
       app: prometheus
+  kafkaUI:
+    namespace: claimassist-observability
+    selector:
+      app: kafka-ui
 
 # -----------------------------------------------------------------------------
 # HPA (Task 6A-14B-3). CPU-based, only for the STATELESS application services
