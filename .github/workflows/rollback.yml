@@ -19,11 +19,14 @@ name: Rollback DEV
 #   service to its previously-deployed immutable image tag:
 #     1. Read the target service's imageTag from a prior Helm release revision
 #        (default: the previous revision) via `helm get values --revision N`.
-#     2. Re-apply that tag with a service-specific `helm upgrade` using the SAME
-#        `services.<name>.imageTag` override the CD deploy uses. Because Helm
-#        merges over the current release values, ONLY the target Deployment's pod
-#        template changes -> only that one service rolls back. The other three
-#        services keep their already-deployed SHA (verified after rollback).
+#     2. Resolve the CURRENT deployed images for all four services from Kubernetes
+#        Deployments (authoritative runtime state) using resolve-deployed-images.sh.
+#     3. Re-apply the prior tag for the target service with a service-specific
+#        `helm upgrade` using the SAME `services.<name>.imageTag` override the CD deploy
+#        uses, while preserving the other three services' current resolved tags.
+#        Because Helm merges over the current release values, ONLY the target
+#        Deployment's pod template changes -> only that one service rolls back.
+#        The other three services keep their already-deployed SHA (verified after rollback).
 #   Helm is the sole mutator of the Deployments, so Helm release values ALWAYS
 #   equal the live Kubernetes Deployment image. There is no `kubectl rollout
 #   undo` anywhere, so a rollback can never leave a result that disagrees with
@@ -141,10 +144,22 @@ jobs:
           exit 1
         fi
         echo "Current revision: $CURRENT | restoring from revision: $TARGET_REV"
+
+        # NOTE: We use `helm get values --revision` ONLY to determine the prior image
+        # tag for the TARGET service being rolled back. This is acceptable here because:
+        #   1. The rollback target is determined by the operator (explicit revision choice)
+        #   2. We subsequently resolve ALL four current images from Kubernetes Deployments
+        #      (authoritative) and use those for the sibling services
+        #   3. If the prior revision's values don't contain the imageTag, we fail with
+        #      a clear error rather than guessing
+        # The authoritative source for current state remains Kubernetes Deployments.
         PRIOR_VALUES=$(helm get values "$RELEASE" -n "$NAMESPACE" --revision "$TARGET_REV" -o json)
-        TARGET_TAG=$(echo "$PRIOR_VALUES" | jq -r --arg svc "$SERVICE" '(.services[$svc].imageTag // .image.tag // "1.0.0")')
+        TARGET_TAG=$(echo "$PRIOR_VALUES" | jq -r --arg svc "$SERVICE" '.services[$svc].imageTag // empty')
         if [ -z "$TARGET_TAG" ] || [ "$TARGET_TAG" = "null" ]; then
-          echo "::error::Could not determine the prior image tag for '$SERVICE' from revision $TARGET_REV."
+          echo "::error::Could not determine the prior image tag for '$SERVICE' from Helm revision $TARGET_REV."
+          echo "::error::The Helm release values at revision $TARGET_REV do not contain services.$SERVICE.imageTag."
+          echo "::error::This may mean the prior deployment used an older CD mechanism."
+          echo "::error::Recovery: use 'kubectl get deployment claimassist-$SERVICE -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}'' to find the currently deployed image, then deploy it manually."
           exit 1
         fi
         echo "Restoring '$SERVICE' to image tag: $TARGET_TAG"
@@ -153,22 +168,93 @@ jobs:
         SERVICE: ${{ github.event.inputs.service }}
         REVISION: ${{ github.event.inputs.revision }}
 
+    - name: Resolve current deployed images (for sibling services)
+      run: |
+        set -euo pipefail
+        # Resolve CURRENT deployed images from Kubernetes Deployments (authoritative runtime state).
+        # This ensures sibling services are preserved during rollback with their actual current images.
+        # This happens WHILE HOLDING the deployment lock, preventing races.
+        echo "Resolving current deployed images from Kubernetes Deployments..."
+
+        RESOLVED_TAGS=$(.github/scripts/resolve-deployed-images.sh "$NAMESPACE" "$DOCKER_REGISTRY")
+
+        # Parse resolved tags into array
+        read -r API_TAG CUSTOMER_TAG CLAIMS_TAG AGENT_TAG <<< "$RESOLVED_TAGS"
+
+        echo "Resolved current deployed images:"
+        echo "  api-gateway: $API_TAG"
+        echo "  customer-service: $CUSTOMER_TAG"
+        echo "  claims-service: $CLAIMS_TAG"
+        echo "  agent-service: $AGENT_TAG"
+
+        # Store in environment for next step
+        echo "CURRENT_API_TAG=$API_TAG" >> "$GITHUB_ENV"
+        echo "CURRENT_CUSTOMER_TAG=$CUSTOMER_TAG" >> "$GITHUB_ENV"
+        echo "CURRENT_CLAIMS_TAG=$CLAIMS_TAG" >> "$GITHUB_ENV"
+        echo "CURRENT_AGENT_TAG=$AGENT_TAG" >> "$GITHUB_ENV"
+
     - name: Perform service-wise rollback via Helm (no drift)
       run: |
         set -euo pipefail
-        # Restore ONLY the target service to its prior immutable SHA. Because
-        # `helm upgrade` merges over the current release values, the other three
-        # services' imageTag values are untouched -> only this Deployment rolls.
-        # Helm remains the sole mutator (no kubectl rollout undo).
+        # Restore ONLY the target service to its prior immutable SHA while preserving
+        # the other three services' current deployed images. Because `helm upgrade`
+        # merges over the current release values, the other three services' imageTag
+        # values are preserved -> only this Deployment rolls. Helm remains the sole
+        # mutator (no kubectl rollout undo).
+
+        # Build image tag arguments: use TARGET_TAG for rollback service, current tags for others
+        case "$SERVICE" in
+          api-gateway)
+            IMAGE_TAG_ARGS=(
+              "--set" "services.api-gateway.imageTag=$TARGET_TAG"
+              "--set" "services.customer-service.imageTag=$CURRENT_CUSTOMER_TAG"
+              "--set" "services.claims-service.imageTag=$CURRENT_CLAIMS_TAG"
+              "--set" "services.agent-service.imageTag=$CURRENT_AGENT_TAG"
+            )
+            ;;
+          customer-service)
+            IMAGE_TAG_ARGS=(
+              "--set" "services.api-gateway.imageTag=$CURRENT_API_TAG"
+              "--set" "services.customer-service.imageTag=$TARGET_TAG"
+              "--set" "services.claims-service.imageTag=$CURRENT_CLAIMS_TAG"
+              "--set" "services.agent-service.imageTag=$CURRENT_AGENT_TAG"
+            )
+            ;;
+          claims-service)
+            IMAGE_TAG_ARGS=(
+              "--set" "services.api-gateway.imageTag=$CURRENT_API_TAG"
+              "--set" "services.customer-service.imageTag=$CURRENT_CUSTOMER_TAG"
+              "--set" "services.claims-service.imageTag=$TARGET_TAG"
+              "--set" "services.agent-service.imageTag=$CURRENT_AGENT_TAG"
+            )
+            ;;
+          agent-service)
+            IMAGE_TAG_ARGS=(
+              "--set" "services.api-gateway.imageTag=$CURRENT_API_TAG"
+              "--set" "services.customer-service.imageTag=$CURRENT_CUSTOMER_TAG"
+              "--set" "services.claims-service.imageTag=$CURRENT_CLAIMS_TAG"
+              "--set" "services.agent-service.imageTag=$TARGET_TAG"
+            )
+            ;;
+          *)
+            echo "::error::Unknown service: $SERVICE"
+            exit 1
+            ;;
+        esac
+
         helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" \
           -f infrastructure/helm/claimassist/values-dev.yaml \
           --set image.registry="$DOCKER_REGISTRY" \
-          --set "services.$SERVICE.imageTag=$TARGET_TAG" \
+          "${IMAGE_TAG_ARGS[@]}" \
           --wait \
           --timeout 10m
       env:
         SERVICE: ${{ github.event.inputs.service }}
         TARGET_TAG: ${{ env.TARGET_TAG }}
+        CURRENT_API_TAG: ${{ env.CURRENT_API_TAG }}
+        CURRENT_CUSTOMER_TAG: ${{ env.CURRENT_CUSTOMER_TAG }}
+        CURRENT_CLAIMS_TAG: ${{ env.CURRENT_CLAIMS_TAG }}
+        CURRENT_AGENT_TAG: ${{ env.CURRENT_AGENT_TAG }}
 
     - name: Wait for the rolled-back service rollout to complete
       run: kubectl -n "$NAMESPACE" rollout status "deployment/claimassist-$SERVICE" --timeout=10m
@@ -198,8 +284,13 @@ jobs:
         LIVE_TAG=$(kubectl -n "$NAMESPACE" get deployment "$DEP" \
                    -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
         HELM_TAG=$(helm get values "$RELEASE" -n "$NAMESPACE" -o json \
-                   | jq -r --arg svc "$SERVICE" '(.services[$svc].imageTag // .image.tag // "1.0.0")')
+                   | jq -r --arg svc "$SERVICE" '.services[$svc].imageTag // empty')
         echo "Rolled-back service  $SERVICE  -> Helm=$HELM_TAG  live=$LIVE_TAG"
+        if [ -z "$HELM_TAG" ] || [ "$HELM_TAG" = "null" ]; then
+          echo "::error::Helm release values do not contain services.$SERVICE.imageTag after rollback."
+          echo "::error::This indicates a problem with the rollback operation."
+          exit 1
+        fi
         [ "$LIVE_TAG" = "$HELM_TAG" ] || {
           echo "::error::Helm release values and live Deployment image disagree for '$SERVICE' (Helm=$HELM_TAG live=$LIVE_TAG)."
           exit 1
