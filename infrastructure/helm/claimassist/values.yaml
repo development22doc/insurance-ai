@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # ClaimAssist Helm Chart - values (default)
 # One K3s cluster, namespaces claimassist-dev/stage/prod. LOCAL = Docker Compose
 # (this chart is not used for LOCAL).
@@ -485,7 +485,7 @@ flyway:
   jobAnnotations:
     "helm.sh/hook": "post-install,post-upgrade"
     "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded"
+    "helm.sh/hook-delete-policy": "before-hook-creation"
 
 # -----------------------------------------------------------------------------
 # Redis (Task 6A-8). Redis is a CACHE / ephemeral state resource. ONE Deployment
@@ -759,4 +759,3 @@ keycloak:
         periodSeconds: 10
         failureThreshold: 3
         timeoutSeconds: 5
-
