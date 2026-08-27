@@ -624,6 +624,8 @@ spec:
             matchLabels:
               app.kubernetes.io/name: {{ $app | quote }}
               app.kubernetes.io/component: flyway
+        - ipBlock:
+            cidr: 100.64.0.0/10
       ports:
         - port: {{ .Values.postgresql.port }}
           protocol: TCP

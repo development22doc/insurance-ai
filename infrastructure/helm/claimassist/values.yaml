@@ -75,9 +75,9 @@ image:
 # tolerance and NO zero-gap rollout on the free-tier profile.
 replicaCount: 1
 
-# Namespace handling - see templates/namespace.yaml.
+# Namespace is created/managed outside this Helm release.
 namespace:
-  create: true
+  create: false
 
 # Foundation ServiceAccounts (one per app, no cluster permissions).
 serviceAccounts:
