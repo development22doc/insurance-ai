@@ -676,6 +676,8 @@ spec:
             matchLabels:
               app.kubernetes.io/name: {{ $app | quote }}
               app.kubernetes.io/component: api-gateway
+        - ipBlock:
+            cidr: 100.64.0.0/10
       ports:
         - port: {{ .Values.redis.port }}
           protocol: TCP
@@ -727,12 +729,20 @@ spec:
             matchLabels:
               {{- toYaml .Values.networkPolicy.kafkaUI.selector | nindent 14 }}
         {{- end }}
+        - ipBlock:
+            cidr: 100.64.0.0/10
       ports:
         - port: {{ .Values.kafka.internalPort }}
           protocol: TCP
+    - from:
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 19092
+          protocol: TCP
 
 ---
-# 4d) Keycloak-PostgreSQL INGRESS <- keycloak
+# 4d) Keycloak-PostgreSQL INGRESS <- keycloak + Tailscale VPN (DEV NodePort)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -756,6 +766,8 @@ spec:
             matchLabels:
               app.kubernetes.io/name: {{ $app | quote }}
               app.kubernetes.io/component: keycloak
+        - ipBlock:
+            cidr: 100.64.0.0/10
       ports:
         - port: {{ .Values.keycloak.postgresql.port }}
           protocol: TCP
@@ -806,6 +818,8 @@ spec:
             matchLabels:
               app.kubernetes.io/name: {{ $app | quote }}
               app.kubernetes.io/component: agent-service
+        - ipBlock:
+            cidr: 100.64.0.0/10
       ports:
         - port: {{ .Values.keycloak.port }}
           protocol: TCP

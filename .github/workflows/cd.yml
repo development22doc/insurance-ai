@@ -549,6 +549,22 @@ jobs:
             exit 0
           fi
           echo "Freshness confirmed. Proceeding with Helm upgrade."
+      - name: Ensure imagePullSecret exists (DEV)
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
+            echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD are required to create the imagePullSecret."
+            exit 1
+          fi
+          kubectl create secret docker-registry claimassist-registry-credentials \
+            --namespace "$NAMESPACE" \
+            --docker-server=docker.io \
+            --docker-username="$DOCKER_USERNAME" \
+            --docker-password="$DOCKER_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
       - name: Record pre-deployment image state
         id: pre-state
         run: |
@@ -859,6 +875,23 @@ jobs:
               echo "  $svc: (not deployed)"
             fi
           done
+      - name: Ensure imagePullSecret exists (DEV)
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
+            echo "::error::DOCKER_USERNAME/DOCKER_PASSWORD are required to create the imagePullSecret."
+            exit 1
+          fi
+          # Idempotent: create-or-update the docker-registry secret referenced by every Deployment.
+          kubectl create secret docker-registry claimassist-registry-credentials \
+            --namespace "$NAMESPACE" \
+            --docker-server=docker.io \
+            --docker-username="$DOCKER_USERNAME" \
+            --docker-password="$DOCKER_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
       - name: Deploy ${{ matrix.service }} via Helm (immutable image)
         run: |
           set -euo pipefail

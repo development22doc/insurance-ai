@@ -142,12 +142,20 @@ data:
           "standardFlowEnabled": true,
           "directAccessGrantsEnabled": false,
           "redirectUris": [
-            {{- range $i, $u := .Values.keycloak.client.redirectUris }}
+            {{- $redirectUris := .Values.keycloak.client.redirectUris }}
+            {{- if .Values.keycloak.externalRedirectUris }}
+            {{- $redirectUris = .Values.keycloak.externalRedirectUris }}
+            {{- end }}
+            {{- range $i, $u := $redirectUris }}
             {{- if $i }},{{ end }}
             "{{ $u }}"{{- end }}
           ],
           "webOrigins": [
-            {{- range $i, $o := .Values.keycloak.client.webOrigins }}
+            {{- $webOrigins := .Values.keycloak.client.webOrigins }}
+            {{- if .Values.keycloak.externalWebOrigins }}
+            {{- $webOrigins = .Values.keycloak.externalWebOrigins }}
+            {{- end }}
+            {{- range $i, $o := $webOrigins }}
             {{- if $i }},{{ end }}
             "{{ $o }}"{{- end }}
           ],

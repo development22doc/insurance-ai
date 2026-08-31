@@ -5,7 +5,13 @@ server:
     min-response-size: 1024
 
 spring:
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
   cloud:
+    config:
+      enabled: true
+      import-check:
+        enabled: true
     gateway:
       default-filters:
         # No fallbackUri: there is no /fallback handler. When the circuit breaker

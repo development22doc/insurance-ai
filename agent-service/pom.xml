@@ -220,6 +220,17 @@
                 <artifactId>httpcore5-h2</artifactId>
                 <version>5.4.3</version>
             </dependency>
+            <!--
+                Jackson BOM for consistent Jackson version management across the project.
+                Aligns with the security-fixed version specified in properties.
+            -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

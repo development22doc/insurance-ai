@@ -11,6 +11,8 @@ import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.ollama.management.ModelManagementOptions;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 
@@ -54,7 +56,19 @@ public final class OllamaTestSupport {
      * guarded pipeline as native calls.
      */
     public static ChatClient chatClient() {
-        OllamaApi api = OllamaApi.builder().baseUrl(BASE_URL).build();
+        // Configure HTTP client with explicit timeouts to handle slow Ollama responses
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(30000); // 30 seconds connect timeout
+        factory.setReadTimeout(180000);  // 180 seconds read timeout (3 minutes)
+
+        RestClient.Builder restClientBuilder = RestClient.builder()
+                .baseUrl(BASE_URL)
+                .requestFactory(factory);
+
+        OllamaApi api = OllamaApi.builder()
+                .baseUrl(BASE_URL)
+                .restClientBuilder(restClientBuilder)
+                .build();
         OllamaChatOptions options = OllamaChatOptions.builder()
                 .model(MODEL)
                 .temperature(0.2)

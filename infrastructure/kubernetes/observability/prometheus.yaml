@@ -50,11 +50,12 @@ data:
         static_configs:
           - targets: ['localhost:9090']
 
-      # Application services in dev / stage / prod - auto-discovered from pod
-      # annotations added by the Helm chart (prometheus.io/scrape=true, path
-      # /actuator/prometheus, port=<service port>). Metric labels carry
-      # `namespace` (=== environment) and `environment`, so queries can filter
-      # dev|stage|prod without cross-environment leakage.
+      # Application services in dev / stage / prod - discovered from pod
+      # annotations (prometheus.io/scrape=true, path /actuator/prometheus,
+      # port=<service port>). Instead of scraping pod IPs directly (which fails
+      # cross-namespace because kube-router doesn't route pod IPs between
+      # namespaces), we relabel to scrape via Kubernetes Service DNS names.
+      # This uses kube-proxy for routing, which works correctly across namespaces.
       - job_name: claimassist-apps
         kubernetes_sd_configs:
           - role: pod
@@ -72,6 +73,20 @@ data:
             action: replace
             target_label: __metrics_path__
             regex: (.+)
+          # Build service FQDN from component label + namespace so Prometheus
+          # scrapes through the ClusterIP Service (kube-proxy routing) instead
+          # of direct pod-IP access (broken cross-namespace with kube-router).
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+            action: replace
+            regex: (.+)
+            replacement: claimassist-${1}
+            target_label: __tmp_svc
+          - source_labels: [__tmp_svc, __meta_kubernetes_namespace]
+            action: replace
+            regex: ([^;]+);([^;]+)
+            replacement: ${1}.${2}.svc.cluster.local
+            target_label: __address__
+          # Append port from the prometheus.io/port annotation.
           - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
             action: replace
             regex: ([^:]+)(?::\d+)?;(\d+)
@@ -84,6 +99,24 @@ data:
             regex: __meta_kubernetes_pod_label_(environment|app\.kubernetes\.io/component)
           - action: labeldrop
             regex: __meta_kubernetes_pod_annotation_.*
+          - action: labeldrop
+            regex: __tmp_.*
+
+      # IntelliJ local services - scraped via Tailscale from each developer's
+      # Windows machine. Targets are loaded from a file_sd_config that reads
+      # from a ConfigMap (developer-registry). Each developer adds their entry
+      # to infrastructure/monitoring/developers.yml and applies it:
+      #   kubectl -n claimassist-observability apply -f infrastructure/monitoring/developers.yml
+      #
+      # The developer label is automatically added per-entry so Grafana/Loki
+      # can filter by developer. No hardcoded IPs or env vars needed.
+      - job_name: intellij-local-services
+        scrape_interval: 15s
+        scrape_timeout: 10s
+        file_sd_configs:
+          - files:
+              - /etc/prometheus/file_sd/developer-registry.yml
+            refresh_interval: 30s
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -134,6 +167,9 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/prometheus
+            - name: developer-registry
+              mountPath: /etc/prometheus/file_sd
+              readOnly: true
           securityContext:
             runAsUser: 65534
             runAsGroup: 65534
@@ -144,6 +180,10 @@ spec:
         - name: config
           configMap:
             name: prometheus-config
+        - name: developer-registry
+          configMap:
+            name: developer-registry
+            optional: true
 ---
 apiVersion: v1
 kind: Service
@@ -151,8 +191,54 @@ metadata:
   name: prometheus-service
   namespace: claimassist-observability
 spec:
+  type: NodePort
   selector:
     app: prometheus
   ports:
     - port: 9090
       targetPort: 9090
+      nodePort: 30900
+---
+# Developer registry for file_sd_configs. Prometheus watches this ConfigMap
+# and auto-reloads scrape targets when it changes.
+#
+# Each developer adds their entry with their Tailscale IP and a developer name.
+# To register:
+#   1. Edit infrastructure/monitoring/developers.yml
+#   2. Apply: kubectl -n claimassist-observability apply -f infrastructure/monitoring/developers.yml
+#
+# The file format follows Prometheus file_sd_configs YAML:
+#   - targets: ["ip:port", ...]
+#     labels:
+#       developer: name
+#       environment: local
+#       source: intellij
+#       cluster: claimassist-local
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: developer-registry
+  namespace: claimassist-observability
+  labels:
+    app.kubernetes.io/part-of: claimassist
+    app.kubernetes.io/component: observability
+data:
+  developer-registry.yml: |
+    # Developer registry for IntelliJ local services.
+    # Each developer adds their entry with their Tailscale IP.
+    # To register:
+    #   1. Edit this file or infrastructure/monitoring/developers.yml
+    #   2. Apply: kubectl -n claimassist-observability apply -f infrastructure/monitoring/developers.yml
+    #
+    # The file format follows Prometheus file_sd_configs YAML.
+    # Prometheus auto-reloads within 30s of ConfigMap change.
+    - targets:
+        - "100.114.133.69:8080"
+        - "100.114.133.69:8081"
+        - "100.114.133.69:8082"
+        - "100.114.133.69:8083"
+      labels:
+        developer: mayur
+        environment: local
+        source: intellij
+        cluster: claimassist-local

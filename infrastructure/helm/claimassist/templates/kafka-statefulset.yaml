@@ -65,9 +65,9 @@ spec:
               value: "PLAINTEXT://:{{ .Values.kafka.internalPort }},DEV://:{{ .Values.kafka.externalPort }},CONTROLLER://:{{ .Values.kafka.controllerPort }}"
             - name: KAFKA_ADVERTISED_LISTENERS
               {{- if .Values.kafka.devExternalAccess }}
-              value: "PLAINTEXT://{{ .Values.kafka.serviceName }}:{{ .Values.kafka.internalPort }},DEV://{{ .Values.kafka.devExternalHost }}:{{ .Values.kafka.devNodePort }}"
+              value: "PLAINTEXT://{{ .Values.kafka.serviceName }}.{{ include "claimassist.namespace" . }}.svc.cluster.local:{{ .Values.kafka.internalPort }},DEV://{{ .Values.kafka.devExternalHost }}:{{ .Values.kafka.devNodePort }}"
               {{- else }}
-              value: "PLAINTEXT://{{ .Values.kafka.serviceName }}:{{ .Values.kafka.internalPort }},DEV://localhost:{{ .Values.kafka.externalPort }}"
+              value: "PLAINTEXT://{{ .Values.kafka.serviceName }}.{{ include "claimassist.namespace" . }}.svc.cluster.local:{{ .Values.kafka.internalPort }},DEV://localhost:{{ .Values.kafka.externalPort }}"
               {{- end }}
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
               value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,DEV:PLAINTEXT"

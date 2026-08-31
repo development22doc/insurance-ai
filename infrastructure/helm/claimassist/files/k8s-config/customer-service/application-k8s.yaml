@@ -15,6 +15,10 @@ spring:
   cloud:
     discovery:
       enabled: false
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+      - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
 
 eureka:
   client:

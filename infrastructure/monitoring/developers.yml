@@ -1,0 +1,22 @@
+# Team Developer Registry for local IntelliJ observability.
+# Each entry defines a developer's Tailscale IP and their 4 ClaimAssist services.
+# Prometheus file_sd_configs watches this ConfigMap and auto-reloads on change.
+#
+# To register:
+#   1. Add your entry below
+#   2. Apply: kubectl -n claimassist-observability apply -f developers.yml
+#   3. Prometheus reloads automatically within 30s
+#
+# Find your Tailscale IP: tailscale ip -4
+#
+# To temporarily disable yourself without removing your entry, set enabled: false.
+- targets:
+    - "100.114.133.69:8080"
+    - "100.114.133.69:8081"
+    - "100.114.133.69:8082"
+    - "100.114.133.69:8083"
+  labels:
+    developer: mayur
+    environment: local
+    source: intellij
+    cluster: claimassist-local

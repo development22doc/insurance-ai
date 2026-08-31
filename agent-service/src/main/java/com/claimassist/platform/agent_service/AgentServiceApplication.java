@@ -17,8 +17,12 @@ public class AgentServiceApplication {
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Kolkata"));
         // Ensure config client disabled when local config server is not available
         System.setProperty("spring.cloud.config.enabled", "false");
-        // Ensure local profile is active to use PostgreSQL datasource from application-local.yaml
+        // Ensure a profile is active to use PostgreSQL datasource from application-local.yaml.
+        // Check both system properties and environment variables.
         String activeProfiles = System.getProperty("spring.profiles.active", "");
+        if (activeProfiles.isBlank()) {
+            activeProfiles = System.getenv().getOrDefault("SPRING_PROFILES_ACTIVE", "");
+        }
         if (activeProfiles.isBlank()) {
             System.setProperty("spring.profiles.active", "local");
         }

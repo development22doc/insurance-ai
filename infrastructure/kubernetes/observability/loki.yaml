@@ -112,8 +112,10 @@ metadata:
   name: loki-service
   namespace: claimassist-observability
 spec:
+  type: NodePort
   selector:
     app: loki
   ports:
     - port: 3100
       targetPort: 3100
+      nodePort: 30310

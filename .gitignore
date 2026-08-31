@@ -17,6 +17,7 @@ failsafe-reports/
 *.iml
 *.iws
 *.ipr
+**/*.iml
 
 # ============================================================
 # Eclipse
@@ -40,6 +41,7 @@ failsafe-reports/
 *.log.*
 logs/*
 !logs/.gitkeep
+**/logs/
 
 startup-log.txt
 .env
@@ -53,12 +55,17 @@ master_change_log.md
 .env
 .env.*
 !.env.example
+!.env.local-k3s.example
 
 # Local Spring configuration containing secrets
 # Uncomment these if application-local files contain
 # machine-specific credentials/secrets.
 #application-local.yml
 #application-local.yaml
+application-local-k8s-secrets.properties
+application-local-k8s.properties
+!.env.local-k3s.example
+!application-local-k8s.properties.example
 
 # ============================================================
 # Build / Packaging
@@ -83,6 +90,31 @@ Thumbs.db
 *.temp
 *.swp
 *.swo
+temp_schema.sql
+
+# ============================================================
+# Backup files
+# ============================================================
+
+*.backup
+*.bak
+*.orig
+
+# ============================================================
+# IntelliJ run configurations (local)
+# ============================================================
+
+.run/
+
+# ============================================================
+# Generated Helm renders
+# ============================================================
+
+rendered.yaml
+local-final-render.yaml
+application-keycloak.yml
+flyway-retry.yaml
+flyway-template.json
 
 # ============================================================
 # Local test/runtime files
@@ -102,3 +134,32 @@ phase1_task*_progress.md
 # ============================================================
 
 doc/
+
+# ============================================================
+# Generated/compiled artifacts
+# ============================================================
+
+*.class
+DbCheck.class
+hs_err_pid*.log
+replay_pid*.log
+
+# ============================================================
+# Kubeconfig and cloud credentials (local)
+# ============================================================
+
+.kube/
+kubeconfig
+*.kubeconfig
+
+# ============================================================
+# OCI / SSH / TLS private keys
+# ============================================================
+
+*.pem
+*.key
+*.p12
+*.jks
+id_rsa
+id_ed25519
+*.ppk

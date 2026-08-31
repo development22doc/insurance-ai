@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(name = "claims-service", url = "${CLAIMS_SERVICE_URI:}")
+@FeignClient(name = "claims-service", url = "${CLAIMS_SERVICE_URI:http://localhost:8082}")
 public interface ClaimsClient {
 
     @GetMapping("/internal/v1/claims/{claimId}/status")

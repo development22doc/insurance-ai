@@ -6,11 +6,10 @@ metadata:
     app.kubernetes.io/part-of: claimassist
     environment: observability
 ---
-# Task 6A-13 OBSERVABILITY / AUDITABILITY. Task 6A-14B-4B: Zipkin is OPTIONAL and
-# DISABLED by default on the free-tier profile (see zipkin.yaml - the K8s runtime
-# sends no traces). The default stack is Prometheus + Grafana + Loki + Promtail.
+# Task 6A-13 OBSERVABILITY / AUDITABILITY. Task 6A-14B-4B: Zipkin is ENABLED for
+# distributed tracing. The default stack is Prometheus + Grafana + Loki + Promtail + Zipkin.
 #
-# ONE SHARED observability stack (Prometheus + Grafana + Loki + Promtail)
+# ONE SHARED observability stack (Prometheus + Grafana + Loki + Promtail + Zipkin)
 # deployed a single time, collecting from all three application environments
 # (namespaces claimassist-dev / claimassist-stage / claimassist-prod) at once.
 # This is deliberate and FREE-TIER HONEST:

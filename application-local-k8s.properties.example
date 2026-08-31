@@ -1,0 +1,43 @@
+# Local-K8s Configuration Properties Example
+# Copy this file to application-local-k8s.properties and fill in real values
+# DO NOT commit the real application-local-k8s.properties file to version control
+
+# PostgreSQL Database Configuration
+POSTGRES_HOST=100.114.133.69
+POSTGRES_PORT=30432
+POSTGRES_USER=claimassist
+POSTGRES_PASSWORD=YOUR_POSTGRES_PASSWORD_HERE
+
+# Redis Configuration
+REDIS_HOST=100.114.133.69
+REDIS_PORT=30379
+REDIS_PASSWORD=
+
+# Kafka Configuration
+KAFKA_BOOTSTRAP_SERVERS=100.114.133.69:30092
+
+# Keycloak Configuration
+KEYCLOAK_ISSUER_URI=http://100.114.133.69:30080/realms/claimassist-dev
+KEYCLOAK_JWKS_URI=http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs
+SERVICE_TOKEN_URI=http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token
+
+# Service Client Configuration
+SERVICE_CLIENT_ID=internal-service-client
+SERVICE_CLIENT_SECRET=YOUR_SERVICE_CLIENT_SECRET_HERE
+
+# Zipkin Configuration
+ZIPKIN_ENDPOINT=http://100.114.133.69:30941/api/v2/spans
+
+# Eureka Configuration (disabled for local-k8s)
+EUREKA_CLIENT_ENABLED=false
+EUREKA_REGISTER_WITH_EUREKA=false
+EUREKA_FETCH_REGISTRY=false
+EUREKA_SERVER_URL=http://localhost:8761/eureka/
+
+# Service Communication (localhost for local-k8s)
+CUSTOMER_SERVICE_URI=http://localhost:8081
+CLAIMS_SERVICE_URI=http://localhost:8082
+AGENT_SERVICE_URI=http://localhost:8083
+
+# Development ID
+CLAIMASSIST_DEV_ID=local

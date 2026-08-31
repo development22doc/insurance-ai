@@ -300,6 +300,8 @@ services:
         value: /actuator/health/**
       - name: APP_SECURITY_PUBLIC_ROUTES_2
         value: /actuator/info
+      - name: APP_SECURITY_PUBLIC_ROUTES_3
+        value: /actuator/prometheus
     resources:
       requests: { cpu: 100m, memory: 192Mi }
       limits: { cpu: 500m, memory: 512Mi }
@@ -664,7 +666,11 @@ keycloak:
   serviceName: claimassist-keycloak
   port: 8080
   realm: claimassist-dev            # ONE realm per environment (values-<env>)
-  hostname: claimassist-keycloak    # KC_HOSTNAME - internal Service DNS
+  hostname: claimassist-keycloak    # KC_HOSTNAME - internal Service DNS (overridden per env)
+  # External URL for OIDC issuer/JWKS advertised to browsers and resource servers.
+  # When set, KEYCLOAK_ISSUER_URI / KEYCLOAK_JWKS_URI use this instead of internal DNS.
+  # Empty = use internal Service DNS (default for stage/prod). DEV overrides to Tailscale IP.
+  externalUrl: ""
   image:
     registry: ""
     repository: quay.io/keycloak/keycloak
@@ -701,6 +707,11 @@ keycloak:
       - http://claimassist-api-gateway:8080/customer/auth/callback
     webOrigins:
       - http://claimassist-api-gateway:8080
+  # DEV-only: external redirect URIs for browser OIDC flow via Tailscale NodePort.
+  # When set, these REPLACE the internal redirectUris/webOrigins in the realm import.
+  # Stage/prod keep the internal values (no external browser access).
+  externalRedirectUris: []
+  externalWebOrigins: []
   # Conservative Keycloak probes. Allow generous startup time for Keycloak +
   # PostgreSQL + realm import. startup gates on health; liveness is lenient
   # (must not spin-restart during a slow cold start on a shared free-tier node).
@@ -742,6 +753,11 @@ keycloak:
       secretName: claimassist-keycloak-postgresql-credentials
       username: ""                     # set at deploy time
       password: ""                     # never committed
+    # DEV-only VPN Keycloak PostgreSQL external access. Disabled globally;
+    # only values-dev enables it. Do NOT enable in stage/prod values.
+    devExternalAccess: false
+    devExternalHost: ""
+    devNodePort: 30433
     resources:
       requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: 250m, memory: 256Mi }

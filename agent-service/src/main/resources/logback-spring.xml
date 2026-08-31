@@ -1,10 +1,7 @@
 <configuration>
-    <!-- Console appender that emits structured JSON using logstash-logback-encoder -->
     <include resource="org/springframework/boot/logging/logback/defaults.xml" />
 
-    <!-- Use Spring Boot's property resolution for spring.application.name -->
-    <!-- This allows Logback to access Spring properties during initialization -->
-    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="application" />
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="agent-service" />
 
     <!-- Console appender with JSON structured logging -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
@@ -30,7 +27,6 @@
                     <fieldName>message</fieldName>
                 </message>
                 <mdc>
-                    <!-- Include common MDC keys so they are always present in JSON output -->
                     <includeMdcKeyName>correlationId</includeMdcKeyName>
                     <includeMdcKeyName>requestId</includeMdcKeyName>
                     <includeMdcKeyName>traceId</includeMdcKeyName>
@@ -43,18 +39,7 @@
         </encoder>
     </appender>
 
-    <!-- Kubernetes-native structured logging: emit to stdout/stderr ONLY.
-         Local log-file writing is intentionally NOT configured so the pods never
-         depend on a writable filesystem at /app/logs (an unwritable log dir
-         aborts Logback before Tomcat binds and would CrashLoopBackOff the pod).
-         The JSON encoder on STDOUT is what the cluster/Prometheus/collectors ingest. -->
-
-    <!-- ====================================================================== -->
-    <!-- LOCAL-K8S profile: file appender for Alloy log collection.              -->
-    <!-- Writes structured JSON to logs/<service>/<service>.log so Grafana       -->
-    <!-- Alloy can tail these files and push to Loki. Only active when the       -->
-    <!-- local-k8s Spring profile is active. K8s pods remain STDOUT-only.        -->
-    <!-- ====================================================================== -->
+    <!-- local-k8s: file appender for Alloy log collection -->
     <springProfile name="local-k8s">
         <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
             <file>logs/${APP_NAME}/${APP_NAME}.log</file>
@@ -99,17 +84,17 @@
         </appender>
     </springProfile>
 
-    <!-- ====================================================================== -->
-    <!-- LOCAL profile: Loki HTTP appender for IntelliJ observability.           -->
-    <!-- Ships structured JSON logs to the K8s Loki instance via Tailscale      -->
-    <!-- while retaining normal STDOUT/console logging. K8s pods remain          -->
-    <!-- STDOUT-only (no Loki appender).                                        -->
-    <!-- ====================================================================== -->
-    <springProfile name="local">
+    <!-- Default root: STDOUT only -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+
+    <!-- local-k8s: Loki HTTP appender for shared Loki via Tailscale -->
+    <springProfile name="local-k8s">
         <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
             <format>
                 <label>
-                    <pattern>service=${APP_NAME},environment=local,source=intellij,developer=${CLAIMASSIST_DEVELOPER_NAME:-unknown}</pattern>
+                    <pattern>service=${APP_NAME},environment=local-k8s,source=intellij,developer=${CLAIMASSIST_DEV_ID:-local}</pattern>
                 </label>
                 <message>
                     <pattern>
@@ -130,23 +115,12 @@
         </appender>
     </springProfile>
 
-    <root level="INFO">
-        <appender-ref ref="STDOUT" />
-        <!-- FILE appender is only referenced inside the local-k8s profile above -->
-    </root>
-
-    <springProfile name="local">
-        <root level="INFO">
-            <appender-ref ref="STDOUT" />
-            <appender-ref ref="LOKI" />
-        </root>
-    </springProfile>
-
+    <!-- local-k8s: STDOUT + FILE + LOKI -->
     <springProfile name="local-k8s">
         <root level="INFO">
             <appender-ref ref="STDOUT" />
             <appender-ref ref="FILE" />
+            <appender-ref ref="LOKI" />
         </root>
     </springProfile>
 </configuration>
-

@@ -21,6 +21,10 @@ spring:
         webflux:
           routes:
             # K8s Service DNS routes (no lb:// discovery load-balancing).
+            - id: actuator-route
+              uri: forward:///actuator
+              predicates:
+                - Path=/actuator/**
             - id: customer-service
               uri: http://claimassist-customer-service:8081
               predicates:
@@ -39,6 +43,10 @@ spring:
               uri: http://claimassist-customer-service:8081
               predicates:
                 - Path=/policies/**
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+      - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
 
 eureka:
   client:
@@ -68,6 +76,7 @@ app:
 # (/actuator/health/liveness + /actuator/health/readiness) to respond.
 management:
   endpoints:
+    enabled-by-default: true
     web:
       exposure:
         include: health,info,metrics,prometheus,gateway
@@ -76,6 +85,14 @@ management:
       probes:
         enabled: true
       show-details: when-authorized
+    prometheus:
+      enabled: true
+    metrics:
+      enabled: true
+    info:
+      enabled: true
+    gateway:
+      enabled: true
   health:
     livenessstate:
       enabled: true

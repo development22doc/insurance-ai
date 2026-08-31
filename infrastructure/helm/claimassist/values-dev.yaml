@@ -98,6 +98,12 @@ keycloak:
   enabled: true
   realm: claimassist-dev
   replicaCount: 1
+  # DEV-only: KC_HOSTNAME set to the Tailscale IP so Keycloak advertises
+  # the correct external issuer URL for browser/OIDC access. Internal Spring Boot
+  # services also use this URL for JWT validation (issuer-uri must match exactly).
+  # The JWKS endpoint is reachable via the NodePort from inside the cluster too.
+  hostname: 100.114.133.69
+  externalUrl: http://100.114.133.69:30080
   resources:
     requests: { cpu: 100m, memory: 512Mi }
     limits: { cpu: 500m, memory: 1024Mi }
@@ -108,6 +114,12 @@ keycloak:
   devExternalAccess: true
   devExternalHost: vnic.taild219f3.ts.net
   devNodePort: 30080
+  # DEV-only: external redirect URIs for browser OIDC flow via Tailscale NodePort.
+  # The browser must reach the callback URL after Keycloak authentication.
+  externalRedirectUris:
+    - http://100.114.133.69:30080/customer/auth/callback
+  externalWebOrigins:
+    - http://100.114.133.69:30080
   postgresql:
     enabled: true
     storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
@@ -115,6 +127,14 @@ keycloak:
     resources:
       requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: 250m, memory: 256Mi }
+    # DEV-only VPN Keycloak PostgreSQL external access.
+    # When enabled, a NodePort Service exposes Keycloak PostgreSQL (5432) on
+    # the K3s node so Tailscale VPN clients can reach the database at the
+    # MagicDNS hostname:NodePort for IntelliJ / database administration.
+    # Disabled in values.yaml (global); only DEV enables it.
+    devExternalAccess: true
+    devExternalHost: vnic.taild219f3.ts.net
+    devNodePort: 30433
 
 # Task 6A-11: DEV public edge + TLS. Let's Encrypt STAGING certificate - DEV is
 # explicitly NEVER issued a production certificate (staging avoids rate limits and

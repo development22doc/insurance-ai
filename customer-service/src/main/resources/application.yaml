@@ -8,11 +8,14 @@ logging:
 spring:
   application:
     name: customer-service
+  cloud:
+    config:
+      enabled: false
+      import-check:
+        enabled: false
   autoconfigure:
     exclude:
       - com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration
-  config:
-    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
 
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_customer_local
@@ -31,7 +34,6 @@ spring:
       ddl-auto: none
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
         jdbc:
           batch_size: 20

@@ -124,6 +124,9 @@ $requiredVars = @(
     "KEYCLOAK_REALM",
     "KEYCLOAK_ISSUER_URI",
     "KEYCLOAK_JWKS_URI",
+    "ZIPKIN_ENDPOINT",
+    "LOKI_HOST",
+    "LOKI_PORT",
     "CLAIMASSIST_DEV_ID"
 )
 
@@ -142,39 +145,40 @@ if ($missingVars.Count -gt 0) {
 # Never print password
 Write-Host "[OK] All required environment variables loaded" -ForegroundColor Green
 
-# 6. Verify tunnel connectivity
-Write-Host "[TUNNELS] Verifying infrastructure tunnels..." -ForegroundColor Yellow
-$tunnelPorts = @(
-    @{ Port = 15432; Name = "PostgreSQL" },
-    @{ Port = 16379; Name = "Redis" },
-    @{ Port = 9092;  Name = "Kafka" },
-    @{ Port = 18080; Name = "Keycloak" }
+# 6. Verify Tailscale infrastructure connectivity
+Write-Host "[INFRA] Verifying shared infrastructure via Tailscale..." -ForegroundColor Yellow
+$infraEndpoints = @(
+    @{ Host = $envVars["POSTGRES_HOST"]; Port = [int]$envVars["POSTGRES_PORT"]; Name = "PostgreSQL" },
+    @{ Host = $envVars["SPRING_DATA_REDIS_HOST"]; Port = [int]$envVars["SPRING_DATA_REDIS_PORT"]; Name = "Redis" },
+    @{ Host = ($envVars["SPRING_KAFKA_BOOTSTRAP_SERVERS"] -split ":")[0]; Port = [int](($envVars["SPRING_KAFKA_BOOTSTRAP_SERVERS"] -split ":")[1]); Name = "Kafka" },
+    @{ Host = ($envVars["KEYCLOAK_SERVER_URL"] -replace "http://","" -replace "/",""); Port = 30080; Name = "Keycloak" }
 )
 
-$allTunnelsOk = $true
-foreach ($t in $tunnelPorts) {
-    Write-Host "  [$($t.Name)] Checking localhost:$($t.Port)..." -NoNewline
+$allInfraOk = $true
+foreach ($t in $infraEndpoints) {
+    Write-Host "  [$($t.Name)] Checking $($t.Host):$($t.Port)..." -NoNewline
     try {
         $tcpClient = New-Object System.Net.Sockets.TcpClient
-        $result = $tcpClient.BeginConnect("localhost", $t.Port, $null, $null)
-        $connected = $result.AsyncWaitHandle.WaitOne(3000)
+        $result = $tcpClient.BeginConnect($t.Host, $t.Port, $null, $null)
+        $connected = $result.AsyncWaitHandle.WaitOne(5000)
         if ($connected -and $tcpClient.Connected) {
             Write-Host " [OK]" -ForegroundColor Green
             $tcpClient.Close()
         } else {
             Write-Host " [FAIL]" -ForegroundColor Red
-            $allTunnelsOk = $false
+            $allInfraOk = $false
         }
     } catch {
         Write-Host " [FAIL]" -ForegroundColor Red
-        $allTunnelsOk = $false
+        $allInfraOk = $false
     }
 }
 
-if (-not $allTunnelsOk) {
+if (-not $allInfraOk) {
     Write-Host ""
-    Write-Host "[ERROR] One or more infrastructure tunnels not available." -ForegroundColor Red
-    Write-Host "        Run: .\scripts\oci-k8s-connect.ps1" -ForegroundColor Yellow
+    Write-Host "[ERROR] One or more infrastructure endpoints not available." -ForegroundColor Red
+    Write-Host "        Ensure the OCI K3s infrastructure is running and accessible via Tailscale." -ForegroundColor Yellow
+    Write-Host "        Verify Tailscale is connected and the K3s node is reachable." -ForegroundColor Yellow
     exit 1
 }
 
@@ -245,9 +249,14 @@ $services = @(
             "SPRING_DATASOURCE_PASSWORD" = $envVars["POSTGRES_PASSWORD"]
             "KEYCLOAK_ISSUER_URI" = $envVars["KEYCLOAK_ISSUER_URI"]
             "KEYCLOAK_JWKS_URI" = $envVars["KEYCLOAK_JWKS_URI"]
+            "SERVICE_TOKEN_URI" = "$($envVars['KEYCLOAK_SERVER_URL'])/realms/$($envVars['KEYCLOAK_REALM'])/protocol/openid-connect/token"
+            "SERVICE_CLIENT_ID" = "claimassist-admin-service"
+            "SERVICE_CLIENT_SECRET" = "local-dev-admin-client-secret"
+            "ZIPKIN_ENDPOINT" = $envVars["ZIPKIN_ENDPOINT"]
+            "LOKI_HOST" = $envVars["LOKI_HOST"]
+            "LOKI_PORT" = $envVars["LOKI_PORT"]
             "SERVER_PORT" = "8081"
             "CLAIMASSIST_DEV_ID" = $envVars["CLAIMASSIST_DEV_ID"]
-            "SPRING_CONFIG_IMPORT" = ""
             "SPRING_CLOUD_CONFIG_ENABLED" = "false"
         }
     }
@@ -265,9 +274,14 @@ $services = @(
             "SPRING_DATASOURCE_PASSWORD" = $envVars["POSTGRES_PASSWORD"]
             "KEYCLOAK_ISSUER_URI" = $envVars["KEYCLOAK_ISSUER_URI"]
             "KEYCLOAK_JWKS_URI" = $envVars["KEYCLOAK_JWKS_URI"]
+            "SERVICE_TOKEN_URI" = "$($envVars['KEYCLOAK_SERVER_URL'])/realms/$($envVars['KEYCLOAK_REALM'])/protocol/openid-connect/token"
+            "SERVICE_CLIENT_ID" = "claimassist-admin-service"
+            "SERVICE_CLIENT_SECRET" = "local-dev-admin-client-secret"
+            "ZIPKIN_ENDPOINT" = $envVars["ZIPKIN_ENDPOINT"]
+            "LOKI_HOST" = $envVars["LOKI_HOST"]
+            "LOKI_PORT" = $envVars["LOKI_PORT"]
             "SERVER_PORT" = "8082"
             "CLAIMASSIST_DEV_ID" = $envVars["CLAIMASSIST_DEV_ID"]
-            "SPRING_CONFIG_IMPORT" = ""
             "SPRING_CLOUD_CONFIG_ENABLED" = "false"
         }
     }
@@ -285,9 +299,14 @@ $services = @(
             "SPRING_DATASOURCE_PASSWORD" = $envVars["POSTGRES_PASSWORD"]
             "KEYCLOAK_ISSUER_URI" = $envVars["KEYCLOAK_ISSUER_URI"]
             "KEYCLOAK_JWKS_URI" = $envVars["KEYCLOAK_JWKS_URI"]
+            "SERVICE_TOKEN_URI" = "$($envVars['KEYCLOAK_SERVER_URL'])/realms/$($envVars['KEYCLOAK_REALM'])/protocol/openid-connect/token"
+            "SERVICE_CLIENT_ID" = "internal-service-client"
+            "SERVICE_CLIENT_SECRET" = "internal-service-secret"
+            "ZIPKIN_ENDPOINT" = $envVars["ZIPKIN_ENDPOINT"]
+            "LOKI_HOST" = $envVars["LOKI_HOST"]
+            "LOKI_PORT" = $envVars["LOKI_PORT"]
             "SERVER_PORT" = "8083"
             "CLAIMASSIST_DEV_ID" = $envVars["CLAIMASSIST_DEV_ID"]
-            "SPRING_CONFIG_IMPORT" = ""
             "SPRING_CLOUD_CONFIG_ENABLED" = "false"
         }
     }
@@ -302,9 +321,11 @@ $services = @(
             "SPRING_DATA_REDIS_PORT" = $envVars["SPRING_DATA_REDIS_PORT"]
             "KEYCLOAK_ISSUER_URI" = $envVars["KEYCLOAK_ISSUER_URI"]
             "KEYCLOAK_JWKS_URI" = $envVars["KEYCLOAK_JWKS_URI"]
+            "ZIPKIN_ENDPOINT" = $envVars["ZIPKIN_ENDPOINT"]
+            "LOKI_HOST" = $envVars["LOKI_HOST"]
+            "LOKI_PORT" = $envVars["LOKI_PORT"]
             "SERVER_PORT" = "8080"
             "CLAIMASSIST_DEV_ID" = $envVars["CLAIMASSIST_DEV_ID"]
-            "SPRING_CONFIG_IMPORT" = ""
             "SPRING_CLOUD_CONFIG_ENABLED" = "false"
         }
     }

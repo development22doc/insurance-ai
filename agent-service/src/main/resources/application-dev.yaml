@@ -1,4 +1,11 @@
 spring:
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  cloud:
+    config:
+      enabled: true
+      import-check:
+        enabled: true
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:postgres}:${POSTGRES_PORT:5432}/claimassist_agent_dev
     username: ${POSTGRES_USER:claimassist}

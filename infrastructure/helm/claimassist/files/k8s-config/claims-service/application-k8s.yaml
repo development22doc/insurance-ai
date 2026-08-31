@@ -1,6 +1,6 @@
 # Kubernetes runtime configuration for claims-service.
 # Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
-# LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+# LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS only.
 spring:
   config:
     # Empty override removes the packaged `optional:configserver:` import so no
@@ -15,6 +15,10 @@ spring:
   cloud:
     discovery:
       enabled: false
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+      - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
 
 eureka:
   client:

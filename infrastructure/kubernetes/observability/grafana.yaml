@@ -69,6 +69,30 @@ data:
               { "text": "prod", "value": "prod", "selected": false }
             ],
             "current": { "text": "dev", "value": "dev" }
+          },
+          {
+            "name": "developer",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+            "query": "label_values(http_server_requests_seconds_count, developer)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".*",
+            "current": { "text": "All", "value": "$__all" },
+            "label": "Developer"
+          },
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+            "query": "label_values(http_server_requests_seconds_count{developer=~\"$developer\"}, application)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".*",
+            "current": { "text": "All", "value": "$__all" },
+            "label": "Service"
           }
         ]
       },
@@ -77,7 +101,7 @@ data:
           "datasource": "Prometheus",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
           "id": 1,
-          "targets": [ { "expr": "sum(rate(http_server_requests_seconds_count{environment=\"$environment\"}[5m]))", "refId": "A" } ],
+          "targets": [ { "expr": "sum(rate(http_server_requests_seconds_count{environment=\"$environment\",developer=~\"$developer\",application=~\"$service\"}[5m]))", "refId": "A" } ],
           "title": "HTTP Request Rate (5m)",
           "type": "timeseries"
         },
@@ -85,7 +109,7 @@ data:
           "datasource": "Prometheus",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
           "id": 2,
-          "targets": [ { "expr": "sum(rate(http_server_requests_seconds_count{environment=\"$environment\",status=~\"5..\"}[5m]))", "refId": "A" } ],
+          "targets": [ { "expr": "sum(rate(http_server_requests_seconds_count{environment=\"$environment\",developer=~\"$developer\",application=~\"$service\",status=~\"5..\"}[5m]))", "refId": "A" } ],
           "title": "HTTP Error Rate (5xx)",
           "type": "timeseries"
         },
@@ -93,7 +117,7 @@ data:
           "datasource": "Prometheus",
           "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
           "id": 3,
-          "targets": [ { "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{environment=\"$environment\"}[5m])) by (le))", "refId": "A" } ],
+          "targets": [ { "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{environment=\"$environment\",developer=~\"$developer\",application=~\"$service\"}[5m])) by (le))", "refId": "A" } ],
           "title": "HTTP Latency p95",
           "type": "timeseries"
         },
@@ -101,7 +125,7 @@ data:
           "datasource": "Prometheus",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
           "id": 4,
-          "targets": [ { "expr": "sum(jvm_memory_used_bytes{environment=\"$environment\",area=\"heap\"})", "refId": "A" } ],
+          "targets": [ { "expr": "sum(jvm_memory_used_bytes{environment=\"$environment\",developer=~\"$developer\",application=~\"$service\",area=\"heap\"})", "refId": "A" } ],
           "title": "JVM Heap Used",
           "type": "timeseries"
         },
@@ -109,7 +133,7 @@ data:
           "datasource": "Prometheus",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
           "id": 5,
-          "targets": [ { "expr": "sum(jvm_threads_live_threads{environment=\"$environment\"})", "refId": "A" } ],
+          "targets": [ { "expr": "sum(jvm_threads_live_threads{environment=\"$environment\",developer=~\"$developer\",application=~\"$service\"})", "refId": "A" } ],
           "title": "Live Threads",
           "type": "timeseries"
         },
@@ -117,7 +141,7 @@ data:
           "datasource": "Prometheus",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
           "id": 6,
-          "targets": [ { "expr": "sum(up{cluster=\"claimassist-k3s\"})", "refId": "A" } ],
+          "targets": [ { "expr": "sum(up{cluster=~\"claimassist-k3s|claimassist-local\",developer=~\"$developer\"})", "refId": "A" } ],
           "title": "Scraped Targets Up",
           "type": "gauge"
         },
@@ -125,7 +149,7 @@ data:
           "datasource": "Prometheus",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
           "id": 7,
-          "targets": [ { "expr": "kafka_consumer_consumer_lag{environment=\"$environment\"}", "refId": "A" } ],
+          "targets": [ { "expr": "kafka_consumer_consumer_lag{environment=\"$environment\",developer=~\"$developer\",application=~\"$service\"}", "refId": "A" } ],
           "title": "Kafka Consumer Lag",
           "type": "timeseries"
         },
@@ -133,7 +157,7 @@ data:
           "datasource": "Loki",
           "gridPos": { "h": 10, "w": 24, "x": 0, "y": 32 },
           "id": 8,
-          "targets": [ { "expr": "{environment=\"$environment\"}", "refId": "A" } ],
+          "targets": [ { "expr": "{environment=\"$environment\",developer=~\"$developer\",service=~\"$service\"}", "refId": "A" } ],
           "title": "Service Logs (environment)",
           "type": "logs"
         }
@@ -219,8 +243,10 @@ metadata:
   name: grafana-service
   namespace: claimassist-observability
 spec:
+  type: NodePort
   selector:
     app: grafana
   ports:
     - port: 3000
       targetPort: 3000
+      nodePort: 30300

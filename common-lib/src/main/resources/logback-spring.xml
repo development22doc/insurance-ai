@@ -99,15 +99,84 @@
         </appender>
     </springProfile>
 
+    <!-- ====================================================================== -->
+    <!-- LOCAL profile: Loki HTTP appender for IntelliJ observability.           -->
+    <!-- Ships structured JSON logs to the K8s Loki instance via Tailscale      -->
+    <!-- while retaining normal STDOUT/console logging. K8s pods remain          -->
+    <!-- STDOUT-only (no Loki appender).                                        -->
+    <!-- ====================================================================== -->
+    <springProfile name="local">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <format>
+                <label>
+                    <pattern>service=${APP_NAME},environment=local,source=intellij,developer=${CLAIMASSIST_DEVELOPER_NAME:-unknown}</pattern>
+                </label>
+                <message>
+                    <pattern>
+                        {
+                        "traceId": "%mdc{traceId}",
+                        "spanId": "%mdc{spanId}",
+                        "correlationId": "%mdc{correlationId}",
+                        "requestId": "%mdc{requestId}"
+                        }
+                    </pattern>
+                </message>
+            </format>
+            <http>
+                <url>http://100.114.133.69:30310/loki/api/v1/push</url>
+            </http>
+            <batchMaxItems>50</batchMaxItems>
+            <batchTimeoutMs>1000</batchTimeoutMs>
+        </appender>
+    </springProfile>
+
     <root level="INFO">
         <appender-ref ref="STDOUT" />
         <!-- FILE appender is only referenced inside the local-k8s profile above -->
     </root>
 
+    <springProfile name="local">
+        <root level="INFO">
+            <appender-ref ref="STDOUT" />
+            <appender-ref ref="LOKI" />
+        </root>
+    </springProfile>
+
+    <!-- ====================================================================== -->
+    <!-- LOCAL-K8S profile: Loki HTTP appender + FILE for Alloy.                -->
+    <!-- Sends structured JSON logs to the shared K8s Loki via Tailscale while   -->
+    <!-- also writing to local files for Alloy tailing.                          -->
+    <!-- ====================================================================== -->
+    <springProfile name="local-k8s">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <format>
+                <label>
+                    <pattern>service=${APP_NAME},environment=local-k8s,source=intellij,developer=${CLAIMASSIST_DEV_ID:-local}</pattern>
+                </label>
+                <message>
+                    <pattern>
+                        {
+                        "traceId": "%mdc{traceId}",
+                        "spanId": "%mdc{spanId}",
+                        "correlationId": "%mdc{correlationId}",
+                        "requestId": "%mdc{requestId}"
+                        }
+                    </pattern>
+                </message>
+            </format>
+            <http>
+                <url>http://100.114.133.69:30310/loki/api/v1/push</url>
+            </http>
+            <batchMaxItems>50</batchMaxItems>
+            <batchTimeoutMs>1000</batchTimeoutMs>
+        </appender>
+    </springProfile>
+
     <springProfile name="local-k8s">
         <root level="INFO">
             <appender-ref ref="STDOUT" />
             <appender-ref ref="FILE" />
+            <appender-ref ref="LOKI" />
         </root>
     </springProfile>
 </configuration>

@@ -1,12 +1,13 @@
 server:
   port: 8080
+  address: 0.0.0.0
   shutdown: graceful
 
 spring:
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:16379}
+      host: ${REDIS_HOST:100.114.133.69}
+      port: ${REDIS_PORT:30379}
       timeout: 2s
       lettuce:
         pool:
@@ -18,8 +19,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:18080/realms/claimassist-dev}
-          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:18080/realms/claimassist-dev/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://100.114.133.69:30080/realms/claimassist-dev}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs}
 
   lifecycle:
     timeout-per-shutdown-phase: 15s
@@ -77,6 +78,7 @@ management:
       application: ${spring.application.name}
       environment: local
       source: intellij
+      developer: ${CLAIMASSIST_DEVELOPER_NAME:unknown}
 
   prometheus:
     metrics:
@@ -101,7 +103,7 @@ tracing:
 
 zipkin:
   tracing:
-    endpoint: ${ZIPKIN_ENDPOINT:http://localhost:19411/api/v2/spans}
+    endpoint: ${ZIPKIN_ENDPOINT:http://100.114.133.69:30941/api/v2/spans}
 
 logging:
   level:

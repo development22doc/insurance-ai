@@ -7,8 +7,9 @@ spring:
     name: agent-service
   cloud:
     config:
-      # Disable config client locally so service can start even when config server is down
       enabled: false
+      import-check:
+        enabled: false
     openfeign:
       client:
         config:
@@ -18,9 +19,6 @@ spring:
           customer-service:
             connect-timeout: 2000
             read-timeout: 5000
-  config:
-    # Make config server import optional so service can start when config server is unavailable
-    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
   data:
     redis:
       host: ${REDIS_HOST:localhost}

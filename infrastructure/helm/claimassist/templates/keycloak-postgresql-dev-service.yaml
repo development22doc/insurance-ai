@@ -1,0 +1,29 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.postgresql.enabled .Values.keycloak.postgresql.devExternalAccess }}
+# Keycloak PostgreSQL DEV NodePort Service - DEV-only VPN PostgreSQL access.
+# Exposes Keycloak PostgreSQL (container port 5432) on a NodePort so Tailscale
+# VPN clients can reach the database via the MagicDNS hostname:NodePort.
+# Rendered ONLY when keycloak.postgresql.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-keycloak-postgresql.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.keycloak.postgresql.serviceName }}-dev
+  namespace: {{ include "claimassist.namespace" . | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-postgresql
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" . | quote }}
+    app.kubernetes.io/component: keycloak-postgresql
+  ports:
+    - name: postgresql
+      port: {{ .Values.keycloak.postgresql.port }}
+      targetPort: postgresql
+      nodePort: {{ .Values.keycloak.postgresql.devNodePort }}
+      protocol: TCP
+{{- end }}

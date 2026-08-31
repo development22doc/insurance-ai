@@ -7,6 +7,34 @@
   "graphTooltip": 0,
   "id": null,
   "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "developer",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(http_server_requests_seconds_count, developer)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "label": "Developer"
+      },
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(http_server_requests_seconds_count{developer=~\"$developer\"}, application)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "label": "Service"
+      }
+    ]
+  },
   "panels": [
     {
       "datasource": "Prometheus",
@@ -29,7 +57,7 @@
       },
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
       "id": 1,
-      "targets": [{"expr": "rate(http_server_requests_seconds_sum[5m])", "refId": "A"}],
+      "targets": [{"expr": "rate(http_server_requests_seconds_sum{developer=~\"$developer\",application=~\"$service\"}[5m])", "refId": "A"}],
       "title": "HTTP Request Rate (5m avg)",
       "type": "timeseries"
     },
@@ -46,7 +74,7 @@
       },
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "id": 2,
-      "targets": [{"expr": "up{job=\"api-gateway\"}", "refId": "A"}],
+      "targets": [{"expr": "up{job=\"api-gateway\",developer=~\"$developer\"}", "refId": "A"}],
       "title": "API Gateway Health",
       "type": "gauge"
     },
@@ -60,7 +88,7 @@
       },
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
       "id": 3,
-      "targets": [{"expr": "jvm_memory_used_bytes{service=~\".*-service\"}", "refId": "A"}],
+      "targets": [{"expr": "jvm_memory_used_bytes{developer=~\"$developer\",application=~\"$service\",service=~\".*-service\"}", "refId": "A"}],
       "title": "JVM Memory Usage by Service",
       "type": "timeseries"
     },
@@ -68,7 +96,7 @@
       "datasource": "Loki",
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
       "id": 4,
-      "targets": [{"expr": "{job=~\".*-service\"}", "refId": "A"}],
+      "targets": [{"expr": "{developer=~\"$developer\",service=~\"$service\",job=~\".*-service\"}", "refId": "A"}],
       "title": "Service Logs",
       "type": "logs"
     }

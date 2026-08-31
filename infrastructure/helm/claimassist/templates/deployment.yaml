@@ -116,6 +116,39 @@ spec:
               value: {{ "" | quote }}
             - name: SPRING_CLOUD_CONFIG_ENABLED
               value: {{ "false" | quote }}
+            # Eureka/Config Client must be disabled via property toggles (env vars)
+            # because YAML profile-specific properties (from ConfigMap mounted via
+            # SPRING_CONFIG_ADDITIONAL_LOCATIONS) are loaded AFTER the auto-configuration
+            # phase. Environment variables are processed before any YAML files.
+            #
+            # These three properties are checked by @ConditionalOnProperty / @ConditionalOnDiscoveryEnabled
+            # in the auto-configuration classes themselves:
+            #   - eureka.client.enabled=false  → skips EurekaClientAutoConfiguration + EurekaDiscoveryClientConfiguration
+            #   - spring.cloud.config.enabled=false → skips ConfigClientAutoConfiguration
+            #   - spring.cloud.discovery.enabled=false → skips CompositeDiscoveryClientAutoConfiguration
+            - name: SPRING_EUREKA_CLIENT_ENABLED
+              value: {{ "false" | quote }}
+            - name: SPRING_CLOUD_DISCOVERY_ENABLED
+              value: {{ "false" | quote }}
+            # Distributed tracing: all four services send spans to the shared Zipkin
+            # collector in the observability namespace. Overrides the packaged default
+            # of localhost:9411 which is wrong inside Kubernetes.
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-service.claimassist-observability.svc.cluster.local:9411/api/v2/spans"
+            {{ if eq $name "api-gateway" }}
+            # api-gateway is a reactive WebFlux service with no database. Spring Data JPA
+            # is on the classpath (common-lib transitive), but without a JDBC URL the
+            # DataSource auto-configuration fails. Exclude Hibernate/JPA for the gateway.
+            - name: SPRING_AUTOCONFIGURE_EXCLUDE
+              value: "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration"
+            {{ end }}
+            {{ if eq $name "customer-service" }}
+            # SharedExceptionAutoConfiguration (common-lib) defines a globalExceptionHandler
+            # bean that conflicts with customer-service's own GlobalExceptionHandler class.
+            # Allow bean definition overriding to resolve the conflict.
+            - name: SPRING_MAIN_ALLOW_BEAN_DEFINITION_OVERRIDING
+              value: {{ "true" | quote }}
+            {{ end }}
             {{ if $svc.k8sConfig }}
             - name: SPRING_CONFIG_ADDITIONAL_LOCATIONS
               value: "file:/etc/claimassist/config/"
@@ -178,16 +211,34 @@ spec:
             - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
               value: "{{ $root.Values.kafka.serviceName }}:{{ $root.Values.kafka.internalPort }}"
             {{ end }}
+            {{ if and (ne $name "api-gateway") (ne $name "customer-service") }}
+            # Feign inter-service URLs: @FeignClient interfaces use
+            # ${CUSTOMER_SERVICE_URI:} / ${CLAIMS_SERVICE_URI:} for direct K8s
+            # Service DNS resolution (no Eureka discovery).
+            {{ if ne $name "customer-service" }}
+            - name: CUSTOMER_SERVICE_URI
+              value: "http://claimassist-customer-service:{{ (index $root.Values.services "customer-service").port }}"
+            {{ end }}
+            {{ if ne $name "claims-service" }}
+            - name: CLAIMS_SERVICE_URI
+              value: "http://claimassist-claims-service:{{ (index $root.Values.services "claims-service").port }}"
+            {{ end }}
+            {{ end }}
             {{ if and (eq $name "api-gateway") $root.Values.keycloak.enabled }}
             # Task 6A-10: Keycloak wiring for api-gateway (reactive resource server).
-            # The gateway validates JWTs against the internal Keycloak JWKS via
-            # spring.security.oauth2.resourceserver.jwt.jwk-set-uri (the code reads
-            # this exact property; env vars outrank the packaged default). Internal
-            # Service DNS - never localhost. Realm matches the env namespace.
+            # When keycloak.externalUrl is set (DEV), OIDC endpoints use the external
+            # URL so the issuer claim in JWTs matches what browsers/clients see.
+            # Otherwise, internal Service DNS is used. JWKS is always reachable.
+            {{- $kcIssuer := printf "http://%s:%d/realms/%s" $root.Values.keycloak.serviceName $root.Values.keycloak.port $root.Values.keycloak.realm }}
+            {{- $kcJwks := printf "http://%s:%d/realms/%s/protocol/openid-connect/certs" $root.Values.keycloak.serviceName $root.Values.keycloak.port $root.Values.keycloak.realm }}
+            {{- if $root.Values.keycloak.externalUrl }}
+            {{- $kcIssuer = printf "%s/realms/%s" $root.Values.keycloak.externalUrl $root.Values.keycloak.realm }}
+            {{- $kcJwks = printf "%s/realms/%s/protocol/openid-connect/certs" $root.Values.keycloak.externalUrl $root.Values.keycloak.realm }}
+            {{- end }}
             - name: KEYCLOAK_ISSUER_URI
-              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}"
+              value: {{ $kcIssuer | quote }}
             - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
-              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/certs"
+              value: {{ $kcJwks | quote }}
             {{ end }}
             {{ if and (ne $name "api-gateway") $root.Values.keycloak.enabled }}
             # Task 6A-10: Keycloak wiring for the servlet resource services.
@@ -197,22 +248,32 @@ spec:
             # public client (claimassist-customer-app) and the confidential admin
             # client (claimassist-admin-service) match the realm import. Internal
             # Service DNS - never localhost. Secrets come from the Keycloak Secret.
+            {{- $kcBase := printf "http://%s:%d" $root.Values.keycloak.serviceName $root.Values.keycloak.port }}
+            {{- $kcIssuer := printf "%s/realms/%s" $kcBase $root.Values.keycloak.realm }}
+            {{- $kcJwks := printf "%s/realms/%s/protocol/openid-connect/certs" $kcBase $root.Values.keycloak.realm }}
+            {{- $kcToken := printf "%s/realms/%s/protocol/openid-connect/token" $kcBase $root.Values.keycloak.realm }}
+            {{- if $root.Values.keycloak.externalUrl }}
+            {{- $kcBase = $root.Values.keycloak.externalUrl }}
+            {{- $kcIssuer = printf "%s/realms/%s" $kcBase $root.Values.keycloak.realm }}
+            {{- $kcJwks = printf "%s/realms/%s/protocol/openid-connect/certs" $kcBase $root.Values.keycloak.realm }}
+            {{- $kcToken = printf "%s/realms/%s/protocol/openid-connect/token" $kcBase $root.Values.keycloak.realm }}
+            {{- end }}
             - name: KEYCLOAK_SERVER_URL
-              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}"
+              value: {{ $kcBase | quote }}
             - name: KEYCLOAK_REALM
               value: {{ $root.Values.keycloak.realm | quote }}
             - name: KEYCLOAK_ISSUER_URI
-              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}"
+              value: {{ $kcIssuer | quote }}
             - name: KEYCLOAK_JWKS_URI
-              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/certs"
+              value: {{ $kcJwks | quote }}
             # Explicit Spring Security resource-server JWKS URI. This is required
             # for Claims/Customer/Agent services to auto-create JwtDecoder.
             - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
-              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/certs"
+              value: {{ $kcJwks | quote }}
             - name: KEYCLOAK_TOKEN_URI
-              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/token"
+              value: {{ $kcToken | quote }}
             - name: SERVICE_TOKEN_URI
-              value: "http://{{ $root.Values.keycloak.serviceName }}:{{ $root.Values.keycloak.port }}/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/token"
+              value: {{ $kcToken | quote }}
             - name: KEYCLOAK_ADMIN_CLIENT_ID
               value: {{ $root.Values.keycloak.client.adminClientId | quote }}
             - name: SERVICE_CLIENT_ID

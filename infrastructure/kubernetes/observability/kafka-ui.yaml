@@ -32,9 +32,10 @@ metadata:
   name: kafka-ui
   namespace: claimassist-observability
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: kafka-ui
   ports:
     - port: 8080
       targetPort: 8080
+      nodePort: 30081

@@ -6,6 +6,10 @@ spring:
   application:
     name: claims-service
   cloud:
+    config:
+      enabled: false
+      import-check:
+        enabled: false
     openfeign:
       client:
         config:
@@ -16,8 +20,6 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
-  config:
-    import: ""
   jpa:
     open-in-view: false
   flyway:

@@ -97,6 +97,12 @@
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash.encoder.version}</version>
         </dependency>
+        <!-- Loki log shipping for local IntelliJ observability (logback-spring.xml local profile) -->
+        <dependency>
+            <groupId>com.github.loki4j</groupId>
+            <artifactId>loki-logback-appender</artifactId>
+            <version>1.6.0</version>
+        </dependency>
 						<!-- Micrometer Tracing APIs - Bridge implementations (e.g., brave) should be provided by the application runtime -->
 						<dependency>
 							<groupId>io.micrometer</groupId>
