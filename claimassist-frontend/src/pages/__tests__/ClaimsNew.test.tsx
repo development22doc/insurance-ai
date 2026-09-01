@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 void React;
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
 import { AuthProvider } from '../../contexts/AuthContext';
@@ -10,8 +10,8 @@ import { apiClient } from '../../services/api-client';
 import ClaimsNewPage from '../ClaimsNewPage';
 
 const mockPolicies = [
-  { id: 1, policyNumber: 'POL-123', product: 'Auto', status: 'ACTIVE' },
-  { id: 2, policyNumber: 'POL-456', product: 'Home', status: 'ACTIVE' },
+  { id: 1, policyNumber: 'POL-123', productType: 'Auto', coveragePlanName: 'Basic Auto', status: 'ACTIVE' },
+  { id: 2, policyNumber: 'POL-456', productType: 'Home', coveragePlanName: 'Home Shield', status: 'ACTIVE' },
 ];
 
 describe('Claims wizard', () => {
@@ -41,18 +41,20 @@ describe('Claims wizard', () => {
 
     await waitFor(() => expect(screen.getByText(/Select Policy/i)).toBeInTheDocument());
 
-    // Select first policy
-    fireEvent.click(screen.getByLabelText(/POL-123/i) || screen.getAllByRole('radio')[0]);
-
-    // Next to incident
+    fireEvent.click(screen.getAllByRole('radio')[0]);
     fireEvent.click(screen.getByText(/Next/i));
 
     await waitFor(() => expect(screen.getByText(/Incident Details/i)).toBeInTheDocument());
   });
 
-  it('validates and submits claim', async () => {
+  it('uses a single idempotency key for a submission and shows success state', async () => {
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({
+      id: 99,
+      claimNumber: 'CLM-099',
+      status: 'SUBMITTED',
+      incidentType: 'Accident',
+    } as any);
     vi.spyOn(apiClient, 'get').mockResolvedValue(mockPolicies as any);
-    vi.spyOn(apiClient, 'post').mockResolvedValue({ id: 99, claimNumber: 'CL-099', status: 'SUBMITTED', incidentType: 'Accident' } as any);
 
     render(
       <AuthProvider>
@@ -63,24 +65,57 @@ describe('Claims wizard', () => {
     );
 
     await waitFor(() => expect(screen.getByText(/Select Policy/i)).toBeInTheDocument());
-
-    // choose first policy
-    const firstRadio = screen.getAllByRole('radio')[0];
-    fireEvent.click(firstRadio);
-
+    fireEvent.click(screen.getAllByRole('radio')[0]);
     fireEvent.click(screen.getByText(/Next/i));
-
-    await waitFor(() => expect(screen.getByText(/Incident Details/i)).toBeInTheDocument());
-
     fireEvent.change(screen.getByLabelText(/Incident type/i), { target: { value: 'Accident' } });
-    fireEvent.change(screen.getByLabelText(/Incident date/i), { target: { value: new Date().toISOString().slice(0,10) } });
-
+    fireEvent.change(screen.getByLabelText(/Incident date/i), { target: { value: new Date().toISOString().slice(0, 10) } });
     fireEvent.click(screen.getByText(/Next/i));
+    fireEvent.click(screen.getByRole('button', { name: /Submit Claim/i }));
 
-    await waitFor(() => expect(screen.getByText(/Review/i)).toBeInTheDocument());
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
+    const [, , options] = postSpy.mock.calls[0];
+    expect((options as { headers: Record<string, string> } | undefined)?.headers['Idempotency-Key']).toBe(
+      sessionStorage.getItem('claim_idempotency_key')
+    );
 
-    fireEvent.click(screen.getByText(/Submit Claim/i));
+    expect(screen.getByText(/Claim Submitted Successfully/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Track Claim/i })).toHaveAttribute('href', '/claims/99');
+  });
 
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalled());
+  it('disables the submit button while the request is in flight', async () => {
+    let resolveRequest: (value: unknown) => void = () => undefined;
+    vi.spyOn(apiClient, 'get').mockResolvedValue(mockPolicies as any);
+    vi.spyOn(apiClient, 'post').mockImplementation(
+      () => new Promise((resolve) => {
+        resolveRequest = resolve;
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <MemoryRouter>
+          <ClaimsNewPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByText(/Select Policy/i)).toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole('radio')[0]);
+    fireEvent.click(screen.getByText(/Next/i));
+    fireEvent.change(screen.getByLabelText(/Incident type/i), { target: { value: 'Accident' } });
+    fireEvent.change(screen.getByLabelText(/Incident date/i), { target: { value: new Date().toISOString().slice(0, 10) } });
+    fireEvent.click(screen.getByText(/Next/i));
+    const submitButton = screen.getByRole('button', { name: /Submit Claim/i });
+
+    fireEvent.click(submitButton);
+    await waitFor(() => expect(submitButton).toBeDisabled());
+
+    resolveRequest({
+      id: 100,
+      claimNumber: 'CLM-100',
+      status: 'SUBMITTED',
+      incidentType: 'Accident',
+    });
+    await waitFor(() => expect(screen.getByText(/Claim Submitted Successfully/i)).toBeInTheDocument());
   });
 });

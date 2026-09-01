@@ -2,8 +2,8 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 void React;
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi } from 'vitest';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { apiClient } from '../../services/api-client';
@@ -12,7 +12,18 @@ import ClaimDetailsPage from '../../pages/ClaimDetailsPage';
 import type { ClaimSummaryResponse } from '../../types';
 
 const sampleClaims: ClaimSummaryResponse[] = [
-  { id: 11, claimNumber: 'CL-001', policyId: 1, incidentType: 'Accident', status: 'OPEN', estimatedAmountCents: undefined as any, approvedAmountCents: undefined as any, role: 'POLICYHOLDER', incidentDate: '2025-02-01' as any, createdAt: '2025-02-02' as any },
+  {
+    id: 11,
+    claimNumber: 'CLM-001',
+    policyId: 1,
+    incidentType: 'Accident',
+    status: 'SUBMITTED',
+    estimatedAmountCents: 250000,
+    approvedAmountCents: undefined,
+    role: 'POLICYHOLDER',
+    incidentDate: '2025-02-01T00:00:00Z',
+    createdAt: '2025-02-02T00:00:00Z',
+  },
 ];
 
 describe('Claims pages', () => {
@@ -42,8 +53,8 @@ describe('Claims pages', () => {
     );
 
     expect(screen.getByText(/Loading claims.../i)).toBeInTheDocument();
-
-    await waitFor(() => expect(screen.getByText(/CL-001/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/CLM-001/i)).toBeInTheDocument());
+    expect(screen.getByText(/View Claim/i)).toBeInTheDocument();
   });
 
   it('shows empty state when no claims', async () => {
@@ -63,7 +74,7 @@ describe('Claims pages', () => {
     });
   });
 
-  it('renders claim details and back link', async () => {
+  it('renders claim details, status, and refresh action', async () => {
     vi.spyOn(apiClient, 'get').mockImplementation(async (endpoint: string) => {
       if (endpoint === '/api/v1/claims/11') return sampleClaims[0] as any;
       return [] as any;
@@ -71,7 +82,7 @@ describe('Claims pages', () => {
 
     render(
       <AuthProvider>
-        <MemoryRouter initialEntries={["/claims/11"]}>
+        <MemoryRouter initialEntries={['/claims/11']}>
           <Routes>
             <Route path="/claims/:id" element={<ClaimDetailsPage />} />
           </Routes>
@@ -81,21 +92,21 @@ describe('Claims pages', () => {
 
     expect(screen.getByText(/Loading claim.../i)).toBeInTheDocument();
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: /CL-001/i })).toBeInTheDocument());
-
-    expect(screen.getByText(/Overview/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('heading', { name: /CLM-001/i })).toBeInTheDocument());
+    expect(screen.getByText(/Current status/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Refresh Status/i })).toBeInTheDocument();
+    expect(screen.getByText(/Claim Number/i)).toBeInTheDocument();
     expect(screen.getByText(/Back to claims/i)).toBeInTheDocument();
   });
 
   it('shows claim not found when detail API returns 404', async () => {
-    vi.spyOn(apiClient, 'get').mockImplementation(async (_endpoint: string) => {
-      const err: any = new Error('404 Not Found');
-      throw err;
+    vi.spyOn(apiClient, 'get').mockImplementation(async () => {
+      throw new Error('404 Not Found');
     });
 
     render(
       <AuthProvider>
-        <MemoryRouter initialEntries={["/claims/999"]}>
+        <MemoryRouter initialEntries={['/claims/999']}>
           <Routes>
             <Route path="/claims/:id" element={<ClaimDetailsPage />} />
           </Routes>
@@ -104,5 +115,24 @@ describe('Claims pages', () => {
     );
 
     await waitFor(() => expect(screen.getByText(/Claim not found/i)).toBeInTheDocument());
+  });
+
+  it('refreshes claim status when the refresh button is clicked', async () => {
+    const getSpy = vi.spyOn(apiClient, 'get');
+    getSpy.mockResolvedValue(sampleClaims[0] as any);
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/claims/11']}>
+          <Routes>
+            <Route path="/claims/:id" element={<ClaimDetailsPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Refresh Status/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Refresh Status/i }));
+    await waitFor(() => expect(getSpy).toHaveBeenCalled());
   });
 });
