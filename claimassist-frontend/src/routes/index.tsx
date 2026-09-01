@@ -9,14 +9,12 @@ import { RegisterPage } from '../pages/auth/RegisterPage';
 import { CallbackPage } from '../pages/auth/CallbackPage';
 import { UnauthorizedPage } from '../pages/auth/UnauthorizedPage';
 
-// Placeholder components (to be implemented in later phases)
-// These temporary components will be replaced with actual page implementations
 /* eslint-disable react/only-export-components */
-const HomePage = () => <div className="p-8"><h1 className="text-2xl font-bold">Home</h1></div>;
-const ProductsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Products</h1></div>;
-const ClaimsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Claims</h1></div>;
-const AboutPage = () => <div className="p-8"><h1 className="text-2xl font-bold">About</h1></div>;
-const ContactPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Contact</h1></div>;
+import { HomePage } from '../pages/HomePage';
+import { ProductsPage } from '../pages/ProductsPage';
+import { ClaimsPublicPage } from '../pages/ClaimsPublicPage';
+import { AboutPage } from '../pages/AboutPage';
+import { ContactPage } from '../pages/ContactPage';
 
 const CustomerDashboard = () => <div className="p-8"><h1 className="text-2xl font-bold">Customer Dashboard</h1></div>;
 const PoliciesPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Policies</h1></div>;
@@ -48,7 +46,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'products', element: <ProductsPage /> },
-      { path: 'claims', element: <ClaimsPage /> },
+      { path: 'claims', element: <ClaimsPublicPage /> },
       { path: 'about', element: <AboutPage /> },
       { path: 'contact', element: <ContactPage /> },
       { path: 'login', element: <LoginPage /> },
