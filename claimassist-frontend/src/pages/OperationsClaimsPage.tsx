@@ -5,6 +5,16 @@ import { API_ENDPOINTS } from '../config/api';
 import { apiClient } from '../services/api-client';
 import type { ClaimSummaryResponse } from '../types';
 
+const STATUS_LABELS: Record<string, string> = {
+  SUBMITTED: 'Submitted',
+  UNDER_REVIEW: 'Under review',
+  DOCS_REQUESTED: 'Documents requested',
+  APPROVED: 'Approved',
+  DENIED: 'Denied',
+  PAID: 'Paid',
+  CLOSED: 'Closed',
+};
+
 const STATUS_STYLES: Record<string, string> = {
   SUBMITTED: 'border border-sky-200 bg-sky-50 text-sky-800',
   UNDER_REVIEW: 'border border-amber-200 bg-amber-50 text-amber-800',
@@ -54,9 +64,13 @@ export const OperationsClaimsPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <header>
+    <div className="space-y-6" aria-live="polite">
+      <header className="space-y-2">
+        <p className="text-sm font-medium uppercase tracking-[0.2em] text-[var(--color-text-secondary)]">Operations</p>
         <h1 className="text-3xl font-bold text-[var(--color-text-primary)]">Claims queue</h1>
+        <p className="max-w-3xl text-sm text-[var(--color-text-secondary)]">
+          Review the current claim list and open a workspace for the claim you need to assess.
+        </p>
       </header>
 
       {claims.length === 0 ? (
@@ -79,57 +93,84 @@ export const OperationsClaimsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {claims.map((claim) => (
-                  <tr key={claim.id} className="border-t border-[var(--color-border)] bg-white">
-                    <td className="px-4 py-3 font-medium text-[var(--color-text-primary)]">{claim.claimNumber}</td>
-                    <td className="px-4 py-3">{claim.incidentType}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[claim.status] ?? 'border border-slate-200 bg-slate-100 text-slate-700'}`}>
-                        {claim.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{formatDate(claim.incidentDate)}</td>
-                    <td className="px-4 py-3">{formatDate(claim.createdAt)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <Link to={`/operations/claims/${claim.id}`} className="font-medium text-[var(--color-primary)]">
-                        View Claim
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {claims.map((claim) => {
+                  const claimStatusLabel = STATUS_LABELS[claim.status] ?? claim.status;
+                  return (
+                    <tr key={claim.id} className="border-t border-[var(--color-border)] bg-white">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-[var(--color-text-primary)]">{claim.claimNumber}</div>
+                        <div className="text-xs text-[var(--color-text-secondary)]">Policy {claim.policyId}</div>
+                      </td>
+                      <td className="px-4 py-3">{claim.incidentType}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          role="status"
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[claim.status] ?? 'border border-slate-200 bg-slate-100 text-slate-700'}`}
+                        >
+                          <span>{claimStatusLabel}</span>
+                          <span className="sr-only">{claim.status}</span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">{formatDate(claim.incidentDate)}</td>
+                      <td className="px-4 py-3">{formatDate(claim.createdAt)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Link
+                          to={`/operations/claims/${claim.id}`}
+                          aria-label={`Open claim workspace for ${claim.claimNumber}`}
+                          className="font-medium text-[var(--color-primary)]"
+                        >
+                          View Claim
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           <div className="space-y-3 md:hidden">
-            {claims.map((claim) => (
-              <div key={claim.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-semibold text-[var(--color-text-primary)]">{claim.claimNumber}</div>
-                    <div className="text-sm text-[var(--color-text-secondary)]">{claim.incidentType}</div>
+            {claims.map((claim) => {
+              const claimStatusLabel = STATUS_LABELS[claim.status] ?? claim.status;
+
+              return (
+                <div key={claim.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-[var(--color-text-primary)]">{claim.claimNumber}</div>
+                      <div className="text-sm text-[var(--color-text-secondary)]">{claim.incidentType}</div>
+                    </div>
+                    <span
+                      role="status"
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[claim.status] ?? 'border border-slate-200 bg-slate-100 text-slate-700'}`}
+                    >
+                      <span>{claimStatusLabel}</span>
+                      <span className="sr-only">{claim.status}</span>
+                    </span>
                   </div>
-                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[claim.status] ?? 'border border-slate-200 bg-slate-100 text-slate-700'}`}>
-                    {claim.status}
-                  </span>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <dt className="text-[var(--color-text-secondary)]">Incident date</dt>
+                      <dd className="font-medium">{formatDate(claim.incidentDate)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-secondary)]">Created</dt>
+                      <dd className="font-medium">{formatDate(claim.createdAt)}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <span className="text-xs text-[var(--color-text-secondary)]">Policy {claim.policyId}</span>
+                    <Link
+                      to={`/operations/claims/${claim.id}`}
+                      aria-label={`Open claim workspace for ${claim.claimNumber}`}
+                      className="inline-flex rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
+                    >
+                      View Claim
+                    </Link>
+                  </div>
                 </div>
-                <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <dt className="text-[var(--color-text-secondary)]">Incident date</dt>
-                    <dd className="font-medium">{formatDate(claim.incidentDate)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--color-text-secondary)]">Created</dt>
-                    <dd className="font-medium">{formatDate(claim.createdAt)}</dd>
-                  </div>
-                </dl>
-                <div className="mt-4">
-                  <Link to={`/operations/claims/${claim.id}`} className="inline-flex rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white">
-                    View Claim
-                  </Link>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

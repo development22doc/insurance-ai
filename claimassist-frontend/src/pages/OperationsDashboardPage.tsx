@@ -115,7 +115,10 @@ export const OperationsDashboardPage: React.FC = () => {
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-[var(--color-text-secondary)]">Operations</p>
-          <h1 className="mt-1 text-3xl font-bold text-[var(--color-text-primary)]">Dashboard</h1>
+          <h1 className="mt-1 text-3xl font-bold text-[var(--color-text-primary)]">Operations dashboard</h1>
+          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+            Review the current claim queue and monitor the latest claim activity in the backend-backed operations view.
+          </p>
         </div>
         <div className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)]">
           {stats.visibleClaims} visible claims

@@ -114,17 +114,30 @@ export const OperationsClaimWorkspacePage: React.FC = () => {
   const handleConfirm = async () => {
     if (!id || !pendingStatus || !claim) return;
 
+    const claimId = Number(id);
+    if (!Number.isFinite(claimId) || claimId <= 0) {
+      setSubmitError('This claim workspace could not be opened because the claim ID is invalid.');
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
 
     try {
-      await apiClient.patch<ClaimSummaryResponse>(API_ENDPOINTS.CLAIM_UPDATE_STATUS(Number(id)), {
+      const updated = await apiClient.patch<ClaimSummaryResponse>(API_ENDPOINTS.CLAIM_UPDATE_STATUS(claimId), {
         status: pendingStatus,
         note: note.trim() || undefined,
       });
 
       setPendingStatus(null);
       setNote('');
+
+      if (updated?.status) {
+        setClaim((currentClaim) =>
+          currentClaim ? { ...currentClaim, ...updated, status: updated.status } : currentClaim
+        );
+      }
+
       await loadClaim(true);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Unable to update claim status.');
@@ -162,7 +175,7 @@ export const OperationsClaimWorkspacePage: React.FC = () => {
   const statusLabel = STATUS_LABELS[claim.status] ?? claim.status;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" aria-live="polite">
       <header className="flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-[var(--color-text-secondary)]">Operations workspace</p>
@@ -180,6 +193,7 @@ export const OperationsClaimWorkspacePage: React.FC = () => {
             type="button"
             onClick={() => void handleRefresh()}
             disabled={refreshing}
+            aria-busy={refreshing}
             className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
           >
             {refreshing ? 'Refreshing...' : 'Refresh status'}
@@ -261,9 +275,14 @@ export const OperationsClaimWorkspacePage: React.FC = () => {
             <h2 className="text-xl font-semibold">Decision panel</h2>
 
             {!isAdjuster ? (
-              <Alert variant="info">
-                You are viewing this claim in read-only mode. Adjusters are the role authorized to update claim status.
-              </Alert>
+              <div className="mt-4 space-y-3">
+                <Alert variant="info">
+                  You are viewing this claim in read-only mode. Adjusters are the role authorized to update claim status.
+                </Alert>
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  The current claim status is <span className="font-semibold text-[var(--color-text-primary)]">{statusLabel}</span>. Only backend-allowed transitions are available to an adjuster.
+                </p>
+              </div>
             ) : allowedTransitions.length === 0 ? (
               <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
                 There are no supported status transitions available for this claim right now.
@@ -275,9 +294,14 @@ export const OperationsClaimWorkspacePage: React.FC = () => {
                     key={nextStatus}
                     type="button"
                     onClick={() => setPendingStatus(nextStatus)}
-                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-4 py-3 text-left transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface)]"
+                    aria-busy={submitting}
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-4 py-3 text-left transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={submitting}
                   >
-                    <div className="font-semibold text-[var(--color-text-primary)]">{TRANSITION_LABELS[nextStatus] ?? nextStatus}</div>
+                    <div className="font-semibold text-[var(--color-text-primary)]">
+                      {TRANSITION_LABELS[nextStatus] ?? nextStatus}
+                      <span className="sr-only"> {nextStatus}</span>
+                    </div>
                     <div className="mt-1 text-sm text-[var(--color-text-secondary)]">
                       {statusLabel} → {STATUS_LABELS[nextStatus] ?? nextStatus}
                     </div>
@@ -339,6 +363,7 @@ export const OperationsClaimWorkspacePage: React.FC = () => {
               type="button"
               onClick={() => void handleConfirm()}
               disabled={submitting}
+              aria-busy={submitting}
               className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? 'Updating...' : 'Confirm'}
