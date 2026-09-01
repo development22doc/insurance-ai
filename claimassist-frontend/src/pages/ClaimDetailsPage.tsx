@@ -33,7 +33,15 @@ const formatDate = (value?: string | number | null) => {
   return date.toLocaleString();
 };
 
-export const ClaimDetailsPage: React.FC = () => {
+interface ClaimDetailsPageProps {
+  backLink?: string;
+  backLabel?: string;
+}
+
+export const ClaimDetailsPage: React.FC<ClaimDetailsPageProps> = ({
+  backLink = '/claims',
+  backLabel = 'Back to claims',
+}) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [claim, setClaim] = useState<ClaimSummaryResponse | null>(null);
@@ -172,8 +180,8 @@ export const ClaimDetailsPage: React.FC = () => {
       )}
 
       <div className="flex flex-wrap gap-3">
-        <Link to="/claims" className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white">
-          Back to claims
+        <Link to={backLink} className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white">
+          {backLabel}
         </Link>
       </div>
     </div>
