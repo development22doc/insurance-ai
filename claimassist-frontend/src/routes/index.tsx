@@ -21,10 +21,11 @@ import { PoliciesListPage } from '../pages/PoliciesListPage';
 import { PolicyDetailsPage } from '../pages/PolicyDetailsPage';
 import { ClaimsListPage } from '../pages/ClaimsListPage';
 import { ClaimDetailsPage } from '../pages/ClaimDetailsPage';
-const NewClaimPage = () => <div className="p-8"><h1 className="text-2xl font-bold">File New Claim</h1></div>;
-const DocumentsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Documents</h1></div>;
+import ClaimsNewPage from '../pages/ClaimsNewPage';
+const NewClaimPage = () => <ClaimsNewPage />;
+import DocumentsPage from '../pages/DocumentsPage';
 const NotificationsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Notifications</h1></div>;
-const ProfilePage = () => <div className="p-8"><h1 className="text-2xl font-bold">Profile</h1></div>;
+import ProfilePage from '../pages/ProfilePage';
 
 const OperationsDashboard = () => <div className="p-8"><h1 className="text-2xl font-bold">Operations Dashboard</h1></div>;
 const OperationsClaimsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Operations Claims</h1></div>;
