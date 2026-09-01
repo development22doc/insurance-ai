@@ -19,8 +19,8 @@ import { ContactPage } from '../pages/ContactPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { PoliciesListPage } from '../pages/PoliciesListPage';
 import { PolicyDetailsPage } from '../pages/PolicyDetailsPage';
-const CustomerClaimsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">My Claims</h1></div>;
-const ClaimDetailsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Claim Details</h1></div>;
+import { ClaimsListPage } from '../pages/ClaimsListPage';
+import { ClaimDetailsPage } from '../pages/ClaimDetailsPage';
 const NewClaimPage = () => <div className="p-8"><h1 className="text-2xl font-bold">File New Claim</h1></div>;
 const DocumentsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Documents</h1></div>;
 const NotificationsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Notifications</h1></div>;
@@ -86,7 +86,7 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <CustomerClaimsPage /> },
+      { index: true, element: <ClaimsListPage /> },
       { path: 'new', element: <NewClaimPage /> },
       { path: ':id', element: <ClaimDetailsPage /> },
     ],
