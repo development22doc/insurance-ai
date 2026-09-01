@@ -10,6 +10,7 @@ import { AuthProvider } from '../../contexts/AuthContext';
 import { apiClient } from '../../services/api-client';
 import { OperationsClaimsPage } from '../../pages/OperationsClaimsPage';
 import { OperationsDashboardPage } from '../../pages/OperationsDashboardPage';
+import { OperationsClaimWorkspacePage } from '../../pages/OperationsClaimWorkspacePage';
 import type { ClaimSummaryResponse } from '../../types';
 
 const sampleClaims: ClaimSummaryResponse[] = [
@@ -99,6 +100,60 @@ describe('Operations pages', () => {
     expect(screen.getAllByText(/View Claim/i).length).toBeGreaterThan(0);
   });
 
+  it('renders a read-only workspace for auditors and hides status mutators', async () => {
+    setAuth(['AUDITOR']);
+    vi.spyOn(apiClient, 'get').mockResolvedValue({
+      ...sampleClaims[0],
+      status: 'UNDER_REVIEW',
+    } as any);
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/operations/claims/101']}>
+          <Routes>
+            <Route path="/operations/claims/:id" element={<OperationsClaimWorkspacePage />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /CLM-OPS-001/i })).toBeInTheDocument());
+    expect(screen.getByText(/Adjusters are the role authorized to update claim status/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Approve claim/i })).not.toBeInTheDocument();
+  });
+
+  it('renders a mutable workspace for adjusters and submits a real backend transition', async () => {
+    setAuth(['ADJUSTER']);
+    vi.spyOn(apiClient, 'get').mockResolvedValue({
+      ...sampleClaims[0],
+      status: 'SUBMITTED',
+    } as any);
+    const patchSpy = vi.spyOn(apiClient, 'patch').mockResolvedValue({
+      ...sampleClaims[0],
+      status: 'UNDER_REVIEW',
+    } as any);
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/operations/claims/101']}>
+          <Routes>
+            <Route path="/operations/claims/:id" element={<OperationsClaimWorkspacePage />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Move to Under Review/i })).toBeInTheDocument());
+    screen.getByRole('button', { name: /Move to Under Review/i }).click();
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+    screen.getByRole('button', { name: /^Confirm$/i }).click();
+
+    await waitFor(() => expect(patchSpy).toHaveBeenCalledWith('/api/v1/claims/101/status', {
+      status: 'UNDER_REVIEW',
+      note: undefined,
+    }));
+  });
+
   it('shows empty state when the queue is empty', async () => {
     setAuth(['ADJUSTER']);
     vi.spyOn(apiClient, 'get').mockResolvedValue([] as any);
@@ -151,5 +206,22 @@ describe('Operations pages', () => {
     );
 
     await waitFor(() => expect(screen.getByText(/Unauthorized page/i)).toBeInTheDocument());
+  });
+
+  it('shows a 404 view when the workspace claim is missing', async () => {
+    setAuth(['ADJUSTER']);
+    vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('404 Not Found'));
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/operations/claims/999']}>
+          <Routes>
+            <Route path="/operations/claims/:id" element={<OperationsClaimWorkspacePage />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByText(/Claim not found/i)).toBeInTheDocument());
   });
 });

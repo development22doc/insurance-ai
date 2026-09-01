@@ -24,14 +24,13 @@ import { ClaimDetailsPage } from '../pages/ClaimDetailsPage';
 import ClaimsNewPage from '../pages/ClaimsNewPage';
 import { OperationsDashboardPage } from '../pages/OperationsDashboardPage';
 import { OperationsClaimsPage } from '../pages/OperationsClaimsPage';
+import { OperationsClaimWorkspacePage } from '../pages/OperationsClaimWorkspacePage';
 const NewClaimPage = () => <ClaimsNewPage />;
 import DocumentsPage from '../pages/DocumentsPage';
 const NotificationsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Notifications</h1></div>;
 import ProfilePage from '../pages/ProfilePage';
 
-const OperationsClaimDetailsPage = () => (
-  <ClaimDetailsPage backLink="/operations/claims" backLabel="Back to queue" />
-);
+const OperationsClaimDetailsPage = () => <OperationsClaimWorkspacePage />;
 
 const AdminDashboard = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin Dashboard</h1></div>;
 const AdminUsersPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin Users</h1></div>;
