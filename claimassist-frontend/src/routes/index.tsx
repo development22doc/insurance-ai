@@ -16,7 +16,7 @@ import { ClaimsPublicPage } from '../pages/ClaimsPublicPage';
 import { AboutPage } from '../pages/AboutPage';
 import { ContactPage } from '../pages/ContactPage';
 
-const CustomerDashboard = () => <div className="p-8"><h1 className="text-2xl font-bold">Customer Dashboard</h1></div>;
+import { DashboardPage } from '../pages/DashboardPage';
 const PoliciesPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Policies</h1></div>;
 const PolicyDetailsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Policy Details</h1></div>;
 const CustomerClaimsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">My Claims</h1></div>;
@@ -63,7 +63,7 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <CustomerDashboard /> },
+      { index: true, element: <DashboardPage /> },
     ],
   },
   {

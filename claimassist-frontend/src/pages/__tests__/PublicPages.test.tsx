@@ -1,6 +1,9 @@
 ﻿/// <reference types="vitest" />
+import React from 'react';
+import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, MemoryRouter } from 'react-router-dom';
+void React;
 import { AuthProvider } from '../../contexts/AuthContext';
 import { HomePage } from '../HomePage';
 import { ProductsPage } from '../ProductsPage';
