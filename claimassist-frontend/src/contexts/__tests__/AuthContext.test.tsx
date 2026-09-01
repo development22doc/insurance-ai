@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../AuthContext';
-import { apiClient } from '../../services/api-client-impl';
+import { apiClient } from '../../services/api-client';
 import { clearAllTokens } from '../../lib/token-storage';
 
 // Mock API client
-vi.mock('../../services/api-client-impl', () => ({
+vi.mock('../../services/api-client', () => ({
   apiClient: {
     post: vi.fn(),
     get: vi.fn(),

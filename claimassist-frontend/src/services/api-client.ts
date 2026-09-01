@@ -1,6 +1,6 @@
 ﻿import { API_CONFIG, API_ENDPOINTS } from '../config/api';
 import type { ApiError } from '../types';
-import { getAccessToken, clearAllTokens, getRefreshToken } from '../lib/token-storage';
+import { getAccessToken, getRefreshToken, clearAllTokens } from '../lib/token-storage';
 
 // Track in-flight refresh requests to avoid multiple simultaneous refreshes
 let refreshPromise: Promise<void> | null = null;
@@ -23,13 +23,11 @@ class ApiClient {
 
   // Handle 401 errors by attempting token refresh
   private async handle401Error(): Promise<void> {
-    // If already refreshing, wait for that to complete
     if (refreshPromise) {
       await refreshPromise;
       return;
     }
 
-    // Start refresh process
     refreshPromise = this.performTokenRefresh();
 
     try {
@@ -43,7 +41,6 @@ class ApiClient {
   private async performTokenRefresh(): Promise<void> {
     const refreshToken = getRefreshToken();
     if (!refreshToken) {
-      // No refresh token - clear auth and redirect to login
       clearAllTokens();
       window.location.href = '/login?session=expired';
       throw new Error('No refresh token available');
@@ -66,13 +63,11 @@ class ApiClient {
 
       const data = await response.json();
 
-      // Store new tokens
       sessionStorage.setItem('access_token', data.accessToken);
       sessionStorage.setItem('refresh_token', data.refreshToken);
       sessionStorage.setItem('token_expiry', (Date.now() + data.expiresIn * 1000).toString());
       sessionStorage.setItem('refresh_expiry', (Date.now() + data.refreshExpiresIn * 1000).toString());
 
-      // Update user data if provided
       if (data.customerId && data.fullName) {
         const userData = JSON.parse(sessionStorage.getItem('auth_user') || '{}');
         userData.customerId = data.customerId;
@@ -80,7 +75,6 @@ class ApiClient {
         sessionStorage.setItem('auth_user', JSON.stringify(userData));
       }
     } catch (error) {
-      // Refresh failed - clear auth and redirect to login
       clearAllTokens();
       window.location.href = '/login?session=expired';
       throw error;
@@ -110,11 +104,9 @@ class ApiClient {
 
       clearTimeout(timeoutId);
 
-      // Handle 401 - attempt token refresh
       if (response.status === 401 && getAccessToken()) {
         await this.handle401Error();
 
-        // Retry request with new token
         response = await fetch(url, {
           ...options,
           headers: {

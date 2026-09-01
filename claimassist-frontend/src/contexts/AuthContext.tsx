@@ -6,7 +6,7 @@ import {
   clearAllTokens,
   isAccessTokenExpired
 } from '../lib/token-storage';
-import { apiClient } from '../services/api-client-impl';
+import { apiClient } from '../services/api-client';
 import { API_ENDPOINTS } from '../config/api';
 
 // Decode JWT to extract roles
