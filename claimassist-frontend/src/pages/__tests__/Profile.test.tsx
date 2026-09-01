@@ -9,7 +9,6 @@ import { AuthProvider } from '../../contexts/AuthContext';
 import { apiClient } from '../../services/api-client';
 import ProfilePage from '../ProfilePage';
 
-const mockCustomer = { id: 123, username: 'alice', fullName: 'Alice Example', kycStatus: 'VERIFIED' };
 
 describe('Profile page', () => {
   beforeEach(() => {
@@ -23,9 +22,8 @@ describe('Profile page', () => {
     sessionStorage.clear();
   });
 
-  it('loads and displays profile from backend', async () => {
-    vi.spyOn(apiClient, 'get').mockResolvedValue(mockCustomer as any);
-
+  it('renders profile from authenticated session and displays basic fields', async () => {
+    // No backend GET; data should come from session/auth
     render(
       <AuthProvider>
         <MemoryRouter>
@@ -34,16 +32,15 @@ describe('Profile page', () => {
       </AuthProvider>
     );
 
-    expect(screen.getByText(/Loading profile/i)).toBeInTheDocument();
-
     await waitFor(() => expect(screen.getByText(/Alice Example/i)).toBeInTheDocument());
-    expect(screen.getByText(/^alice$/i)).toBeInTheDocument();
-    expect(screen.getByText(/VERIFIED/i)).toBeInTheDocument();
+    // Username is not part of auth session by default — show placeholder
+    expect(screen.getByText(/^—$/)).toBeInTheDocument();
+    expect(screen.getByText(/Unknown/i)).toBeInTheDocument();
   });
 
-  it('allows editing and saves via PATCH', async () => {
-    vi.spyOn(apiClient, 'get').mockResolvedValue(mockCustomer as any);
-    vi.spyOn(apiClient, 'patch').mockImplementation(async (_endpoint: string, data: any) => ({ ...mockCustomer, fullName: data.fullName }));
+  it('allows editing and saves via PATCH with only fullName', async () => {
+    // Mock PATCH response
+    vi.spyOn(apiClient, 'patch').mockImplementation(async (_endpoint: string, data: any) => ({ id: 123, username: 'alice', fullName: data.fullName, kycStatus: 'VERIFIED' } as any));
 
     render(
       <AuthProvider>
@@ -63,10 +60,14 @@ describe('Profile page', () => {
     fireEvent.click(screen.getByText(/Save/i));
 
     await waitFor(() => expect(screen.getByText(/Alice B/i)).toBeInTheDocument());
+    // Ensure sessionStorage updated
+    const stored = JSON.parse(sessionStorage.getItem('auth_user') || '{}');
+    expect(stored.fullName).toBe('Alice B');
   });
 
-  it('falls back to readonly when GET fails', async () => {
-    vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('404'));
+  it('shows error when no session customerId available', async () => {
+    // Clear session to simulate missing auth
+    sessionStorage.clear();
 
     render(
       <AuthProvider>
@@ -76,9 +77,6 @@ describe('Profile page', () => {
       </AuthProvider>
     );
 
-    await waitFor(() => expect(screen.getByText(/Profile read-only/i)).toBeInTheDocument());
-    expect(screen.getByText(/Alice Example/i)).toBeInTheDocument();
-    // Edit button should not be present in read-only mode
-    expect(screen.queryByText(/Edit/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/No customer ID available/i)).toBeInTheDocument());
   });
 });

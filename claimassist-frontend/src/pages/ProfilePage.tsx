@@ -24,42 +24,29 @@ export default function ProfilePage(): React.ReactElement {
   const [readonlyFallback, setReadonlyFallback] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
+    // Use authoritative session/auth info for initial display. Do not call GET on the PATCH-only endpoint.
+    const initFromSession = () => {
       setLoading(true);
       setError(null);
 
-      const customerId = user?.customerId;
+      const stored = sessionStorage.getItem('auth_user');
+      const customerId = user?.customerId || (stored ? JSON.parse(stored).customerId : null);
+      const fullNameFromSession = user?.fullName || (stored ? JSON.parse(stored).fullName : undefined);
+
       if (!customerId) {
         setError('No customer ID available for the current session.');
         setLoading(false);
         return;
       }
 
-      try {
-        // Try to GET the customer record from backend
-        const resp = await apiClient.get<CustomerResponse>(API_ENDPOINTS.CUSTOMER_UPDATE(customerId));
-        setCustomer(resp);
-        setFullName(resp.fullName || '');
-      } catch (err) {
-        // If GET isn't available, fall back to stored auth_user (read-only)
-        const stored = sessionStorage.getItem('auth_user');
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            setCustomer({ id: parsed.customerId, fullName: parsed.fullName, username: parsed.username });
-            setReadonlyFallback(true);
-          } catch {
-            setError('Failed to parse local profile data');
-          }
-        } else {
-          setError('Unable to load profile.');
-        }
-      } finally {
-        setLoading(false);
-      }
+      setCustomer({ id: customerId, username: stored ? JSON.parse(stored).username : undefined, fullName: fullNameFromSession });
+      setFullName(fullNameFromSession || '');
+      // Indicate data is coming from the authenticated session rather than a customer GET endpoint
+      setReadonlyFallback(true);
+      setLoading(false);
     };
 
-    load();
+    initFromSession();
   }, [user]);
 
   const onSave = async () => {
@@ -123,18 +110,16 @@ export default function ProfilePage(): React.ReactElement {
         <div className="mt-1 text-sm">{customer.kycStatus ?? 'Unknown'}</div>
       </div>
 
-      {!readonlyFallback && (
-        <div className="flex gap-2">
-          {!editing ? (
-            <button className="btn btn-primary" onClick={() => setEditing(true)}>Edit</button>
-          ) : (
-            <>
-              <button className="btn btn-primary" onClick={onSave} disabled={loading}>Save</button>
-              <button className="btn" onClick={() => { setEditing(false); setFullName(customer.fullName || ''); }}>Cancel</button>
-            </>
-          )}
-        </div>
-      )}
+      <div className="flex gap-2">
+        {!editing ? (
+          <button className="btn btn-primary" onClick={() => setEditing(true)}>Edit</button>
+        ) : (
+          <>
+            <button className="btn btn-primary" onClick={onSave} disabled={loading}>Save</button>
+            <button className="btn" onClick={() => { setEditing(false); setFullName(customer.fullName || ''); }}>Cancel</button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
