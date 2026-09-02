@@ -87,6 +87,17 @@ export const Header: React.FC<HeaderProps> = ({ showNavigation = true }) => {
                   </Link>
                 </>
               )}
+
+              {isAuthenticated && (hasRole('ADMIN') || hasRole('SUPPORT')) && (
+                <>
+                  <Link
+                    to="/admin"
+                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
+                  >
+                    Admin
+                  </Link>
+                </>
+              )}
             </nav>
           )}
 

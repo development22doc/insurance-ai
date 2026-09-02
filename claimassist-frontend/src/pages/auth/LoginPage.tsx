@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../../components/ui';
-import { generatePKCEState, storePKCEState } from '../../lib/pkce';
+// PKCE is generated server-side by customer-service; frontend no longer generates local PKCE state.
 
 export function LoginPage() {
   const { login, isAuthenticated, isLoading } = useAuth();
@@ -22,11 +22,8 @@ export function LoginPage() {
   // Initiate OAuth login flow
   const handleLogin = async () => {
     try {
-      // Generate PKCE state
-      const pkceState = await generatePKCEState();
-      storePKCEState(pkceState);
-
-      // Call login which redirects to backend authorize endpoint
+      // Initiate auth flow via backend authorize endpoint. The server generates
+      // and stores PKCE state and verifier; frontend must not generate its own.
       await login();
     } catch (error) {
       console.error('Login failed:', error);

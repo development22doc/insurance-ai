@@ -175,4 +175,4 @@ export interface StreamResponse {
 export type StreamEventType = 'message' | 'done' | 'error';
 
 // Role Types
-export type RealmRole = 'CUSTOMER' | 'ADJUSTER' | 'AUDITOR';
+export type RealmRole = 'CUSTOMER' | 'ADJUSTER' | 'AUDITOR' | 'ADMIN' | 'SUPPORT';

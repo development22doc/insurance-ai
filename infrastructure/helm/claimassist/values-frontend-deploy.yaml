@@ -1,0 +1,20 @@
+# Values override to deploy frontend as a service in DEV
+services:
+  frontend:
+    replicas: 1
+    k8sConfig: true
+    port: 80
+    image: claimassist-frontend
+    imageTag: "<REPLACE_WITH_IMAGE_TAG>" # set to built image tag
+    env:
+      - name: VITE_API_BASE_URL
+        value: "<SET_AT_BUILD_TIME_OR_LOCALLY_OVERRIDE>" # Set via docker build --build-arg or override locally; do NOT hardcode an OCI IP in repo
+    devExternalAccess: true
+    devNodePort: 30071
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi

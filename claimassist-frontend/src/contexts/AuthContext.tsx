@@ -33,7 +33,7 @@ function extractRoles(token: string): RealmRole[] {
     return [];
   }
   return decoded.realm_access.roles.filter((role: string): role is RealmRole =>
-    ['CUSTOMER', 'ADJUSTER', 'AUDITOR'].includes(role)
+    ['CUSTOMER', 'ADJUSTER', 'AUDITOR', 'ADMIN', 'SUPPORT'].includes(role)
   );
 }
 

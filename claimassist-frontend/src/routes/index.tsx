@@ -32,13 +32,19 @@ import ProfilePage from '../pages/ProfilePage';
 
 const OperationsClaimDetailsPage = () => <OperationsClaimWorkspacePage />;
 
-const AdminDashboard = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin Dashboard</h1></div>;
-const AdminUsersPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin Users</h1></div>;
-const AdminRbacPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin RBAC</h1></div>;
-const AdminProductsPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin Products</h1></div>;
-const AdminAiPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin AI Configuration</h1></div>;
-const AdminRiskPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin Fraud/Risk</h1></div>;
-const AdminAuditPage = () => <div className="p-8"><h1 className="text-2xl font-bold">Admin Audit</h1></div>;
+/* Admin pages (preview-only imports) */
+import { AdminDashboardPage } from '../pages/AdminDashboardPage';
+import { AdminUsersPage } from '../pages/AdminUsersPage';
+import { AdminRbacPage } from '../pages/AdminRbacPage';
+import { AdminProductsPage } from '../pages/AdminProductsPage';
+import { AdminAiPage } from '../pages/AdminAiPage';
+import { AdminRiskPage } from '../pages/AdminRiskPage';
+import { AdminAuditPage } from '../pages/AdminAuditPage';
+import { AdminDocumentsPage } from '../pages/AdminDocumentsPage';
+
+/* Operations preview pages */
+import { OperationsAssignmentsPage } from '../pages/OperationsAssignmentsPage';
+import { OperationsSurveyorsPage } from '../pages/OperationsSurveyorsPage';
 /* eslint-enable react/only-export-components */
 
 export const router = createBrowserRouter([
@@ -54,6 +60,7 @@ export const router = createBrowserRouter([
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
       { path: 'callback', element: <CallbackPage /> },
+      { path: 'customer/auth/callback', element: <CallbackPage /> },
       { path: 'unauthorized', element: <UnauthorizedPage /> },
     ],
   },
@@ -137,25 +144,30 @@ export const router = createBrowserRouter([
       { index: true, element: <OperationsDashboardPage /> },
       { path: 'claims', element: <OperationsClaimsPage /> },
       { path: 'claims/:id', element: <OperationsClaimDetailsPage /> },
+      { path: 'assignments', element: <OperationsAssignmentsPage /> },
+      { path: 'surveyors', element: <OperationsSurveyorsPage /> },
     ],
   },
+
   {
     path: '/admin',
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute requiredRoles={['ADMIN','SUPPORT']}>
         <AdminLayout />
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <AdminDashboard /> },
+      { index: true, element: <AdminDashboardPage /> },
       { path: 'users', element: <AdminUsersPage /> },
       { path: 'rbac', element: <AdminRbacPage /> },
       { path: 'products', element: <AdminProductsPage /> },
       { path: 'ai', element: <AdminAiPage /> },
       { path: 'risk', element: <AdminRiskPage /> },
       { path: 'audit', element: <AdminAuditPage /> },
+      { path: 'documents', element: <AdminDocumentsPage /> },
     ],
   },
+
   {
     path: '*',
     element: <Navigate to="/" replace />,

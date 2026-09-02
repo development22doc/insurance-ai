@@ -1,0 +1,28 @@
+{{- range $name, $svc := .Values.services }}
+{{- if and (eq $name "frontend") $svc.devExternalAccess }}
+# Frontend DEV NodePort Service - DEV-only VPN external access.
+# Exposes frontend HTTP (container port 80) on a NodePort so DEV clients can
+# reach the SPA via the cluster node IP and NodePort. Rendered ONLY when
+# services.frontend.devExternalAccess is true (values override for DEV).
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-{{ $name }}-dev
+  namespace: {{ include "claimassist.namespace" $ | quote }}
+  labels:
+    {{- include "claimassist.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" $ | quote }}
+    app.kubernetes.io/component: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: http
+      nodePort: {{ $svc.devNodePort }}
+      protocol: TCP
+{{- end }}
+{{- end }}

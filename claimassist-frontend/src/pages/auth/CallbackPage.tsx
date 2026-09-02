@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { consumePKCEState } from '../../lib/pkce';
+// Rely on server-side PKCE state stored in Redis; frontend no longer consumes local PKCE state.
 import { LoadingState, ErrorState } from '../../components/ui';
 
 export function CallbackPage() {
@@ -35,13 +35,9 @@ export function CallbackPage() {
         return;
       }
 
-      // Verify PKCE state
-      const pkceState = consumePKCEState();
-      if (!pkceState || pkceState.state !== state) {
-        setStatus('error');
-        setErrorMessage('Invalid state parameter. Possible CSRF attack.');
-        return;
-      }
+      // Server-side PKCE/state is authoritative (stored in Redis and consumed
+      // atomically by the backend). The frontend does not validate a locally-
+      // stored PKCE state. Proceed if code and state are present.
 
       try {
         await handleCallback(code, state);
