@@ -35,6 +35,8 @@
                     <includeMdcKeyName>requestId</includeMdcKeyName>
                     <includeMdcKeyName>traceId</includeMdcKeyName>
                     <includeMdcKeyName>spanId</includeMdcKeyName>
+                    <includeMdcKeyName>developer_id</includeMdcKeyName>
+                    <includeMdcKeyName>developer_name</includeMdcKeyName>
                 </mdc>
                 <stackTrace>
                     <fieldName>exception</fieldName>
@@ -84,6 +86,8 @@
                         <includeMdcKeyName>requestId</includeMdcKeyName>
                         <includeMdcKeyName>traceId</includeMdcKeyName>
                         <includeMdcKeyName>spanId</includeMdcKeyName>
+                        <includeMdcKeyName>developer_id</includeMdcKeyName>
+                        <includeMdcKeyName>developer_name</includeMdcKeyName>
                     </mdc>
                     <stackTrace>
                         <fieldName>exception</fieldName>
@@ -109,7 +113,7 @@
         <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
             <format>
                 <label>
-                    <pattern>service=${APP_NAME},environment=local,source=intellij,developer=${CLAIMASSIST_DEVELOPER_NAME:-unknown}</pattern>
+                    <pattern>service=${APP_NAME},environment=local,source=intellij</pattern>
                 </label>
                 <message>
                     <pattern>
@@ -117,7 +121,9 @@
                         "traceId": "%mdc{traceId}",
                         "spanId": "%mdc{spanId}",
                         "correlationId": "%mdc{correlationId}",
-                        "requestId": "%mdc{requestId}"
+                        "requestId": "%mdc{requestId}",
+                        "developer_id": "%mdc{developer_id}",
+                        "developer_name": "%mdc{developer_name}"
                         }
                     </pattern>
                 </message>
@@ -151,7 +157,7 @@
         <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
             <format>
                 <label>
-                    <pattern>service=${APP_NAME},environment=local-k8s,source=intellij,developer=${CLAIMASSIST_DEV_ID:-local}</pattern>
+                    <pattern>service=${APP_NAME},environment=local-k8s,source=intellij</pattern>
                 </label>
                 <message>
                     <pattern>
@@ -159,7 +165,9 @@
                         "traceId": "%mdc{traceId}",
                         "spanId": "%mdc{spanId}",
                         "correlationId": "%mdc{correlationId}",
-                        "requestId": "%mdc{requestId}"
+                        "requestId": "%mdc{requestId}",
+                        "developer_id": "%mdc{developer_id}",
+                        "developer_name": "%mdc{developer_name}"
                         }
                     </pattern>
                 </message>

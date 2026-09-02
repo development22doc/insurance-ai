@@ -120,10 +120,6 @@ $requiredVars = @(
     "POSTGRES_PORT",
     "POSTGRES_USER",
     "POSTGRES_PASSWORD",
-    "KEYCLOAK_SERVER_URL",
-    "KEYCLOAK_REALM",
-    "KEYCLOAK_ISSUER_URI",
-    "KEYCLOAK_JWKS_URI",
     "ZIPKIN_ENDPOINT",
     "LOKI_HOST",
     "LOKI_PORT",
@@ -150,8 +146,7 @@ Write-Host "[INFRA] Verifying shared infrastructure via Tailscale..." -Foregroun
 $infraEndpoints = @(
     @{ Host = $envVars["POSTGRES_HOST"]; Port = [int]$envVars["POSTGRES_PORT"]; Name = "PostgreSQL" },
     @{ Host = $envVars["SPRING_DATA_REDIS_HOST"]; Port = [int]$envVars["SPRING_DATA_REDIS_PORT"]; Name = "Redis" },
-    @{ Host = ($envVars["SPRING_KAFKA_BOOTSTRAP_SERVERS"] -split ":")[0]; Port = [int](($envVars["SPRING_KAFKA_BOOTSTRAP_SERVERS"] -split ":")[1]); Name = "Kafka" },
-    @{ Host = ($envVars["KEYCLOAK_SERVER_URL"] -replace "http://","" -replace "/",""); Port = 30080; Name = "Keycloak" }
+    @{ Host = ($envVars["SPRING_KAFKA_BOOTSTRAP_SERVERS"] -split ":")[0]; Port = [int](($envVars["SPRING_KAFKA_BOOTSTRAP_SERVERS"] -split ":")[1]); Name = "Kafka" }
 )
 
 $allInfraOk = $true

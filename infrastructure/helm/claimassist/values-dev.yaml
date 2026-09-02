@@ -116,10 +116,11 @@ keycloak:
   devNodePort: 30080
   # DEV-only: external redirect URIs for browser OIDC flow via Tailscale NodePort.
   # The browser must reach the callback URL after Keycloak authentication.
+  # The redirect URI points to the API Gateway's external NodePort, not Keycloak's.
   externalRedirectUris:
-    - http://100.114.133.69:30080/customer/auth/callback
+    - http://100.114.133.69:30070/customer/auth/callback
   externalWebOrigins:
-    - http://100.114.133.69:30080
+    - http://100.114.133.69:30070
   postgresql:
     enabled: true
     storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
@@ -177,6 +178,13 @@ services:
   api-gateway:
     replicas: 1
     k8sConfig: true
+    # DEV-only VPN API Gateway external access.
+    # When enabled, a NodePort Service exposes the API Gateway (8080) on the
+    # K3s node so Tailscale VPN clients can reach the application at the
+    # MagicDNS hostname. Disabled in values.yaml (global); only DEV enables it.
+    devExternalAccess: true
+    devExternalHost: vnic.taild219f3.ts.net
+    devNodePort: 30070
   customer-service:
     replicas: 1
     k8sConfig: true

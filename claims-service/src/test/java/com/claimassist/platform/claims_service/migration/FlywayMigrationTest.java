@@ -184,6 +184,7 @@ class FlywayMigrationTest {
             assertThat(columns.toString()).contains("correlation_id");
             assertThat(columns.toString()).contains("trace_id");
             assertThat(columns.toString()).contains("span_id");
+            assertThat(columns.toString()).contains("request_id");
         }
     }
 }

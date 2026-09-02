@@ -47,6 +47,7 @@ public class OutboxEventProducer {
                 .correlationId(MDC.get(LoggingConstants.MDC_CORRELATION_ID))
                 .traceId(MDC.get(LoggingConstants.MDC_TRACE_ID))
                 .spanId(MDC.get(LoggingConstants.MDC_SPAN_ID))
+                .requestId(MDC.get(LoggingConstants.MDC_REQUEST_ID))
                 .build();
 
         OutboxEvent saved = outboxEventRepository.save(event);

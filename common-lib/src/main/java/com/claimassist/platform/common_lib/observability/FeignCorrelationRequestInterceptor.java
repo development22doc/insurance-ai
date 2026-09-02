@@ -5,7 +5,7 @@ import feign.RequestTemplate;
 import org.slf4j.MDC;
 
 /**
- * Feign RequestInterceptor that adds correlation and trace headers to outgoing requests.
+ * Feign RequestInterceptor that adds correlation, request ID, and trace headers to outgoing requests.
  */
 public class FeignCorrelationRequestInterceptor implements RequestInterceptor {
     public FeignCorrelationRequestInterceptor() {}
@@ -14,6 +14,8 @@ public class FeignCorrelationRequestInterceptor implements RequestInterceptor {
     public void apply(RequestTemplate template) {
         String correlation = MDC.get(LoggingConstants.MDC_CORRELATION_ID);
         if (correlation != null) template.header(LoggingConstants.CORRELATION_ID_HEADER, correlation);
+        String requestId = MDC.get(LoggingConstants.MDC_REQUEST_ID);
+        if (requestId != null) template.header(LoggingConstants.REQUEST_ID_HEADER, requestId);
         String traceId = MDC.get(LoggingConstants.MDC_TRACE_ID);
         if (traceId != null) template.header(LoggingConstants.TRACE_ID_HEADER, traceId);
     }

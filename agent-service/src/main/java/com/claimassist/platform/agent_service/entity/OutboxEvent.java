@@ -67,6 +67,8 @@ public class OutboxEvent {
 
     String spanId;
 
+    String requestId;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) {

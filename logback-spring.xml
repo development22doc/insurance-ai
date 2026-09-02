@@ -35,6 +35,8 @@
                     <includeMdcKeyName>requestId</includeMdcKeyName>
                     <includeMdcKeyName>traceId</includeMdcKeyName>
                     <includeMdcKeyName>spanId</includeMdcKeyName>
+                    <includeMdcKeyName>developer_id</includeMdcKeyName>
+                    <includeMdcKeyName>developer_name</includeMdcKeyName>
                 </mdc>
                 <stackTrace>
                     <fieldName>exception</fieldName>
@@ -80,10 +82,12 @@
                         <fieldName>message</fieldName>
                     </message>
                     <mdc>
-                        <includeMdcKeyName>correlationId</includeMdcKeyName>
-                        <includeMdcKeyName>requestId</includeMdcKeyName>
-                        <includeMdcKeyName>traceId</includeMdcKeyName>
-                        <includeMdcKeyName>spanId</includeMdcKeyName>
+                         <includeMdcKeyName>correlationId</includeMdcKeyName>
+                         <includeMdcKeyName>requestId</includeMdcKeyName>
+                         <includeMdcKeyName>traceId</includeMdcKeyName>
+                         <includeMdcKeyName>spanId</includeMdcKeyName>
+                         <includeMdcKeyName>developer_id</includeMdcKeyName>
+                         <includeMdcKeyName>developer_name</includeMdcKeyName>
                     </mdc>
                     <stackTrace>
                         <fieldName>exception</fieldName>
@@ -112,15 +116,17 @@
                     <pattern>service=${APP_NAME},environment=local,source=intellij,developer=${CLAIMASSIST_DEVELOPER_NAME:-unknown}</pattern>
                 </label>
                 <message>
-                    <pattern>
-                        {
-                        "traceId": "%mdc{traceId}",
-                        "spanId": "%mdc{spanId}",
-                        "correlationId": "%mdc{correlationId}",
-                        "requestId": "%mdc{requestId}"
-                        }
-                    </pattern>
-                </message>
+                     <pattern>
+                         {
+                         "traceId": "%mdc{traceId}",
+                         "spanId": "%mdc{spanId}",
+                         "correlationId": "%mdc{correlationId}",
+                         "requestId": "%mdc{requestId}",
+                         "developer_id": "%mdc{developer_id}",
+                         "developer_name": "%mdc{developer_name}"
+                         }
+                     </pattern>
+                 </message>
             </format>
             <http>
                 <url>http://100.114.133.69:30310/loki/api/v1/push</url>

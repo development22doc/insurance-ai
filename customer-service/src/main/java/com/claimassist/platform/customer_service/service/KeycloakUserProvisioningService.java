@@ -15,12 +15,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import jakarta.annotation.PostConstruct;
 
 /**
  * Talks to Keycloak's Admin REST API to create the Keycloak-side identity
@@ -48,6 +55,13 @@ public class KeycloakUserProvisioningService {
     private final RestClient restClient;
     private final EventLogger eventLogger;
     private final PerformanceLogger performanceLogger;
+
+    @PostConstruct
+    void logEffectiveKeycloakConfiguration() {
+        // Safe to log server URL, realm and admin client id. Never log secrets.
+        log.info("Effective Keycloak configuration: serverUrl={}, realm={}, adminClientId={}",
+                keycloakProperties.serverUrl(), keycloakProperties.realm(), keycloakProperties.adminClientId());
+    }
 
     /**
      * @return the Keycloak user id (UUID) of the newly created user.
@@ -154,6 +168,12 @@ public class KeycloakUserProvisioningService {
         long startTime = System.currentTimeMillis();
         MultiValueMap<String, String> form = buildAdminTokenRequestForm();
 
+        // Diagnostic logging (without exposing the secret)
+        log.debug("Keycloak admin token request: clientId={}, tokenUrl={}, realm={}",
+                keycloakProperties.adminClientId(),
+                keycloakProperties.tokenUri(),
+                keycloakProperties.realm());
+
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restClient.post()
@@ -188,15 +208,71 @@ public class KeycloakUserProvisioningService {
 
             return (String) response.get("access_token");
 
-         } catch (RestClientException e) {
-             long duration = System.currentTimeMillis() - startTime;
-             Map<String, Object> failDetails = new HashMap<>();
-             failDetails.put("event", "KEYCLOAK_REQUEST_FAILED");
-             failDetails.put("operation", "fetch_admin_token");
-             failDetails.put("reason", e.getClass().getSimpleName());
-             failDetails.put("executionTimeMs", duration);
-             failDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
-             eventLogger.logBusinessEvent("customer-service", "customer-service", failDetails);
+        } catch (RestClientException e) {
+            long duration = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> failDetails = new HashMap<>();
+            failDetails.put("event", "KEYCLOAK_REQUEST_FAILED");
+            failDetails.put("operation", "fetch_admin_token");
+            failDetails.put("executionTimeMs", duration);
+            failDetails.put("correlationId", MDC.get(LoggingConstants.MDC_CORRELATION_ID));
+
+            // Distinguish common failure modes for clearer diagnostics without exposing secrets
+            if (e instanceof RestClientResponseException r) {
+                int status = r.getRawStatusCode();
+                String responseBody = r.getResponseBodyAsString();
+                failDetails.put("httpStatus", status);
+
+                // Try to surface Keycloak error fields (safe: does not contain secrets)
+                try {
+                    if (responseBody != null && !responseBody.isBlank()) {
+                        if (responseBody.contains("invalid_client")) {
+                            failDetails.put("reason", "invalid_client");
+                        } else if (responseBody.contains("invalid_grant")) {
+                            failDetails.put("reason", "invalid_grant");
+                        } else {
+                            failDetails.put("reason", "http_error_response");
+                        }
+                        failDetails.put("responseExcerpt", responseBody.length() > 512 ? responseBody.substring(0, 512) + "..." : responseBody);
+                    } else {
+                        failDetails.put("reason", "http_error_response");
+                    }
+                } catch (Exception ignore) {
+                    failDetails.put("reason", "http_error_response");
+                }
+
+                log.warn("Keycloak token request failed with HTTP {}: {}", status, r.getStatusText());
+
+            } else if (e instanceof ResourceAccessException) {
+                // Connection / timeout errors
+                String msg = e.getMessage() == null ? "resource_access" : e.getMessage();
+                if (msg.contains("Connection refused") || msg.contains("connect timed out") || msg.contains("Connection timed out")) {
+                    failDetails.put("reason", "connection_refused_or_timeout");
+                } else {
+                    failDetails.put("reason", "resource_access");
+                }
+                failDetails.put("messageExcerpt", msg.length() > 512 ? msg.substring(0, 512) + "..." : msg);
+
+                log.warn("Keycloak token request ResourceAccessException: {}", msg);
+
+            } else if (e instanceof HttpClientErrorException) {
+                int status = ((HttpClientErrorException) e).getStatusCode().value();
+                failDetails.put("httpStatus", status);
+                failDetails.put("reason", "client_error");
+                log.warn("Keycloak token request client error {}: {}", status, ((HttpClientErrorException) e).getStatusText());
+
+            } else if (e instanceof HttpServerErrorException) {
+                int status = ((HttpServerErrorException) e).getStatusCode().value();
+                failDetails.put("httpStatus", status);
+                failDetails.put("reason", "server_error");
+                log.warn("Keycloak token request server error {}: {}", status, ((HttpServerErrorException) e).getStatusText());
+
+            } else {
+                failDetails.put("reason", e.getClass().getSimpleName());
+                log.warn("Keycloak token request failed: {}", e.toString());
+            }
+
+            eventLogger.logBusinessEvent("customer-service", "customer-service", failDetails);
 
             performanceLogger.log("BUSINESS", "keycloak.fetch_admin_token", duration, Map.of("operation","fetch_admin_token"));
 

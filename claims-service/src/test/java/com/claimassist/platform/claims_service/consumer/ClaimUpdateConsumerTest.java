@@ -72,7 +72,7 @@ class ClaimUpdateConsumerTest {
     void duplicateSagaRequeuesPreviousAckWithoutReapplyingChange() throws Exception {
         when(processedEventRepository.existsById("saga-1")).thenReturn(true);
 
-        consumer.consumeClaimUpdateRequest(json(request()), null, null, null, ack);
+        consumer.consumeClaimUpdateRequest(json(request()), null, null, null, null, ack);
 
         verify(commandService, never()).applyStatusChange(any(UpdateClaimStatusCommand.class));
         verify(ack).acknowledge();
@@ -83,7 +83,7 @@ class ClaimUpdateConsumerTest {
         when(processedEventRepository.existsById("saga-1")).thenReturn(false);
         when(securityExpressions.hasPermissionForUser(100L, 5L, ClaimPermission.UPDATE_STATUS)).thenReturn(false);
 
-        consumer.consumeClaimUpdateRequest(json(request()), null, null, null, ack);
+        consumer.consumeClaimUpdateRequest(json(request()), null, null, null, null, ack);
 
         verify(commandService, never()).applyStatusChange(any(UpdateClaimStatusCommand.class));
         verify(processedEventRepository).save(any(ProcessedEvent.class));
@@ -99,7 +99,7 @@ class ClaimUpdateConsumerTest {
         when(commandService.applyStatusChange(any(UpdateClaimStatusCommand.class)))
                 .thenThrow(new ClaimStateTransitionException("SUBMITTED", "APPROVED"));
 
-        consumer.consumeClaimUpdateRequest(json(request()), null, null, null, ack);
+        consumer.consumeClaimUpdateRequest(json(request()), null, null, null, null, ack);
 
         verify(processedEventRepository).save(any(ProcessedEvent.class));
         verify(outboxEventRepository).save(org.mockito.ArgumentMatchers.argThat(
@@ -114,7 +114,7 @@ class ClaimUpdateConsumerTest {
         Claim claim = new Claim();
         when(commandService.applyStatusChange(any(UpdateClaimStatusCommand.class))).thenReturn(claim);
 
-        consumer.consumeClaimUpdateRequest(json(request()), "corr-1", "trace-1", "span-1", ack);
+        consumer.consumeClaimUpdateRequest(json(request()), "corr-1", "trace-1", "span-1", "req-1", ack);
 
         verify(commandService).applyStatusChange(any(UpdateClaimStatusCommand.class));
         verify(processedEventRepository).save(any(ProcessedEvent.class));
@@ -132,7 +132,7 @@ class ClaimUpdateConsumerTest {
         when(outboxEventRepository.findFirstByAggregateIdAndEventType("saga-1", "ClaimUpdateResponseEvent"))
                 .thenReturn(Optional.of(new com.claimassist.platform.claims_service.entity.OutboxEvent()));
 
-        consumer.consumeClaimUpdateRequest(json(request()), null, null, null, ack);
+        consumer.consumeClaimUpdateRequest(json(request()), null, null, null, null, ack);
 
         verify(outboxEventRepository, never()).save(any(com.claimassist.platform.claims_service.entity.OutboxEvent.class));
     }
@@ -143,7 +143,7 @@ class ClaimUpdateConsumerTest {
         when(securityExpressions.hasPermissionForUser(100L, 5L, ClaimPermission.UPDATE_STATUS)).thenReturn(true);
         when(commandService.applyStatusChange(any(UpdateClaimStatusCommand.class))).thenReturn(new Claim());
 
-        consumer.consumeClaimUpdateRequest(json(request()), "hdr-corr", null, null, ack);
+        consumer.consumeClaimUpdateRequest(json(request()), "hdr-corr", "trace-1", "span-1", "req-1", ack);
 
         assertThat(org.slf4j.MDC.get(com.claimassist.platform.common_lib.observability.LoggingConstants.MDC_CORRELATION_ID))
                 .isNull();

@@ -95,7 +95,7 @@ public class OutboxEventPublisher {
                     event.getPartitionKey(),
                     event.getPayload());
 
-            // Add stored correlation/trace/span headers from the OutboxEvent
+            // Add stored correlation/trace/span/request headers from the OutboxEvent
             // (these were captured at event creation time when the original MDC was available)
             if (event.getCorrelationId() != null) {
                 record.headers().add(LoggingConstants.CORRELATION_ID_HEADER, event.getCorrelationId().getBytes());
@@ -105,6 +105,9 @@ public class OutboxEventPublisher {
             }
             if (event.getSpanId() != null) {
                 record.headers().add(LoggingConstants.SPAN_ID_HEADER, event.getSpanId().getBytes());
+            }
+            if (event.getRequestId() != null) {
+                record.headers().add(LoggingConstants.REQUEST_ID_HEADER, event.getRequestId().getBytes());
             }
 
             pendingSends.add(new PendingSend(event, outboxKafkaTemplate.send(record)));

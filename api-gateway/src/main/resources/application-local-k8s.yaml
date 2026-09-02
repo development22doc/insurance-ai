@@ -18,6 +18,12 @@ server:
   port: 8080
   shutdown: graceful
 
+# Developer identity for observability
+claimassist:
+  dev:
+    id: ${CLAIMASSIST_DEV_ID:local}
+    name: ${CLAIMASSIST_DEVELOPER_NAME:unknown}
+
 spring:
   config:
     import: optional:file:../application-local-k8s.properties

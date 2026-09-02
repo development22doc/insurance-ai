@@ -52,6 +52,7 @@ public class AgentSagaResponseHandler {
             @Header(name = LoggingConstants.CORRELATION_ID_HEADER, required = false) String correlationId,
             @Header(name = LoggingConstants.TRACE_ID_HEADER, required = false) String traceId,
             @Header(name = LoggingConstants.SPAN_ID_HEADER, required = false) String spanId,
+            @Header(name = LoggingConstants.REQUEST_ID_HEADER, required = false) String requestId,
             Acknowledgment ack) throws Exception {
 
         try {
@@ -69,6 +70,9 @@ public class AgentSagaResponseHandler {
             }
             if (spanId != null) {
                 MDCUtility.putSpanId(spanId);
+            }
+            if (requestId != null) {
+                MDCUtility.putRequestId(requestId);
             }
 
             try {
