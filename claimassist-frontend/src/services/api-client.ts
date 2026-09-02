@@ -18,7 +18,7 @@ class ApiClient {
 
   private getAuthHeader(): Record<string, string> {
     const token = getAccessToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    return token ? { Authorization: 'Bearer ' + token } : {};
   }
 
   // Handle 401 errors by attempting token refresh
@@ -191,3 +191,4 @@ class ApiClient {
 
 export const apiClient = new ApiClient();
 export default apiClient;
+
