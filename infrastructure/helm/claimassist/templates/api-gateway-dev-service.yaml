@@ -1,0 +1,31 @@
+{{- range $name, $svc := .Values.services }}
+{{- if and (eq $name "api-gateway") $svc.devExternalAccess }}
+# API Gateway DEV NodePort Service - DEV-only VPN API Gateway access.
+# Exposes API Gateway HTTP (container port 8080) on a NodePort so Tailscale
+# VPN clients can reach the application via the MagicDNS hostname:NodePort.
+# Rendered ONLY when services.api-gateway.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-api-gateway.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-{{ $name }}-dev
+  namespace: {{ include "claimassist.namespace" $ | quote }}
+  labels:
+    {{- include "claimassist.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: {{ include "claimassist.name" $ | quote }}
+    app.kubernetes.io/component: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: http
+      nodePort: {{ $svc.devNodePort }}
+      protocol: TCP
+{{- end }}
+{{- end }}

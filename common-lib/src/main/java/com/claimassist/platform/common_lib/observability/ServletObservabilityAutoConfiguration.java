@@ -23,12 +23,11 @@ import jakarta.servlet.Filter;
 public class ServletObservabilityAutoConfiguration {
 
     @Bean
-    public FilterRegistrationBean<CorrelationIdFilter> correlationIdFilterRegistration() {
-        CorrelationIdFilter filter = new CorrelationIdFilter();
+    public FilterRegistrationBean<CorrelationIdFilter> correlationIdFilterRegistration(DeveloperIdentity developerIdentity) {
+        CorrelationIdFilter filter = new CorrelationIdFilter(developerIdentity);
         FilterRegistrationBean<CorrelationIdFilter> reg = new FilterRegistrationBean<>(filter);
         reg.setOrder(Ordered.HIGHEST_PRECEDENCE + 10);
         reg.setName("observabilityCorrelationIdFilter");
         return reg;
     }
 }
-

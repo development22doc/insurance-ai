@@ -25,11 +25,21 @@ public final class MDCUtility {
         if (id != null) MDC.put(LoggingConstants.MDC_REQUEST_ID, id);
     }
 
+    public static void putDeveloperId(String id) {
+        if (id != null) MDC.put(LoggingConstants.MDC_DEVELOPER_ID, id);
+    }
+
+    public static void putDeveloperName(String name) {
+        if (name != null) MDC.put(LoggingConstants.MDC_DEVELOPER_NAME, name);
+    }
+
     public static void clearAll() {
         MDC.remove(LoggingConstants.MDC_CORRELATION_ID);
         MDC.remove(LoggingConstants.MDC_TRACE_ID);
         MDC.remove(LoggingConstants.MDC_SPAN_ID);
         MDC.remove(LoggingConstants.MDC_REQUEST_ID);
+        MDC.remove(LoggingConstants.MDC_DEVELOPER_ID);
+        MDC.remove(LoggingConstants.MDC_DEVELOPER_NAME);
     }
 }
 

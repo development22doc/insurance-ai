@@ -28,6 +28,15 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
     public static final String MDC_KEY = LoggingConstants.MDC_CORRELATION_ID;
     public static final String REQUEST_ID_HEADER = LoggingConstants.REQUEST_ID_HEADER;
     public static final String REQUEST_ID_MDC_KEY = LoggingConstants.MDC_REQUEST_ID;
+    private final DeveloperIdentity developerIdentity;
+
+    public CorrelationIdFilter() {
+        this(new DeveloperIdentity("local", "unknown"));
+    }
+
+    public CorrelationIdFilter(DeveloperIdentity developerIdentity) {
+        this.developerIdentity = developerIdentity;
+    }
 
     // CorrelationIdFilter intentionally avoids a hard compile-time dependency on
     // micrometer Tracer. Many tracing implementations automatically populate
@@ -48,6 +57,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
         MDCUtility.putCorrelationId(correlationId);
         MDCUtility.putRequestId(requestId);
+        developerIdentity.populateMdc();
         response.setHeader(LoggingConstants.CORRELATION_ID_HEADER, correlationId);
         response.setHeader(LoggingConstants.REQUEST_ID_HEADER, requestId);
 

@@ -2,4 +2,5 @@ com.claimassist.platform.common_lib.security.SharedSecurityAutoConfiguration
 com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration
 com.claimassist.platform.common_lib.observability.ObservabilityAutoConfiguration
 com.claimassist.platform.common_lib.observability.ServletObservabilityAutoConfiguration
+com.claimassist.platform.common_lib.observability.DeveloperIdentityConfiguration
 com.claimassist.platform.common_lib.messaging.SharedKafkaAutoConfiguration

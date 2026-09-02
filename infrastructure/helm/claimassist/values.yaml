@@ -289,6 +289,13 @@ services:
     # Task 6A-8: api-gateway uses Redis (Spring Cloud Gateway Redis rate limiter +
     # redis metrics). Wires SPRING_DATA_REDIS_HOST/PORT to claimassist-redis:6379.
     redis: true
+    # DEV-only VPN API Gateway external access.
+    # When enabled, a NodePort Service exposes the API Gateway (8080) on the
+    # K3s node so Tailscale VPN clients can reach the application at the
+    # MagicDNS hostname. Disabled by default; only DEV enables it.
+    devExternalAccess: false
+    devExternalHost: ""
+    devNodePort: 30070
     # FINAL K3S FIX: Public routes for /actuator/* health probes. Spring security
     # requires explicit pathMatchers.permitAll() for public endpoints; the ConfigMap
     # app.security.public-routes binding did not work until these env vars were set.
@@ -425,6 +432,7 @@ postgresql:
         - V9__add_claim_version.sql
         - V10__fix_claim_version_type.sql
         - V11__add_history_document_indexes.sql
+        - V13__add_outbox_request_id.sql
     - name: claimassist_agent
       service: agent-service
       migrations:

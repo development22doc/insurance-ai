@@ -14,6 +14,12 @@
 #   Prometheus: 100.114.133.69:30900
 #   Grafana:    100.114.133.69:30300
 
+# Developer identity for observability
+claimassist:
+  dev:
+    id: ${CLAIMASSIST_DEV_ID:local}
+    name: ${CLAIMASSIST_DEVELOPER_NAME:unknown}
+
 spring:
   config:
     import: optional:file:../application-local-k8s.properties
@@ -36,7 +42,8 @@ spring:
       max-lifetime: 1200000
 
   flyway:
-    enabled: false
+    enabled: true
+    locations: classpath:db/migration
 
   jpa:
     properties:
@@ -95,6 +102,16 @@ spring:
         provider:
           keycloak:
             token-uri: ${SERVICE_TOKEN_URI}
+
+# Keycloak User Provisioning Service Configuration (Admin API)
+keycloak:
+  server-url: ${KEYCLOAK_SERVER_URL:http://100.114.133.69:30080}
+  realm: ${KEYCLOAK_REALM:claimassist-dev}
+  client-id: ${KEYCLOAK_CLIENT_ID:claimassist-customer-app}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+  redirect-uri: ${KEYCLOAK_REDIRECT_URI:http://localhost:8080/customer/auth/callback}
+  admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:${SERVICE_CLIENT_ID:internal-service-client}}
+  admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:${SERVICE_CLIENT_SECRET:internal-service-secret}}
 
 eureka:
   client:

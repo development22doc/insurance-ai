@@ -76,6 +76,7 @@ public class ClaimUpdateConsumer {
             @Header(name = LoggingConstants.CORRELATION_ID_HEADER, required = false) String correlationId,
             @Header(name = LoggingConstants.TRACE_ID_HEADER, required = false) String traceId,
             @Header(name = LoggingConstants.SPAN_ID_HEADER, required = false) String spanId,
+            @Header(name = LoggingConstants.REQUEST_ID_HEADER, required = false) String requestId,
             Acknowledgment ack) throws Exception {
         ClaimUpdateRequestEvent request = objectMapper.readValue(rawMessage, ClaimUpdateRequestEvent.class);
 
@@ -92,6 +93,9 @@ public class ClaimUpdateConsumer {
         }
         if (spanId != null) {
             MDCUtility.putSpanId(spanId);
+        }
+        if (requestId != null) {
+            MDCUtility.putRequestId(requestId);
         }
 
         // Acknowledge the offset only after the transaction commits. The @Transactional

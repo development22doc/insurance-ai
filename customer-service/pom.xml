@@ -256,6 +256,16 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Ensure any 'mvn spring-boot:run' invocation starts the JVM with the
+                         canonical timezone so the PostgreSQL driver does not send legacy
+                         TZ IDs such as "Asia/Calcutta" in the startup handshake. This
+                         is a safe, explicit runtime JVM arg used for local runs and tests.
+                         The Docker image and Helm deployments already set TZ=Asia/Kolkata.
+                    -->
+                    <jvmArguments>-Duser.timezone=Asia/Kolkata</jvmArguments>
+                    <fork>true</fork>
+                </configuration>
             </plugin>
 
             <plugin>

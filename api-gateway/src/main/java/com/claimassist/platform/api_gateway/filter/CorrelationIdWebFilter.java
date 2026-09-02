@@ -1,6 +1,7 @@
 package com.claimassist.platform.api_gateway.filter;
 
 import com.claimassist.platform.common_lib.observability.LoggingConstants;
+import com.claimassist.platform.common_lib.observability.DeveloperIdentity;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -39,11 +40,17 @@ import java.util.UUID;
 @Configuration
 public class CorrelationIdWebFilter {
 
+    private final DeveloperIdentity developerIdentity;
+
+    public CorrelationIdWebFilter(DeveloperIdentity developerIdentity) {
+        this.developerIdentity = developerIdentity;
+    }
+
     static final int MAX_LENGTH = 64;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE + 10)
-    public WebFilter correlationWebFilter() {
+    public WebFilter correlationWebFilter(DeveloperIdentity developerIdentity) {
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
 
@@ -55,24 +62,30 @@ public class CorrelationIdWebFilter {
             if (requestId == null) {
                 requestId = UUID.randomUUID().toString();
             }
-
-            MDC.put(LoggingConstants.MDC_CORRELATION_ID, correlationId);
-            MDC.put(LoggingConstants.MDC_REQUEST_ID, requestId);
+            final String effectiveCorrelationId = correlationId;
+            final String effectiveRequestId = requestId;
 
             ServerHttpResponse response = exchange.getResponse();
-            response.getHeaders().set(LoggingConstants.CORRELATION_ID_HEADER, correlationId);
-            response.getHeaders().set(LoggingConstants.REQUEST_ID_HEADER, requestId);
+            response.getHeaders().set(LoggingConstants.CORRELATION_ID_HEADER, effectiveCorrelationId);
+            response.getHeaders().set(LoggingConstants.REQUEST_ID_HEADER, effectiveRequestId);
 
             ServerHttpRequest mutated = request.mutate()
-                    .header(LoggingConstants.CORRELATION_ID_HEADER, correlationId)
-                    .header(LoggingConstants.REQUEST_ID_HEADER, requestId)
+                    .header(LoggingConstants.CORRELATION_ID_HEADER, effectiveCorrelationId)
+                    .header(LoggingConstants.REQUEST_ID_HEADER, effectiveRequestId)
                     .build();
 
-            return chain.filter(exchange.mutate().request(mutated).build())
+            return Mono.defer(() -> {
+                MDC.put(LoggingConstants.MDC_CORRELATION_ID, effectiveCorrelationId);
+                MDC.put(LoggingConstants.MDC_REQUEST_ID, effectiveRequestId);
+                developerIdentity.populateMdc();
+                return chain.filter(exchange.mutate().request(mutated).build())
                     .doFinally(signal -> {
                         MDC.remove(LoggingConstants.MDC_CORRELATION_ID);
                         MDC.remove(LoggingConstants.MDC_REQUEST_ID);
+                        MDC.remove(LoggingConstants.MDC_DEVELOPER_ID);
+                        MDC.remove(LoggingConstants.MDC_DEVELOPER_NAME);
                     });
+            });
         };
     }
 

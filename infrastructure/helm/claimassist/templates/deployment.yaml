@@ -294,8 +294,12 @@ spec:
               value: {{ $root.Values.keycloak.client.customerClientId | quote }}
             - name: KEYCLOAK_TOKEN_CLIENT_ID
               value: {{ $root.Values.keycloak.client.customerClientId | quote }}
+            {{- $redirectUris := $root.Values.keycloak.client.redirectUris }}
+            {{- if $root.Values.keycloak.externalRedirectUris }}
+            {{- $redirectUris = $root.Values.keycloak.externalRedirectUris }}
+            {{- end }}
             - name: KEYCLOAK_REDIRECT_URI
-              value: {{ first $root.Values.keycloak.client.redirectUris | quote }}
+              value: {{ first $redirectUris | quote }}
             {{ end }}
           {{ if $svc.k8sConfig }}
           volumeMounts:

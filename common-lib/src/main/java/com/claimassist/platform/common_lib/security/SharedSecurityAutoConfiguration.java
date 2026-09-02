@@ -1,6 +1,7 @@
 package com.claimassist.platform.common_lib.security;
 
 import com.claimassist.platform.common_lib.observability.CorrelationIdFilter;
+import com.claimassist.platform.common_lib.observability.DeveloperIdentity;
 import feign.RequestInterceptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -124,8 +125,8 @@ public class SharedSecurityAutoConfiguration {
     }
 
     @Bean
-    public CorrelationIdFilter correlationIdFilter () {
-        return new CorrelationIdFilter ();
+    public CorrelationIdFilter correlationIdFilter (DeveloperIdentity developerIdentity) {
+        return new CorrelationIdFilter (developerIdentity);
     }
 
     /**

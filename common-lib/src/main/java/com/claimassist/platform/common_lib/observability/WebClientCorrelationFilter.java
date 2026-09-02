@@ -67,6 +67,10 @@ public class WebClientCorrelationFilter {
                 if (correlation != null) {
                     headerMethod.invoke(builder, LoggingConstants.CORRELATION_ID_HEADER, new String[]{correlation});
                 }
+                String requestId = MDC.get(LoggingConstants.MDC_REQUEST_ID);
+                if (requestId != null) {
+                    headerMethod.invoke(builder, LoggingConstants.REQUEST_ID_HEADER, new String[]{requestId});
+                }
                 String trace = MDC.get(LoggingConstants.MDC_TRACE_ID);
                 if (trace != null) {
                     headerMethod.invoke(builder, LoggingConstants.TRACE_ID_HEADER, new String[]{trace});

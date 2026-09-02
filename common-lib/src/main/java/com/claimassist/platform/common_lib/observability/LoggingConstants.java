@@ -16,5 +16,8 @@ public final class LoggingConstants {
 
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
     public static final String MDC_REQUEST_ID = "requestId";
+
+    public static final String MDC_DEVELOPER_ID = "developer_id";
+    public static final String MDC_DEVELOPER_NAME = "developer_name";
 }
 

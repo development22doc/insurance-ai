@@ -7,6 +7,12 @@ spring:
       import-check:
         enabled: false
 
+# Developer identity for observability
+claimassist:
+  dev:
+    id: ${CLAIMASSIST_DEV_ID:local}
+    name: ${CLAIMASSIST_DEVELOPER_NAME:unknown}
+
   # API Gateway (WebFlux) does not use a database. common-lib brings
   # spring-boot-starter-data-jpa onto the classpath; without these excludes Boot
   # would attempt to configure a DataSource/EntityManagerFactory and fail because

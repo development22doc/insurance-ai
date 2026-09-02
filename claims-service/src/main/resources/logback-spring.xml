@@ -1,7 +1,7 @@
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml" />
 
-    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="agent-service" />
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="claims-service" />
 
     <!-- Console appender with JSON structured logging -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
