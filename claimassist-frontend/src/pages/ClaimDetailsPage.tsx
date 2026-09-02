@@ -4,6 +4,7 @@ import { Alert, EmptyState, ErrorState, LoadingState } from '../components/ui';
 import { API_ENDPOINTS } from '../config/api';
 import { apiClient } from '../services/api-client';
 import type { ClaimSummaryResponse } from '../types';
+import AIAssistant from '../components/AIAssistant';
 
 const STATUS_STYLES: Record<string, string> = {
   SUBMITTED: 'border border-sky-200 bg-sky-50 text-sky-800',
@@ -178,6 +179,8 @@ export const ClaimDetailsPage: React.FC<ClaimDetailsPageProps> = ({
       {error && claim && (
         <Alert variant="warning">{error}</Alert>
       )}
+
+      <AIAssistant claimId={Number(id)} />
 
       <div className="flex flex-wrap gap-3">
         <Link to={backLink} className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white">

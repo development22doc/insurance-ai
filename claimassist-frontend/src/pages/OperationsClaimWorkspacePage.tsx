@@ -5,6 +5,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../services/api-client';
 import type { ClaimSummaryResponse } from '../types';
+import AIAssistant from '../components/AIAssistant';
 
 const STATUS_LABELS: Record<string, string> = {
   SUBMITTED: 'Submitted',
@@ -320,6 +321,10 @@ export const OperationsClaimWorkspacePage: React.FC = () => {
             </ul>
           </div>
         </aside>
+      </div>
+
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-5">
+        <AIAssistant claimId={Number(id)} />
       </div>
 
       <Modal
