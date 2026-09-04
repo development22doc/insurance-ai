@@ -1,0 +1,109 @@
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for agent-service - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-agent-service
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: agent-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: 8083
+      protocol: TCP
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for api-gateway - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-api-gateway
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for claims-service - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-claims-service
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: claims-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+      protocol: TCP
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for customer-service - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-customer-service
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: customer-service
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+

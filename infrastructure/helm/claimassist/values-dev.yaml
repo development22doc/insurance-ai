@@ -9,10 +9,10 @@ global:
   managedBy: helm
 
 image:
-  registry: claimassistdev   # deployed by CD; matches running pods on OCI
-  repository: claimassist     # local-only fallback when registry is empty
-  tag: "b781cebe484a01fc9150f59cff7c5b9fc6ad2d0d"   # current running image on OCI (set by CD at deploy time)
-  pullPolicy: Always
+  registry: ""   # Empty for DEV - use local images
+  repository: claimassist
+  tag: "latest"   # DEV uses local latest build
+  pullPolicy: IfNotPresent
   # docker-registry imagePullSecret consumed by every application Deployment.
   # The DEV bootstrap creates it idempotently from the DOCKER_USERNAME/DOCKER_PASSWORD
   # GitHub secrets, so an ARM64 node can pull claimassistdev/* images from Docker Hub
@@ -87,7 +87,7 @@ kafka:
   devNodePort: 30092
 
 flyway:
-  enabled: true
+  enabled: false
 
 # Task 6A-10: Keycloak for DEV (namespace claimassist-dev). One self-hosted
 # Keycloak + one dedicated Keycloak PostgreSQL, fully isolated in this namespace.
@@ -194,6 +194,43 @@ services:
   agent-service:
     replicas: 1
     k8sConfig: true
+  frontend:
+    replicas: 1
+    k8sConfig: false
+    port: 80
+    image: claimassist-frontend
+    imageTag: "latest"
+    env:
+      - name: VITE_API_BASE_URL
+        value: "http://100.114.133.69:30070"
+    devExternalAccess: true
+    devNodePort: 30071
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    probes:
+      startup:
+        path: /
+        periodSeconds: 10
+        failureThreshold: 30
+        timeoutSeconds: 3
+      liveness:
+        path: /
+        periodSeconds: 15
+        failureThreshold: 10
+        timeoutSeconds: 3
+      readiness:
+        path: /
+        periodSeconds: 10
+        failureThreshold: 3
+        timeoutSeconds: 3
+        initialDelaySeconds: 5
+    containerSecurityContext:
+      runAsNonRoot: false
 
 # Task 6A-14B-3 + TASK 6A-14B-4B: HPA (DEV). Low-cost learning environment:
 # 1 baseline replica, bounded ceiling of 2. If a spike raises CPU above the 70%

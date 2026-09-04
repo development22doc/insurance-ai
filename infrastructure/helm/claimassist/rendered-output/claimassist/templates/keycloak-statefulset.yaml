@@ -1,0 +1,169 @@
+---
+# Source: claimassist/templates/keycloak-statefulset.yaml
+# Keycloak StatefulSet - one per K8s environment namespace. INTERNAL ONLY.
+# replicaCount defaults to 1 (learning-tier; NOT real Keycloak HA - see values).
+# Keycloak's persistent state lives in the dedicated Keycloak PostgreSQL, so it
+# does NOT request a PVC (no volumeClaimTemplates). The deterministic realm import
+# is mounted read-only from the realm ConfigMap and consumed with the official
+# `start --import-realm` bootstrap (the SAME mechanism LOCAL uses). Admin and DB
+# credentials come from Secrets - never committed. Probes use Keycloak's health
+# endpoints with generous startup timing (Keycloak + PostgreSQL + realm import).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: claimassist-keycloak
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak
+spec:
+  serviceName: claimassist-keycloak
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: keycloak
+    spec:
+      # Deterministic dependency: do not start Keycloak (or crash-loop against a
+      # still-initializing DB) until the dedicated Keycloak PostgreSQL accepts
+      # connections. Polls pg_isready via Service DNS; runs as the postgres image's
+      # own tooling but as a non-root numeric uid with dropped caps.
+      initContainers:
+        - name: wait-for-db
+          image: "postgres:16"
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -h claimassist-keycloak-postgresql -p 5432 -U "$KC_DB_USERNAME" -d keycloak >/dev/null 2>&1; do
+                echo "waiting for claimassist-keycloak-postgresql:5432 (keycloak) to be ready..."
+                sleep 5
+              done
+              echo "claimassist-keycloak-postgresql is ready"
+          env:
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_USER
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: realm-import
+          configMap:
+            name: claimassist-keycloak-realm
+            defaultMode: 0444
+      containers:
+        - name: keycloak
+          image: "quay.io/keycloak/keycloak:26.0"
+          imagePullPolicy: IfNotPresent
+          # `args` (NOT `command`): the Keycloak image ENTRYPOINT is
+          # /opt/keycloak/bin/kc.sh, and `command` would REPLACE that entrypoint,
+          # making kubelet exec an executable named `start` that is not on $PATH
+          # (-> CrashLoopBackOff). `args` appends to the entrypoint, yielding the
+          # correct `kc.sh start --import-realm`.
+          args: ["start", "--import-realm"]
+          # Container-level securityContext (NOT pod-level): every key here
+          # (runAsNonRoot, allowPrivilegeEscalation, readOnlyRootFilesystem,
+          # capabilities, seccompProfile) is a CONTAINER securityContext field.
+          # Rendering them at spec.template.spec.securityContext is a Kubernetes
+          # schema error and is rejected by the API server.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: "jdbc:postgresql://claimassist-keycloak-postgresql:5432/keycloak"
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_USER
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_PASSWORD
+            - name: KC_HOSTNAME
+              value: "100.114.133.69"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_PASSWORD
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /realms/claimassist-dev/.well-known/openid-configuration
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /realms/claimassist-dev/.well-known/openid-configuration
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /realms/claimassist-dev/.well-known/openid-configuration
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+            timeoutSeconds: 5
+

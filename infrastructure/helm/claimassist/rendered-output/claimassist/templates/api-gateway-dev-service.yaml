@@ -1,0 +1,35 @@
+---
+# Source: claimassist/templates/api-gateway-dev-service.yaml
+# API Gateway DEV NodePort Service - DEV-only VPN API Gateway access.
+# Exposes API Gateway HTTP (container port 8080) on a NodePort so Tailscale
+# VPN clients can reach the application via the MagicDNS hostname:NodePort.
+# Rendered ONLY when services.api-gateway.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-api-gateway.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-api-gateway-dev
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30070
+      protocol: TCP
+

@@ -3,12 +3,11 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../services/api-client';
 import { API_ENDPOINTS } from '../config/api';
-import type { PolicyResponse, ClaimSummaryResponse, CustomerResponse } from '../types';
+import type { PolicyResponse, ClaimSummaryResponse } from '../types';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
-  const [customer, setCustomer] = useState<CustomerResponse | null>(null);
   const [policies, setPolicies] = useState<PolicyResponse[] | null>(null);
   const [claims, setClaims] = useState<ClaimSummaryResponse[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,14 +20,6 @@ export const DashboardPage: React.FC = () => {
       setError(null);
 
       try {
-        // Fetch customer profile when available
-        if (user?.customerId) {
-          const cust = await apiClient.get<CustomerResponse>(
-            API_ENDPOINTS.CUSTOMER_UPDATE(user.customerId)
-          );
-          if (mounted) setCustomer(cust);
-        }
-
         // Policies (all)
         const pols = await apiClient.get<PolicyResponse[]>(API_ENDPOINTS.POLICIES_ALL);
         if (mounted) setPolicies(pols || []);
@@ -45,7 +36,7 @@ export const DashboardPage: React.FC = () => {
 
     load();
     return () => { mounted = false; };
-  }, [user]);
+  }, []);
 
   if (loading) return <LoadingState message="Loading dashboard..." />;
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
@@ -122,17 +113,13 @@ export const DashboardPage: React.FC = () => {
 
       <section aria-labelledby="account-heading">
         <h2 id="account-heading" className="text-lg font-semibold">Account</h2>
-        {customer ? (
-          <div className="mt-4 bg-[var(--color-background)] border border-[var(--color-border)] p-4 rounded-lg">
-            <div className="font-medium">{customer.fullName}</div>
-            <div className="text-sm text-[var(--color-text-secondary)]">Username: {customer.username}</div>
-            <div className="mt-2">
-              <Link to="/profile" className="text-[var(--color-primary)]">Manage profile</Link>
-            </div>
+        <div className="mt-4 bg-[var(--color-background)] border border-[var(--color-border)] p-4 rounded-lg">
+          <div className="font-medium">{user?.fullName || 'User'}</div>
+          <div className="text-sm text-[var(--color-text-secondary)]">Username: {user?.username || 'Unknown'}</div>
+          <div className="mt-2">
+            <Link to="/profile" className="text-[var(--color-primary)]">Manage profile</Link>
           </div>
-        ) : (
-          <EmptyState title="No account info" description="Unable to load account details." />
-        )}
+        </div>
       </section>
     </div>
   );

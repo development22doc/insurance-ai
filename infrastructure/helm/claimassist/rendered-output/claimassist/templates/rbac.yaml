@@ -1,0 +1,82 @@
+---
+# Source: claimassist/templates/rbac.yaml
+# =============================================================================
+# RBAC (Task 6A-14) - LEAST PRIVILEGE foundation.
+#
+# Conceptual identities (NO real users/groups are bound yet - identities are
+# created when a real authZ backend/kubeconfig exists):
+#   A. infrastructure-admin : full, single-owner admin (ClusterRole).
+#   B. team-readonly        : namespace-scoped read-only team access.
+#   C. application service accounts : pod-identity only, token NOT mounted.
+#
+# Design decisions (reviewed against the locked FREE-tier/K3s model):
+#   - adminRbac.enabled=false by default; the ClusterRole is INERT scaffolding
+#     rendered ONLY when the single infra owner opts in at install.
+#   - Admin = cluster-admin (ClusterRole "*/*/*"). JUSTIFIED for the single owner
+#     on a learning-tier K3s node: the controllers (ingress-nginx, cert-manager,
+#     helm post-install jobs, observability DaemonSets) and cross-namespace/admin
+#     functions (RBAC, PVCs, cluster observability) need broad rights, and there
+#     is exactly one human infra owner + exactly one node. NOT granted to any
+#     ServiceAccount, and NOT delegated to any team member.
+#   - team-readonly Role grants ONLY get/list/watch on non-secret resources and
+#     is namespace-scoped. It deliberately does NOT include secrets (the previous
+#     `secrets` list grant was a security gap and is removed). No create/update/
+#     patch/delete anywhere.
+#   - Bindings exist as templates but are DISABLED (default false) so nothing is
+#     bound to a non-existent identity. Enable only after real identities exist,
+#     via values (rbac.*.binding.enabled) or kubectl as documented below.
+# =============================================================================
+
+# B. team-readonly - namespace-scoped, READ ONLY, NO secrets, NO write verbs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claimassist-team-read
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "endpoints", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log", "pods/status"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+# A. infrastructure-admin binding - INERT until a real owner identity exists.
+# Enable via values.rbac.adminBinding.enabled=true (then provide the subject
+# below) OR with kubectl once an identity/kubeconfig exists:
+#   kubectl create clusterrolebinding claimassist-admin-bind \
+#     --clusterrole claimassist-admin --user <admin-placeholder>
+
+# B. team-readonly binding - INERT by default. Namespace-scoped (this env).
+# Enable via values.rbac.teamReadOnly.binding.enabled=true (provides the group)
+# OR with kubectl once a team identity exists:
+#   kubectl create rolebinding claimassist-team-read-bind \
+#     --role claimassist-team-read -n <ns> --group <team-group>

@@ -14,117 +14,76 @@ export const Header: React.FC<HeaderProps> = ({ showNavigation = true }) => {
   };
 
   return (
-    <header className="bg-[var(--color-background)] border-b border-[var(--color-border)] sticky top-0 z-[var(--z-sticky)]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <Link to="/" className="flex items-center">
-            <div className="flex-shrink-0">
-              <span className="text-2xl font-bold text-[var(--color-primary)]">
-                ClaimAssist
-              </span>
-            </div>
+    <>
+      {/* Utility Bar */}
+      <div className="utility-bar">
+        <div className="container">
+          <div className="utility-bar-links">
+            <a href="#grievance">Grievance Support</a>
+            <a href="#partner">Partner With Us</a>
+            <a href="#resources">Resources</a>
+          </div>
+          <div className="utility-bar-links">
+            <a href="#help">Help</a>
+            <a href="#accessibility">Accessibility</a>
+            <a href="#language">English ▼</a>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Navigation */}
+      <header className="nav-bar">
+        <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' }}>
+          <Link to="/" className="nav-logo">
+            ClaimAssist
           </Link>
 
           {showNavigation && (
-            <nav className="hidden md:flex space-x-8">
+            <nav className="nav-links">
               {!isAuthenticated && (
                 <>
-                  <Link
-                    to="/products"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    Products
-                  </Link>
-                  <Link
-                    to="/claims"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    Claims
-                  </Link>
-                  <Link
-                    to="/about"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    About
-                  </Link>
-                  <Link
-                    to="/contact"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    Contact
-                  </Link>
+                  <Link to="/products">Products</Link>
+                  <Link to="/claims">Claims</Link>
+                  <Link to="/about">About</Link>
+                  <Link to="/contact">Contact</Link>
                 </>
               )}
               {isAuthenticated && hasRole('CUSTOMER') && (
                 <>
-                  <Link
-                    to="/dashboard"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    to="/policies"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    Policies
-                  </Link>
-                  <Link
-                    to="/claims"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    Claims
-                  </Link>
+                  <Link to="/dashboard">Dashboard</Link>
+                  <Link to="/policies">Policies</Link>
+                  <Link to="/claims">Claims</Link>
                 </>
               )}
               {isAuthenticated && (hasRole('ADJUSTER') || hasRole('AUDITOR')) && (
                 <>
-                  <Link
-                    to="/operations"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    Operations
-                  </Link>
+                  <Link to="/operations">Operations</Link>
                 </>
               )}
-
               {isAuthenticated && (hasRole('ADMIN') || hasRole('SUPPORT')) && (
                 <>
-                  <Link
-                    to="/admin"
-                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                  >
-                    Admin
-                  </Link>
+                  <Link to="/admin">Admin</Link>
                 </>
               )}
             </nav>
           )}
 
-          <div className="flex items-center space-x-4">
+          <div className="nav-right">
             {!isAuthenticated ? (
               <>
-                <Link
-                  to="/login"
-                  className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/register"
-                  className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors"
-                >
-                  Register
-                </Link>
+                <a href="#language" style={{ marginRight: '1.5rem', color: 'var(--text-secondary)' }}>English</a>
+                <Link to="/login" className="nav-login">Login</Link>
+                <Link to="/register" className="nav-register">Register</Link>
               </>
             ) : (
-              <div className="flex items-center space-x-4">
-                <span className="text-sm text-[var(--color-text-secondary)]">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
                   {user?.fullName}
                 </span>
                 <button
                   onClick={handleLogout}
-                  className="text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] px-3 py-2 text-sm font-medium transition-colors"
+                  className="nav-login"
+                  style={{ margin: 0 }}
                 >
                   Sign Out
                 </button>
@@ -132,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({ showNavigation = true }) => {
             )}
           </div>
         </div>
-      </div>
-    </header>
+      </header>
+    </>
   );
 };

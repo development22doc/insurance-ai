@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-frontend
+  namespace: claimassist-dev
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/instance: claimassist-dev
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: claimassist
+    app.kubernetes.io/part-of: claimassist
+    app.kubernetes.io/version: 1.0.0
+    environment: dev
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: frontend
+      app.kubernetes.io/name: claimassist
+  policyTypes: ["Ingress"]
+  ingress:
+  - ports:
+    - port: 80
+      protocol: TCP

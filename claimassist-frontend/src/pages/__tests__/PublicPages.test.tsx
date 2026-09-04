@@ -34,7 +34,7 @@ describe('Public pages and navigation', () => {
 
     render(<RouterProvider router={homeRouter} />);
 
-    expect(screen.getByRole('heading', { level: 1, name: /Faster claims. Fairer outcomes./i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Manage your insurance, your way/i })).toBeInTheDocument();
 
     const productsRouter = createMemoryRouter([
       { path: '/products', element: <ProductsPage /> },

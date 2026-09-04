@@ -1,0 +1,48 @@
+---
+# Source: claimassist/templates/postgresql-configmap.yaml
+# PostgreSQL database creation init script. Rendered from values and mounted into
+# the official postgres image's /docker-entrypoint-initdb.d (run once on first
+# init of an empty data volume). It creates ONLY the application databases that
+# the service list genuinely requires (mirrors LOCAL infrastructure/docker/
+# postgres/init-db.sql, minus the LOCAL-only `_local` suffix, and is idempotent).
+# SCHEMA (tables) belongs to Flyway, NOT here and NOT to Hibernate.
+# Non-sensitive: no passwords in this ConfigMap.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-postgresql-init
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: postgresql
+data:
+  00-create-databases.sh: |
+    #!/bin/sh
+    set -e
+    dbname="claimassist_customer"
+    if ! psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbname}'" | grep -q 1; then
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -c "CREATE DATABASE \"${dbname}\" OWNER \"$POSTGRES_USER\";"
+      echo "created database ${dbname}"
+    else
+      echo "database ${dbname} already exists"
+    fi
+    dbname="claimassist_claims"
+    if ! psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbname}'" | grep -q 1; then
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -c "CREATE DATABASE \"${dbname}\" OWNER \"$POSTGRES_USER\";"
+      echo "created database ${dbname}"
+    else
+      echo "database ${dbname} already exists"
+    fi
+    dbname="claimassist_agent"
+    if ! psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbname}'" | grep -q 1; then
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -c "CREATE DATABASE \"${dbname}\" OWNER \"$POSTGRES_USER\";"
+      echo "created database ${dbname}"
+    else
+      echo "database ${dbname} already exists"
+    fi
+

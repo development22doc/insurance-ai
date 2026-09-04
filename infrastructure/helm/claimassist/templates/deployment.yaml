@@ -63,8 +63,13 @@ spec:
         - name: {{ $s }}
         {{ end }}
       {{ end }}
+      {{ if $svc.podSecurityContext }}
+      securityContext:
+        {{ toYaml $svc.podSecurityContext | nindent 8 }}
+      {{ else }}
       securityContext:
         runAsNonRoot: true
+      {{ end }}
       terminationGracePeriodSeconds: {{ $root.Values.terminationGracePeriodSeconds | default 60 }}
       {{ if $root.Values.global.ha.scheduling.enabled }}
       # Task 6A-12 - STATELESS APPLICATION-LEVEL HA SCHEDULING (soft / preferred).

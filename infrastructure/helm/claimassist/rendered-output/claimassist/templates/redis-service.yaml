@@ -1,0 +1,29 @@
+---
+# Source: claimassist/templates/redis-service.yaml
+# Redis ClusterIP Service - Task 6A-8. INTERNAL ONLY. Applications in the same
+# namespace connect to claimassist-redis:6379 via the K8s Service DNS. No
+# NodePort, no LoadBalancer, no Ingress - Redis is never exposed outside the
+# cluster and is never shared across environments (each env has its own namespace).
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-redis
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP

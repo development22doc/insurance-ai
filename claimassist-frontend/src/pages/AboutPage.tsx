@@ -23,8 +23,8 @@ export const AboutPage: React.FC = () => {
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-lg transition-shadow duration-300">
-              <div className="w-14 h-14 rounded-lg bg-blue-100 flex items-center justify-center mb-4">
-                <svg className="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
@@ -35,8 +35,8 @@ export const AboutPage: React.FC = () => {
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-lg transition-shadow duration-300">
-              <div className="w-14 h-14 rounded-lg bg-emerald-100 flex items-center justify-center mb-4">
-                <svg className="w-7 h-7 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-12 h-12 rounded-lg bg-emerald-100 flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
                 </svg>
               </div>
@@ -55,8 +55,8 @@ export const AboutPage: React.FC = () => {
           <div className="bg-white rounded-2xl border border-gray-200 p-8 sm:p-12">
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0">
-                <div className="w-14 h-14 rounded-lg bg-yellow-100 flex items-center justify-center">
-                  <svg className="w-7 h-7 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-12 h-12 rounded-lg bg-yellow-100 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                   </svg>
                 </div>
@@ -94,8 +94,8 @@ export const AboutPage: React.FC = () => {
                 description: 'Consistent, equitable treatment for all customers and claims.',
               },
             ].map((value, idx) => (
-              <div key={idx} className="text-center">
-                <div className="text-5xl mb-4">{value.icon}</div>
+              <div key={idx} className="text-center bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-lg transition-shadow duration-300">
+                <div className="text-4xl mb-4">{value.icon}</div>
                 <h3 className="text-lg font-bold text-gray-900 mb-2">{value.title}</h3>
                 <p className="text-gray-600">{value.description}</p>
               </div>
@@ -104,21 +104,71 @@ export const AboutPage: React.FC = () => {
         </div>
       </section>
 
+      {/* Features Section */}
+      <section className="px-4 py-12 sm:px-6 lg:px-8 bg-gray-50">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-gray-900 text-center mb-4">Platform Features</h2>
+          <p className="text-gray-600 text-center mb-12 max-w-2xl mx-auto">
+            ClaimAssist provides all the tools you need to manage your insurance experience
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {[
+              {
+                title: 'Fast Claim Filing',
+                description: 'Simple, guided forms to file claims quickly and accurately.',
+              },
+              {
+                title: 'Document Management',
+                description: 'Secure upload and storage of supporting documentation.',
+              },
+              {
+                title: 'Real-Time Tracking',
+                description: 'Monitor claim status and updates as they happen.',
+              },
+              {
+                title: 'AI-Assisted Review',
+                description: 'Machine learning helps extract key information from documents.',
+              },
+              {
+                title: 'Role-Based Access',
+                description: 'Different views for customers, adjusters, and administrators.',
+              },
+              {
+                title: 'Secure Communication',
+                description: 'Encrypted messaging and secure data transmission with OAuth2.',
+              },
+            ].map((feature, idx) => (
+              <div key={idx} className="bg-white rounded-xl border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">{feature.title}</h3>
+                <p className="text-gray-600">{feature.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* CTA Section */}
-      <section className="px-4 py-16 sm:px-6 lg:px-8 bg-gradient-to-r from-blue-600 to-blue-800">
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">
-            Ready to experience ClaimAssist?
+      <section className="px-4 py-16 sm:px-6 lg:px-8">
+        <div className="max-w-3xl mx-auto text-center bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 sm:p-12">
+          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+            Ready to Experience Better Claims Management?
           </h2>
-          <p className="text-blue-100 mb-8">
-            Start managing your insurance claims with transparency and speed.
+          <p className="text-blue-100 mb-8 text-lg">
+            Sign in or create an account to get started with ClaimAssist today.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <a href="/register" className="px-8 py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold rounded-lg transition-colors duration-300">
-              Create Account
-            </a>
-            <a href="/login" className="px-8 py-3 border-2 border-white text-white hover:bg-white hover:text-blue-700 font-semibold rounded-lg transition-colors duration-300">
+            <a
+              href="/login"
+              className="px-8 py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold rounded-lg transition-colors duration-300 inline-block"
+            >
               Sign In
+            </a>
+            <a
+              href="/register"
+              className="px-8 py-3 border-2 border-white text-white hover:bg-white hover:text-blue-700 font-semibold rounded-lg transition-colors duration-300 inline-block"
+            >
+              Create Account
             </a>
           </div>
         </div>

@@ -1,0 +1,11 @@
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: customer-service
+              uri: http://example
+              predicates:
+                - Path=/customer/**
+

@@ -1,0 +1,118 @@
+---
+# Source: claimassist/templates/postgresql-statefulset.yaml
+# PostgreSQL StatefulSet - exactly ONE per K8s environment namespace (dev /
+# stage / prod each get their own instance + storage). Stable pod identity via a
+# dedicated ClusterIP Service + persistent storage via volumeClaimTemplates (a
+# PVC per pod). Data is NOT emptyDir. Credentials come from the Secret. Probes
+# use pg_isready against the postgres maintenance db (`postgres` always exists),
+# matching the LOCAL docker-compose healthcheck. Security context is
+# intentionally left unset by default: the official postgres image must start as
+# root to chown its volume during init, so runAsNonRoot would break it (see 6A-7
+# change log).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: claimassist-postgresql
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: postgresql
+spec:
+  serviceName: claimassist-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: postgresql
+    spec:
+      volumes:
+        - name: init-db
+          configMap:
+            name: claimassist-postgresql-init
+            defaultMode: 0755
+      containers:
+        - name: postgresql
+          image: "postgres:16"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_PASSWORD
+            - name: TZ
+              value: "Asia/Kolkata"
+            - name: PGTZ
+              value: "Asia/Kolkata"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init-db
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 200m
+              memory: 256Mi
+          startupProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d postgres"]
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d postgres"]
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+            timeoutSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: "claimassist"
+          app.kubernetes.io/instance: "claimassist"
+          app.kubernetes.io/version: "1.0.0"
+          app.kubernetes.io/part-of: "claimassist"
+          app.kubernetes.io/managed-by: "Helm"
+          environment: "dev"
+          app.kubernetes.io/component: postgresql
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "8Gi"
+

@@ -12,14 +12,13 @@ import { UnauthorizedPage } from '../pages/auth/UnauthorizedPage';
 /* eslint-disable react/only-export-components */
 import { HomePage } from '../pages/HomePage';
 import { ProductsPage } from '../pages/ProductsPage';
-import { ClaimsPublicPage } from '../pages/ClaimsPublicPage';
+import { ClaimsPage } from '../pages/ClaimsPage';
 import { AboutPage } from '../pages/AboutPage';
 import { ContactPage } from '../pages/ContactPage';
 
 import { DashboardPage } from '../pages/DashboardPage';
 import { PoliciesListPage } from '../pages/PoliciesListPage';
 import { PolicyDetailsPage } from '../pages/PolicyDetailsPage';
-import { ClaimsListPage } from '../pages/ClaimsListPage';
 import { ClaimDetailsPage } from '../pages/ClaimDetailsPage';
 import ClaimsNewPage from '../pages/ClaimsNewPage';
 import { OperationsDashboardPage } from '../pages/OperationsDashboardPage';
@@ -54,7 +53,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'products', element: <ProductsPage /> },
-      { path: 'claims', element: <ClaimsPublicPage /> },
+      { path: 'claims', element: <ClaimsPage /> },
       { path: 'about', element: <AboutPage /> },
       { path: 'contact', element: <ContactPage /> },
       { path: 'login', element: <LoginPage /> },
@@ -88,16 +87,25 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    path: '/claims',
+    path: '/claims/new',
     element: (
       <ProtectedRoute requiredRoles={['CUSTOMER']}>
         <CustomerLayout />
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <ClaimsListPage /> },
-      { path: 'new', element: <NewClaimPage /> },
-      { path: ':id', element: <ClaimDetailsPage /> },
+      { index: true, element: <NewClaimPage /> },
+    ],
+  },
+  {
+    path: '/claims/:id',
+    element: (
+      <ProtectedRoute requiredRoles={['CUSTOMER']}>
+        <CustomerLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <ClaimDetailsPage /> },
     ],
   },
   {

@@ -1,0 +1,283 @@
+---
+# Source: claimassist/templates/application-configmaps.yaml
+# Kubernetes application configuration for agent-service.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-agent-service-config
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+data:
+  application-k8s.yaml: |
+
+    # Kubernetes runtime configuration for agent-service.
+    # Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+    # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+    # agent-service also disables spring.cloud.config locally (config client off),
+    # and its base application.yaml now imports config server optionally; the empty
+    # override here guarantees no Config Server dependency at runtime.
+    spring:
+      config:
+        import: ""
+      security:
+        oauth2:
+          resourceserver:
+            jwt:
+              issuer-uri: ${KEYCLOAK_ISSUER_URI}
+              jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+      cloud:
+        discovery:
+          enabled: false
+      autoconfigure:
+        exclude:
+          - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+          - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+    
+    eureka:
+      client:
+        enabled: false
+    
+    server:
+      port: 8083
+---
+# Source: claimassist/templates/application-configmaps.yaml
+# Kubernetes application configuration for api-gateway.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-api-gateway-config
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+data:
+  application-k8s.yaml: |
+
+    # Kubernetes runtime configuration for api-gateway.
+    # Activated by activating the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+    # Overrides the packaged application.yaml via the profile mechanism (NO Java change).
+    # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS only.
+    spring:
+      config:
+        # Empty override removes the packaged mandatory `configserver:` import so the
+        # gateway starts without any Config Server dependency at runtime.
+        import: ""
+      # Task 6A-11: graceful shutdown. server.shutdown is only set in application-local.yaml
+      # today; the K8s (k8s profile) runtime does not inherit it, so it is enabled here so
+      # the gateway drains in-flight requests on SIGTERM (instead of dropping them). This
+      # must stay under terminationGracePeriodSeconds (60) - 20s gives ample drain time.
+      lifecycle:
+        timeout-per-shutdown-phase: 20s
+      cloud:
+        discovery:
+          enabled: false
+        gateway:
+          server:
+            webflux:
+              routes:
+                # K8s Service DNS routes (no lb:// discovery load-balancing).
+                - id: customer-service
+                  uri: http://claimassist-customer-service:8081
+                  predicates:
+                    - Path=/customer/**
+                  filters:
+                    - StripPrefix=1
+                - id: claims-service
+                  uri: http://claimassist-claims-service:8082
+                  predicates:
+                    - Path=/claims/**
+                  filters:
+                    - StripPrefix=1
+                - id: agent-service
+                  uri: http://claimassist-agent-service:8083
+                  predicates:
+                    - Path=/agent/**
+                  filters:
+                    - StripPrefix=1
+                - id: policy-service
+                  uri: http://claimassist-customer-service:8081
+                  predicates:
+                    - Path=/policies/**
+                  filters:
+                    - StripPrefix=1
+      autoconfigure:
+        exclude:
+          - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+          - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+    
+    eureka:
+      client:
+        enabled: false
+    
+    server:
+      port: 8080
+      shutdown: graceful
+    
+    # Public routes (mirrors the config-repo api-gateway.yml whitelist; code has safe
+    # defaults if absent, but production behaviour is kept explicit here).
+    app:
+      security:
+        public-routes:
+          - /customer/auth/signup
+          - /customer/auth/authorize
+          - /customer/auth/callback
+          - /customer/auth/refresh
+          - /customer/auth/logout
+          - /customer/webhooks/**
+          - /actuator/**
+          - /v3/api-docs/**
+          - /swagger-ui/**
+          - /swagger-ui.html
+    
+    # Actuator health probes must be enabled for the startup/liveness/readiness probes
+    # (/actuator/health/liveness + /actuator/health/readiness) to respond.
+    management:
+      endpoints:
+        enabled-by-default: true
+        web:
+          exposure:
+            include: health,info,metrics,prometheus,gateway
+      endpoint:
+        health:
+          probes:
+            enabled: true
+          show-details: when-authorized
+        prometheus:
+          enabled: true
+        metrics:
+          enabled: true
+        info:
+          enabled: true
+        gateway:
+          enabled: true
+      health:
+        livenessstate:
+          enabled: true
+        readinessstate:
+          enabled: true
+---
+# Source: claimassist/templates/application-configmaps.yaml
+# Kubernetes application configuration for claims-service.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-claims-service-config
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+data:
+  application-k8s.yaml: |
+
+    # Kubernetes runtime configuration for claims-service.
+    # Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+    # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS only.
+    spring:
+      config:
+        # Empty override removes the packaged `optional:configserver:` import so no
+        # Config Server dependency exists at runtime.
+        import: ""
+      security:
+        oauth2:
+          resourceserver:
+            jwt:
+              issuer-uri: ${KEYCLOAK_ISSUER_URI}
+              jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+      cloud:
+        discovery:
+          enabled: false
+      autoconfigure:
+        exclude:
+          - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+          - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+    
+    eureka:
+      client:
+        enabled: false
+    
+    server:
+      port: 8082
+---
+# Source: claimassist/templates/application-configmaps.yaml
+# Kubernetes application configuration for customer-service.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-customer-service-config
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+data:
+  application-k8s.yaml: |
+
+    # Kubernetes runtime configuration for customer-service.
+    # Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+    # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+    spring:
+      config:
+        # Empty override removes the packaged `optional:configserver:` import so no
+        # Config Server dependency exists at runtime.
+        import: ""
+      security:
+        oauth2:
+          resourceserver:
+            jwt:
+              issuer-uri: ${KEYCLOAK_ISSUER_URI}
+              jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+      cloud:
+        discovery:
+          enabled: false
+      autoconfigure:
+        exclude:
+          - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+          - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+    
+    eureka:
+      client:
+        enabled: false
+    
+    server:
+      port: 8081

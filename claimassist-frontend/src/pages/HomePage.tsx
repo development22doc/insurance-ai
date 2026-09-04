@@ -33,7 +33,7 @@ export const HomePage: React.FC = () => {
 
             <div className="hero-right">
               <div className="hero-illustration">
-                <svg width="100%" height="100%" viewBox="0 0 300 280" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ maxWidth: '100%' }}>
+                <svg width="280" height="260" viewBox="0 0 300 280" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
                   {/* Shield with checkmark - professional insurance icon */}
                   <defs>
                     <linearGradient id="shieldGradient" x1="0%" y1="0%" x2="100%" y2="100%">

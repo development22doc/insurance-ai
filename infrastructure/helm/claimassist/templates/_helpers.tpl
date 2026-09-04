@@ -67,7 +67,10 @@ Context:
        When absent it falls back to the global image.tag, so untouched services
        keep their already-deployed image and are not rolled out. */ -}}
 {{- $tag := $svc.imageTag | default $root.Values.image.tag -}}
-{{- if $registry -}}
+{{- /* If the image already contains a slash (includes registry), use it as-is */ -}}
+{{- if contains "/" $img -}}
+{{- printf "%s:%s" $img $tag -}}
+{{- else if $registry -}}
 {{- /* Registry set (Kubernetes deploy): <ns>/<service>:<tag>.
        The verified Docker Hub namespace claimassistdev owns the per-service
        repositories directly (e.g. claimassistdev/api-gateway). The old

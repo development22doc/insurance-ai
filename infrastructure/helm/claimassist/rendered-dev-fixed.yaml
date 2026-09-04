@@ -1,0 +1,4806 @@
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 1) DEFAULT-DENY - ingress + egress for every managed pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-default-deny
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+  policyTypes: ["Ingress", "Egress"]
+  ingress: []
+  egress: []
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 2) INTRA-NAMESPACE TRUST BOUNDARY. Every legitimate connection required by the
+#    locked architecture is between this chart's own pods in ONE namespace:
+#      gateway -> customer/claims/agent            (K8s Service DNS routes)
+#      customer/claims/agent -> PostgreSQL:5432    (DataSources)
+#      all four apps        -> Redis:6379          (rate-limit / cache)
+#      claims/agent         -> Kafka:9092          (producer + consumer)
+#      Kafka controller self-quorum -> :9093       (single-node KRaft)
+#      apps                 -> Keycloak:8080       (JWKS/issuer/admin client)
+#      Keycloak             -> Keycloak-PostgreSQL:5432
+#      Flyway Job           -> PostgreSQL:5432     (schema migrations)
+#    Gridding out every peer x port here would only duplicate the egress matrix
+#    without tightening the real trust boundary (the namespace) and invites
+#    drift/guesswork. External and cross-environment traffic stay blocked.
+#    FIX: Explicit namespaceSelector on egress to force kube-router to program
+#    distinct EGRESS ipsets (bare podSelector fails on same-namespace peers).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-internal
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3a.1) customer-service EGRESS -> PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-customer-service-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3a.2) customer-service EGRESS -> Redis:6379
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-customer-service-redis
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3a.3) customer-service EGRESS -> Kafka:9092
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-customer-service-kafka
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: kafka
+      ports:
+        - port: 9092
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3b.1) claims-service EGRESS -> PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-claims-service-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3b.2) claims-service EGRESS -> Redis:6379
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-claims-service-redis
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3b.3) claims-service EGRESS -> Kafka:9092
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-claims-service-kafka
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: kafka
+      ports:
+        - port: 9092
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3c.1) agent-service EGRESS -> PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3c.2) agent-service EGRESS -> Redis:6379
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-redis
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3c.3) agent-service EGRESS -> Kafka:9092
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-kafka
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: kafka
+      ports:
+        - port: 9092
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3d) Keycloak EGRESS -> Keycloak-PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-keycloak
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak-postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3e) Flyway Job EGRESS -> PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-flyway
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: flyway
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3f) API Gateway EGRESS -> Customer/Claims/Agent Services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-api-gateway
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+      ports:
+        - port: 8081
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+      ports:
+        - port: 8082
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+      ports:
+        - port: 8083
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3g) Services EGRESS -> Keycloak:8080 (JWKS/issuer/admin client)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-services-keycloak
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-customer-service-keycloak
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-claims-service-keycloak
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-keycloak
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4a) PostgreSQL INGRESS <- customer-service, claims-service, agent-service, flyway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: postgresql
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: flyway
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4b) Redis INGRESS <- customer-service, claims-service, agent-service, api-gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-redis
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: redis
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: api-gateway
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4c) Kafka INGRESS <- customer-service, claims-service, agent-service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-kafka
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: kafka
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: kafka-ui
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 9092
+          protocol: TCP
+    - from:
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 19092
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4d) Keycloak-PostgreSQL INGRESS <- keycloak + Tailscale VPN (DEV NodePort)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-keycloak-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak-postgresql
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4e) Keycloak INGRESS <- api-gateway, customer-service, claims-service, agent-service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-keycloak
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: api-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-dev"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 5) DNS - cluster DNS (kube-system) is ALWAYS required and NEVER blocked.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-dns
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "kube-system"
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-agent-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8083
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-api-gateway
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-claims-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8082
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-customer-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8081
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-frontend
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: frontend
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 80
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 5) PUBLIC EDGE - nginx ingress-controller -> claimassist-api-gateway:8080.
+#    The controller is installed separately (shared cluster component in its own
+#    namespace, Service type NodePort on the single free-tier node - no cloud LB),
+#    and is the F5 NGINX OSS controller (nginx.org/*), NOT the retired community
+#    ingress-nginx project.
+#    ONLY the gateway receives external traffic; every other service is internal.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-controller
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "nginx-ingress"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nginx-ingress
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/serviceaccounts.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api-gateway-sa
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+automountServiceAccountToken: false
+---
+# Source: claimassist/templates/serviceaccounts.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: customer-service-sa
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+automountServiceAccountToken: false
+---
+# Source: claimassist/templates/serviceaccounts.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: claims-service-sa
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+automountServiceAccountToken: false
+---
+# Source: claimassist/templates/serviceaccounts.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-service-sa
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+automountServiceAccountToken: false
+---
+# Source: claimassist/templates/serviceaccounts.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend-sa
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: frontend
+automountServiceAccountToken: false
+
+---
+# Source: claimassist/templates/keycloak-postgresql-secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: claimassist-keycloak-postgresql-credentials
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak-postgresql
+type: Opaque
+stringData:
+  POSTGRES_DB: "keycloak"
+  POSTGRES_USER: "keycloak"
+  POSTGRES_PASSWORD: "kLZsBIOlc1saJaFoHplOUTn1ruReWYbV"
+
+---
+# Source: claimassist/templates/keycloak-secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: claimassist-keycloak-admin
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak
+type: Opaque
+stringData:
+  KEYCLOAK_ADMIN: "admin"
+  KEYCLOAK_ADMIN_PASSWORD: "PWs9SwrtOU4V4yoTqFphv7W1eY4VC2IS"
+  KEYCLOAK_ADMIN_CLIENT_ID: "claimassist-admin-service"
+  KEYCLOAK_ADMIN_CLIENT_SECRET: "6IqpSoGXpBgSeu6psGikju29HQUCRzt0"
+
+---
+# Source: claimassist/templates/postgresql-secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: claimassist-postgresql-credentials
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: postgresql
+type: Opaque
+stringData:
+  POSTGRES_USER: "claimassist"
+  POSTGRES_PASSWORD: "S1W5wY36CggMGj0XY0P33EYuVnFjYzX9"
+
+---
+# Source: claimassist/templates/application-configmaps.yaml
+# Kubernetes application configuration for agent-service.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-agent-service-config
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+data:
+  application-k8s.yaml: |
+
+    # Kubernetes runtime configuration for agent-service.
+    # Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+    # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+    # agent-service also disables spring.cloud.config locally (config client off),
+    # and its base application.yaml now imports config server optionally; the empty
+    # override here guarantees no Config Server dependency at runtime.
+    spring:
+      config:
+        import: ""
+      security:
+        oauth2:
+          resourceserver:
+            jwt:
+              issuer-uri: ${KEYCLOAK_ISSUER_URI}
+              jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+      cloud:
+        discovery:
+          enabled: false
+      autoconfigure:
+        exclude:
+          - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+          - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+    
+    eureka:
+      client:
+        enabled: false
+    
+    server:
+      port: 8083
+---
+# Source: claimassist/templates/application-configmaps.yaml
+# Kubernetes application configuration for api-gateway.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-api-gateway-config
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+data:
+  application-k8s.yaml: |
+
+    # Kubernetes runtime configuration for api-gateway.
+    # Activated by activating the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+    # Overrides the packaged application.yaml via the profile mechanism (NO Java change).
+    # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS only.
+    spring:
+      config:
+        # Empty override removes the packaged mandatory `configserver:` import so the
+        # gateway starts without any Config Server dependency at runtime.
+        import: ""
+      # Task 6A-11: graceful shutdown. server.shutdown is only set in application-local.yaml
+      # today; the K8s (k8s profile) runtime does not inherit it, so it is enabled here so
+      # the gateway drains in-flight requests on SIGTERM (instead of dropping them). This
+      # must stay under terminationGracePeriodSeconds (60) - 20s gives ample drain time.
+      lifecycle:
+        timeout-per-shutdown-phase: 20s
+      cloud:
+        discovery:
+          enabled: false
+        gateway:
+          server:
+            webflux:
+              routes:
+                # K8s Service DNS routes (no lb:// discovery load-balancing).
+                - id: actuator-route
+                  uri: forward:///actuator
+                  predicates:
+                    - Path=/actuator/**
+                - id: customer-service
+                  uri: http://claimassist-customer-service:8081
+                  predicates:
+                    - Path=/customer/**
+                  filters:
+                    - StripPrefix=1
+                - id: claims-service
+                  uri: http://claimassist-claims-service:8082
+                  predicates:
+                    - Path=/claims/**
+                  filters:
+                    - StripPrefix=1
+                - id: agent-service
+                  uri: http://claimassist-agent-service:8083
+                  predicates:
+                    - Path=/agent/**
+                  filters:
+                    - StripPrefix=1
+                - id: policy-service
+                  uri: http://claimassist-customer-service:8081
+                  predicates:
+                    - Path=/policies/**
+                  filters:
+                    - StripPrefix=1
+      autoconfigure:
+        exclude:
+          - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+          - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+    
+    eureka:
+      client:
+        enabled: false
+    
+    server:
+      port: 8080
+      shutdown: graceful
+    
+    # Public routes (mirrors the config-repo api-gateway.yml whitelist; code has safe
+    # defaults if absent, but production behaviour is kept explicit here).
+    app:
+      security:
+        public-routes:
+          - /customer/auth/signup
+          - /customer/auth/authorize
+          - /customer/auth/callback
+          - /customer/auth/refresh
+          - /customer/auth/logout
+          - /customer/webhooks/**
+          - /actuator/**
+          - /v3/api-docs/**
+          - /swagger-ui/**
+          - /swagger-ui.html
+    
+    # Actuator health probes must be enabled for the startup/liveness/readiness probes
+    # (/actuator/health/liveness + /actuator/health/readiness) to respond.
+    management:
+      endpoints:
+        enabled-by-default: true
+        web:
+          exposure:
+            include: health,info,metrics,prometheus,gateway
+      endpoint:
+        health:
+          probes:
+            enabled: true
+          show-details: when-authorized
+        prometheus:
+          enabled: true
+        metrics:
+          enabled: true
+        info:
+          enabled: true
+        gateway:
+          enabled: true
+      health:
+        livenessstate:
+          enabled: true
+        readinessstate:
+          enabled: true
+---
+# Source: claimassist/templates/application-configmaps.yaml
+# Kubernetes application configuration for claims-service.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-claims-service-config
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+data:
+  application-k8s.yaml: |
+
+    # Kubernetes runtime configuration for claims-service.
+    # Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+    # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS only.
+    spring:
+      config:
+        # Empty override removes the packaged `optional:configserver:` import so no
+        # Config Server dependency exists at runtime.
+        import: ""
+      security:
+        oauth2:
+          resourceserver:
+            jwt:
+              issuer-uri: ${KEYCLOAK_ISSUER_URI}
+              jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+      cloud:
+        discovery:
+          enabled: false
+      autoconfigure:
+        exclude:
+          - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+          - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+    
+    eureka:
+      client:
+        enabled: false
+    
+    server:
+      port: 8082
+---
+# Source: claimassist/templates/application-configmaps.yaml
+# Kubernetes application configuration for customer-service.
+# Rendered as a profile-specific application-k8s.yaml and activated together with
+# the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s). Loaded via
+# SPRING_CONFIG_ADDITIONAL_LOCATIONS (file:/etc/claimassist/config/).
+# LOCKED K8s model: runtime configuration comes from this ConfigMap (+ Secret),
+# NOT from Config Server and NOT from config-repo. No Eureka (K8s Service DNS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-customer-service-config
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+data:
+  application-k8s.yaml: |
+
+    # Kubernetes runtime configuration for customer-service.
+    # Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+    # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+    spring:
+      config:
+        # Empty override removes the packaged `optional:configserver:` import so no
+        # Config Server dependency exists at runtime.
+        import: ""
+      security:
+        oauth2:
+          resourceserver:
+            jwt:
+              issuer-uri: ${KEYCLOAK_ISSUER_URI}
+              jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+      cloud:
+        discovery:
+          enabled: false
+      autoconfigure:
+        exclude:
+          - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+          - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+    
+    eureka:
+      client:
+        enabled: false
+    
+    server:
+      port: 8081
+---
+# Source: claimassist/templates/keycloak-configmap.yaml
+# Keycloak realm import - rendered as a deterministic realm-export.json and mounted
+# into the official image's import dir, consumed by the SAME `--import-realm`
+# mechanism LOCAL uses (no second competing bootstrap). It faithfully mirrors the
+# repository's infrastructure/docker/keycloak/realm-export.json:
+#   - ONE realm per environment: claimassist-dev
+#   - client claimassist-customer-app (public, Authorization Code + PKCE S256)
+#   - client claimassist-admin-service (confidential, service-account)
+#   - realm roles CUSTOMER / ADJUSTER / AUDITOR + env-named default-role
+#   - client scopes incl. the userId-claim protocol mapper (legacy_user_id -> userId)
+# The realm name, the env-dependent default-role name, the confidential admin
+# client secret and the registered redirect URIs are parameterized from values so
+# every environment gets its own realm, clients and secrets. LOCAL's committed
+# `demo.customer` user + plaintext password are intentionally NOT reproduced here
+# (users are runtime data created via the app signup / KeycloakUserProvisioningService).
+# Non-secret by design: the admin client secret is injected at deploy time via
+# values.keycloak.credentials.adminClientSecret; REAL deployment credentials are
+# supplied via Secret references, never committed to this chart/Git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-keycloak-realm
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak
+data:
+  realm-export.json: |
+    {
+      "realm": "claimassist-dev",
+      "enabled": true,
+      "displayName": "ClaimAssist AI Platform",
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "accessTokenLifespan": 6000,
+      "ssoSessionIdleTimeout": 36000,
+      "ssoSessionMaxLifespan": 36000,
+      "roles": {
+        "realm": [
+          { "name": "CUSTOMER", "description": "Default role for customers" },
+          { "name": "ADJUSTER", "description": "Claims Adjuster" },
+          { "name": "AUDITOR", "description": "Compliance Auditor" },
+          {
+            "name": "default-roles-claimassist-dev",
+            "description": "Default roles assigned to users",
+            "composite": true,
+            "composites": { "realm": ["CUSTOMER"] }
+          }
+        ]
+      },
+      "defaultRole": {
+        "name": "default-roles-claimassist-dev",
+        "composite": true
+      },
+      "clientScopes": [
+        {
+          "name": "openid",
+          "description": "OpenID Connect",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "false",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "profile",
+          "description": "OpenID Connect profile scope",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "email",
+          "description": "OpenID Connect email scope",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "address",
+          "description": "OpenID Connect address scope",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "phone",
+          "description": "OpenID Connect phone scope",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "userId-claim",
+          "description": "Adds legacy_user_id as userId claim",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "userId",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "consentRequired": false,
+              "config": {
+                "userinfo.token.claim": "true",
+                "user.attribute": "legacy_user_id",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "userId",
+                "jsonType.label": "long",
+                "multivalued": "false"
+              }
+            }
+          ]
+        }
+      ],
+      "clients": [
+        {
+          "clientId": "claimassist-customer-app",
+          "name": "ClaimAssist Customer App",
+          "enabled": true,
+          "publicClient": true,
+          "protocol": "openid-connect",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "redirectUris": [
+            "http://100.114.133.69:30070/customer/auth/callback"
+          ],
+          "webOrigins": [
+            "http://100.114.133.69:30070"
+          ],
+          "defaultClientScopes": [
+            "openid",
+            "profile",
+            "email",
+            "userId-claim"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          }
+        },
+        {
+          "clientId": "claimassist-admin-service",
+          "name": "ClaimAssist Admin Service",
+          "enabled": true,
+          "publicClient": false,
+          "protocol": "openid-connect",
+          "secret": "",
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": true
+        }
+      ]
+    }
+
+---
+# Source: claimassist/templates/postgresql-configmap.yaml
+# PostgreSQL database creation init script. Rendered from values and mounted into
+# the official postgres image's /docker-entrypoint-initdb.d (run once on first
+# init of an empty data volume). It creates ONLY the application databases that
+# the service list genuinely requires (mirrors LOCAL infrastructure/docker/
+# postgres/init-db.sql, minus the LOCAL-only `_local` suffix, and is idempotent).
+# SCHEMA (tables) belongs to Flyway, NOT here and NOT to Hibernate.
+# Non-sensitive: no passwords in this ConfigMap.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-postgresql-init
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: postgresql
+data:
+  00-create-databases.sh: |
+    #!/bin/sh
+    set -e
+    dbname="claimassist_customer"
+    if ! psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbname}'" | grep -q 1; then
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -c "CREATE DATABASE \"${dbname}\" OWNER \"$POSTGRES_USER\";"
+      echo "created database ${dbname}"
+    else
+      echo "database ${dbname} already exists"
+    fi
+    dbname="claimassist_claims"
+    if ! psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbname}'" | grep -q 1; then
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -c "CREATE DATABASE \"${dbname}\" OWNER \"$POSTGRES_USER\";"
+      echo "created database ${dbname}"
+    else
+      echo "database ${dbname} already exists"
+    fi
+    dbname="claimassist_agent"
+    if ! psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbname}'" | grep -q 1; then
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -c "CREATE DATABASE \"${dbname}\" OWNER \"$POSTGRES_USER\";"
+      echo "created database ${dbname}"
+    else
+      echo "database ${dbname} already exists"
+    fi
+
+---
+# Source: claimassist/templates/rbac.yaml
+# =============================================================================
+# RBAC (Task 6A-14) - LEAST PRIVILEGE foundation.
+#
+# Conceptual identities (NO real users/groups are bound yet - identities are
+# created when a real authZ backend/kubeconfig exists):
+#   A. infrastructure-admin : full, single-owner admin (ClusterRole).
+#   B. team-readonly        : namespace-scoped read-only team access.
+#   C. application service accounts : pod-identity only, token NOT mounted.
+#
+# Design decisions (reviewed against the locked FREE-tier/K3s model):
+#   - adminRbac.enabled=false by default; the ClusterRole is INERT scaffolding
+#     rendered ONLY when the single infra owner opts in at install.
+#   - Admin = cluster-admin (ClusterRole "*/*/*"). JUSTIFIED for the single owner
+#     on a learning-tier K3s node: the controllers (ingress-nginx, cert-manager,
+#     helm post-install jobs, observability DaemonSets) and cross-namespace/admin
+#     functions (RBAC, PVCs, cluster observability) need broad rights, and there
+#     is exactly one human infra owner + exactly one node. NOT granted to any
+#     ServiceAccount, and NOT delegated to any team member.
+#   - team-readonly Role grants ONLY get/list/watch on non-secret resources and
+#     is namespace-scoped. It deliberately does NOT include secrets (the previous
+#     `secrets` list grant was a security gap and is removed). No create/update/
+#     patch/delete anywhere.
+#   - Bindings exist as templates but are DISABLED (default false) so nothing is
+#     bound to a non-existent identity. Enable only after real identities exist,
+#     via values (rbac.*.binding.enabled) or kubectl as documented below.
+# =============================================================================
+
+# B. team-readonly - namespace-scoped, READ ONLY, NO secrets, NO write verbs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claimassist-team-read
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "endpoints", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log", "pods/status"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+# A. infrastructure-admin binding - INERT until a real owner identity exists.
+# Enable via values.rbac.adminBinding.enabled=true (then provide the subject
+# below) OR with kubectl once an identity/kubeconfig exists:
+#   kubectl create clusterrolebinding claimassist-admin-bind \
+#     --clusterrole claimassist-admin --user <admin-placeholder>
+
+# B. team-readonly binding - INERT by default. Namespace-scoped (this env).
+# Enable via values.rbac.teamReadOnly.binding.enabled=true (provides the group)
+# OR with kubectl once a team identity exists:
+#   kubectl create rolebinding claimassist-team-read-bind \
+#     --role claimassist-team-read -n <ns> --group <team-group>
+---
+# Source: claimassist/templates/api-gateway-dev-service.yaml
+# API Gateway DEV NodePort Service - DEV-only VPN API Gateway access.
+# Exposes API Gateway HTTP (container port 8080) on a NodePort so Tailscale
+# VPN clients can reach the application via the MagicDNS hostname:NodePort.
+# Rendered ONLY when services.api-gateway.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-api-gateway.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-api-gateway-dev
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30070
+      protocol: TCP
+
+---
+# Source: claimassist/templates/frontend-dev-service.yaml
+# Frontend DEV NodePort Service - DEV-only VPN external access.
+# Exposes frontend HTTP (container port 80) on a NodePort so DEV clients can
+# reach the SPA via the cluster node IP and NodePort. Rendered ONLY when
+# services.frontend.devExternalAccess is true (values override for DEV).
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-frontend-dev
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30071
+      protocol: TCP
+
+---
+# Source: claimassist/templates/kafka-dev-service.yaml
+# Kafka DEV NodePort Service - Task 6A-VPN-1. DEV-only VPN Kafka exposure.
+# Exposes the DEV listener (container port 19092) on a NodePort so Tailscale
+# VPN clients can reach the broker via the MagicDNS hostname:NodePort.
+# Rendered ONLY when kafka.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the DEV listener. The internal
+# PLAINTEXT (9092) and controller (9093) listeners remain ClusterIP-only
+# via the existing claimassist-kafka Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-kafka-dev
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: kafka
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: kafka
+  ports:
+    - name: external
+      port: 19092
+      targetPort: external
+      nodePort: 30092
+      protocol: TCP
+
+---
+# Source: claimassist/templates/kafka-service.yaml
+# Kafka ClusterIP Service - Task 6A-9. INTERNAL ONLY. Applications in the same
+# namespace connect to claimassist-kafka:9092 via the K8s Service DNS. The
+# controller listener (9093) is also exposed (ClusterIP) so the single combined
+# node's controller quorum hostname (claimassist-kafka:9093) resolves. No
+# NodePort, no LoadBalancer, no Ingress - Kafka is never exposed publicly and is
+# never shared across environments (each env has its own namespace + broker).
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-kafka
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: kafka
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: kafka
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: kafka
+      protocol: TCP
+    - name: external
+      port: 19092
+      targetPort: external
+      protocol: TCP
+    - name: controller
+      port: 9093
+      targetPort: controller
+      protocol: TCP
+
+---
+# Source: claimassist/templates/keycloak-dev-service.yaml
+# Keycloak DEV NodePort Service - DEV-only VPN Keycloak access.
+# Exposes Keycloak HTTP (container port 8080) on a NodePort so Tailscale
+# VPN clients can reach the admin console via the MagicDNS hostname:NodePort.
+# Rendered ONLY when keycloak.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-keycloak.
+# NOTE: Keycloak PostgreSQL is NOT exposed - only the app layer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-keycloak-dev
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080
+      protocol: TCP
+
+---
+# Source: claimassist/templates/keycloak-postgresql-dev-service.yaml
+# Keycloak PostgreSQL DEV NodePort Service - DEV-only VPN PostgreSQL access.
+# Exposes Keycloak PostgreSQL (container port 5432) on a NodePort so Tailscale
+# VPN clients can reach the database via the MagicDNS hostname:NodePort.
+# Rendered ONLY when keycloak.postgresql.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-keycloak-postgresql.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-keycloak-postgresql-dev
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak-postgresql
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: keycloak-postgresql
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      nodePort: 30433
+      protocol: TCP
+
+---
+# Source: claimassist/templates/keycloak-postgresql-service.yaml
+# Dedicated Keycloak PostgreSQL ClusterIP Service. INTERNAL ONLY - the Keycloak
+# StatefulSet reaches it via the K8s Service DNS name (claimassist-keycloak-
+# postgresql). No NodePort, no LoadBalancer, no Ingress - never exposed outside
+# the cluster. Isolated per environment namespace (no cross-environment references).
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-keycloak-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak-postgresql
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: keycloak-postgresql
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      protocol: TCP
+
+---
+# Source: claimassist/templates/keycloak-service.yaml
+# Keycloak ClusterIP Service. INTERNAL ONLY - the four application services reach
+# Keycloak via the K8s Service DNS (claimassist-keycloak:8080) and validate JWTs
+# against this issuer. No NodePort, no LoadBalancer, no Ingress - Keycloak is NOT
+# exposed publicly in this task (Ingress + TLS = Task 6A-11). The realm issuer
+# served by Keycloak therefore matches the internal URL the apps are configured
+# with (http://claimassist-keycloak:8080/realms/<env-realm>).
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-keycloak
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: claimassist/templates/postgresql-dev-service.yaml
+# PostgreSQL DEV NodePort Service - DEV-only VPN PostgreSQL access.
+# Exposes PostgreSQL (container port 5432) on a NodePort so Tailscale
+# VPN clients can reach the database via the MagicDNS hostname:NodePort.
+# Rendered ONLY when postgresql.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-postgresql.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-postgresql-dev
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: postgresql
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: postgresql
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      nodePort: 30432
+      protocol: TCP
+
+---
+# Source: claimassist/templates/postgresql-service.yaml
+# PostgreSQL ClusterIP Service. INTERNAL ONLY - applications and the Flyway Job
+# reach the database via the K8s Service DNS name (claimassist-postgresql).
+# No NodePort, no LoadBalancer, no Ingress - PostgreSQL is never exposed
+# outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: postgresql
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: postgresql
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      protocol: TCP
+
+---
+# Source: claimassist/templates/redis-dev-service.yaml
+# Redis DEV NodePort Service - DEV-only VPN Redis access.
+# Exposes Redis (container port 6379) on a NodePort so Tailscale
+# VPN clients can reach the cache via the MagicDNS hostname:NodePort.
+# Rendered ONLY when redis.devExternalAccess is true (DEV values only).
+#
+# IMPORTANT: This service exposes ONLY the application port. The internal
+# ClusterIP Service remains unchanged via claimassist-redis.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-redis-dev
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/variant: dev-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      nodePort: 30379
+      protocol: TCP
+
+---
+# Source: claimassist/templates/redis-service.yaml
+# Redis ClusterIP Service - Task 6A-8. INTERNAL ONLY. Applications in the same
+# namespace connect to claimassist-redis:6379 via the K8s Service DNS. No
+# NodePort, no LoadBalancer, no Ingress - Redis is never exposed outside the
+# cluster and is never shared across environments (each env has its own namespace).
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-redis
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for agent-service - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-agent-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: agent-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: 8083
+      protocol: TCP
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for api-gateway - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-api-gateway
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for claims-service - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-claims-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: claims-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+      protocol: TCP
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for customer-service - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-customer-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: customer-service
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+---
+# Source: claimassist/templates/service.yaml
+# ClusterIP Service for frontend - stable K8s DNS, never exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claimassist-frontend
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+
+---
+# Source: claimassist/templates/deployment.yaml
+# Deployment for agent-service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claimassist-agent-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+spec:
+  replicas: 1
+  # Task 6A-11: ZERO-DOWNTIME rolling update. maxUnavailable: 0 guarantees the
+  # Deployment never runs below desired replicas during a rollout, so no capacity
+  # gap opens; maxSurge: 1 brings one new pod up (and ready) before any old pod is
+  # terminated. Readiness gates traffic: the Service only routes to ready pods, and
+  # the old ReplicaSet stays ready until the new one passes its probes. Combined
+  # with Spring graceful shutdown (server.shutdown: graceful) inside terminationGracePeriodSeconds.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/instance: "claimassist"
+      app.kubernetes.io/component: agent-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: agent-service
+      # Task 6A-13: OBSERVABILITY. Advertise the Prometheus scrape target on the
+      # pod so the shared Prometheus (kubernetes_sd_configs, role: pod) auto-
+      # discovers every application replica via its /actuator/prometheus endpoint.
+      # Metrics are tagged by namespace (which equals the env: dev/stage/prod) so
+      # no environment's data leaks into another.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8083"
+    spec:
+      serviceAccountName: agent-service-sa
+      
+      
+      
+      
+      
+      
+      
+      imagePullSecrets:
+        
+        - name: claimassist-registry-credentials
+        
+      
+      securityContext:
+        runAsNonRoot: true
+      terminationGracePeriodSeconds: 60
+      
+      # Task 6A-12 - STATELESS APPLICATION-LEVEL HA SCHEDULING (soft / preferred).
+      # topologySpreadConstraints spreads replicas evenly across nodes when more
+      # than one exists; whenUnsatisfiable: ScheduleAnyway keeps the current
+      # single node fully usable.
+      # podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution biases
+      # replica placement onto distinct nodes (weight 100) but again never blocks
+      # scheduling on the current one-node cluster.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/instance: "claimassist"
+              app.kubernetes.io/component: agent-service
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: "claimassist"
+                    app.kubernetes.io/instance: "claimassist"
+                    app.kubernetes.io/component: agent-service
+      
+      containers:
+        - name: agent-service
+          image: "claimassistdev/agent-service:6844af0"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8083
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "k8s"
+            # SPRING_CONFIG_IMPORT must be set as an env var (NOT just in profile-specific
+            # application-k8s.yaml) because Spring Boot processes spring.config.import
+            # during the bootstrap phase, BEFORE profile-specific config is loaded.
+            # The packaged application.yaml has spring.config.import: configserver:... which
+            # would cause the Config Client to attempt localhost:8888 connection at startup.
+            # Setting SPRING_CONFIG_IMPORT="" here clears the import before any YAML is read.
+            - name: SPRING_CONFIG_IMPORT
+              value: ""
+            - name: SPRING_CLOUD_CONFIG_ENABLED
+              value: "false"
+            # Eureka/Config Client must be disabled via property toggles (env vars)
+            # because YAML profile-specific properties (from ConfigMap mounted via
+            # SPRING_CONFIG_ADDITIONAL_LOCATIONS) are loaded AFTER the auto-configuration
+            # phase. Environment variables are processed before any YAML files.
+            #
+            # These three properties are checked by @ConditionalOnProperty / @ConditionalOnDiscoveryEnabled
+            # in the auto-configuration classes themselves:
+            #   - eureka.client.enabled=false  → skips EurekaClientAutoConfiguration + EurekaDiscoveryClientConfiguration
+            #   - spring.cloud.config.enabled=false → skips ConfigClientAutoConfiguration
+            #   - spring.cloud.discovery.enabled=false → skips CompositeDiscoveryClientAutoConfiguration
+            - name: SPRING_EUREKA_CLIENT_ENABLED
+              value: "false"
+            - name: SPRING_CLOUD_DISCOVERY_ENABLED
+              value: "false"
+            # Distributed tracing: all four services send spans to the shared Zipkin
+            # collector in the observability namespace. Overrides the packaged default
+            # of localhost:9411 which is wrong inside Kubernetes.
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-service.claimassist-observability.svc.cluster.local:9411/api/v2/spans"
+            
+            
+            
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: "file:/etc/claimassist/config/"
+            
+            
+            
+            # Task 6A-7: PostgreSQL wiring for this service (uses the K8s Service
+            # DNS, never localhost). Username/password come from the Secret;
+            # Flyway is DISABLED at app startup (migration is the separate Job);
+            # ddl-auto is explicitly none (schema owned by Flyway).
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://claimassist-postgresql:5432/claimassist_agent"
+            # Explicit JDBC driver. agent-service's packaged application.yaml
+            # defaults driver-class-name to org.h2.Driver (${SPRING_DATASOURCE_DRIVER:...});
+            # without this override it would try to open a Postgres URL with the H2
+            # driver and fail to start. Setting it for every DB service is the robust
+            # (and harmless) fix.
+            - name: SPRING_DATASOURCE_DRIVER
+              value: "org.postgresql.Driver"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: "none"
+            
+            
+            # Task 6A-8: Redis wiring for this service. Uses the K8s Service DNS
+            # (claimassist-redis:6379), never localhost. No password env is set:
+            # Redis AUTH is intentionally NOT enabled (LOCAL uses no password, and
+            # claims-service's manual RedisConfig does not read a password).
+            - name: SPRING_DATA_REDIS_HOST
+              value: claimassist-redis
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+            
+            
+            # Task 6A-9: Kafka wiring for this service. Uses the K8s Service DNS
+            # (claimassist-kafka:9092), never localhost / docker-compose service
+            # names. Single property override feeds OutboxKafkaConfig's outbox
+            # producer + all outbox consumers (spring.kafka.bootstrap-servers).
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: "claimassist-kafka:9092"
+            
+            
+            # Feign inter-service URLs: @FeignClient interfaces use
+            # ${CUSTOMER_SERVICE_URI:} / ${CLAIMS_SERVICE_URI:} for direct K8s
+            # Service DNS resolution (no Eureka discovery).
+            
+            - name: CUSTOMER_SERVICE_URI
+              value: "http://claimassist-customer-service:8081"
+            
+            
+            - name: CLAIMS_SERVICE_URI
+              value: "http://claimassist-claims-service:8082"
+            
+            
+            
+            
+            # Task 6A-10: Keycloak wiring for the servlet resource services.
+            # spring.security.oauth2.resourceserver.jwt issuer + JWKS are discovered
+            # from KEYCLOAK_ISSUER_URI/KEYCLOAK_JWKS_URI (these exact env placeholders
+            # exist in the packaged application YAML and config-repo). The customer
+            # public client (claimassist-customer-app) and the confidential admin
+            # client (claimassist-admin-service) match the realm import. Internal
+            # Service DNS - never localhost. Secrets come from the Keycloak Secret.
+            - name: KEYCLOAK_SERVER_URL
+              value: "http://100.114.133.69:30080"
+            - name: KEYCLOAK_REALM
+              value: "claimassist-dev"
+            - name: KEYCLOAK_ISSUER_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev"
+            - name: KEYCLOAK_JWKS_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            # Explicit Spring Security resource-server JWKS URI. This is required
+            # for Claims/Customer/Agent services to auto-create JwtDecoder.
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            - name: KEYCLOAK_TOKEN_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token"
+            - name: SERVICE_TOKEN_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token"
+            - name: KEYCLOAK_ADMIN_CLIENT_ID
+              value: "claimassist-admin-service"
+            - name: SERVICE_CLIENT_ID
+              value: "claimassist-admin-service"
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            - name: SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            
+            
+          
+          volumeMounts:
+            - name: config
+              mountPath: /etc/claimassist/config
+              readOnly: true
+          
+          resources:
+            
+            limits:
+              cpu: 700m
+              memory: 640Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            # Numeric UID/GID matching the runtime image user (`USER 1000:1000` in
+            # the Dockerfiles). runAsNonRoot then verifies a non-root identity
+            # without having to resolve a non-numeric image USER name.
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8083
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8083
+            periodSeconds: 15
+            failureThreshold: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8083
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+            
+            initialDelaySeconds: 10
+            
+          
+          
+          
+      volumes:
+        - name: config
+          configMap:
+            name: claimassist-agent-service-config
+---
+# Source: claimassist/templates/deployment.yaml
+# Deployment for api-gateway
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claimassist-api-gateway
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+spec:
+  replicas: 1
+  # Task 6A-11: ZERO-DOWNTIME rolling update. maxUnavailable: 0 guarantees the
+  # Deployment never runs below desired replicas during a rollout, so no capacity
+  # gap opens; maxSurge: 1 brings one new pod up (and ready) before any old pod is
+  # terminated. Readiness gates traffic: the Service only routes to ready pods, and
+  # the old ReplicaSet stays ready until the new one passes its probes. Combined
+  # with Spring graceful shutdown (server.shutdown: graceful) inside terminationGracePeriodSeconds.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/instance: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: api-gateway
+      # Task 6A-13: OBSERVABILITY. Advertise the Prometheus scrape target on the
+      # pod so the shared Prometheus (kubernetes_sd_configs, role: pod) auto-
+      # discovers every application replica via its /actuator/prometheus endpoint.
+      # Metrics are tagged by namespace (which equals the env: dev/stage/prod) so
+      # no environment's data leaks into another.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: api-gateway-sa
+      
+      
+      
+      
+      
+      
+      
+      imagePullSecrets:
+        
+        - name: claimassist-registry-credentials
+        
+      
+      securityContext:
+        runAsNonRoot: true
+      terminationGracePeriodSeconds: 60
+      
+      # Task 6A-12 - STATELESS APPLICATION-LEVEL HA SCHEDULING (soft / preferred).
+      # topologySpreadConstraints spreads replicas evenly across nodes when more
+      # than one exists; whenUnsatisfiable: ScheduleAnyway keeps the current
+      # single node fully usable.
+      # podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution biases
+      # replica placement onto distinct nodes (weight 100) but again never blocks
+      # scheduling on the current one-node cluster.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/instance: "claimassist"
+              app.kubernetes.io/component: api-gateway
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: "claimassist"
+                    app.kubernetes.io/instance: "claimassist"
+                    app.kubernetes.io/component: api-gateway
+      
+      containers:
+        - name: api-gateway
+          image: "claimassistdev/api-gateway:6844af0"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "k8s"
+            # SPRING_CONFIG_IMPORT must be set as an env var (NOT just in profile-specific
+            # application-k8s.yaml) because Spring Boot processes spring.config.import
+            # during the bootstrap phase, BEFORE profile-specific config is loaded.
+            # The packaged application.yaml has spring.config.import: configserver:... which
+            # would cause the Config Client to attempt localhost:8888 connection at startup.
+            # Setting SPRING_CONFIG_IMPORT="" here clears the import before any YAML is read.
+            - name: SPRING_CONFIG_IMPORT
+              value: ""
+            - name: SPRING_CLOUD_CONFIG_ENABLED
+              value: "false"
+            # Eureka/Config Client must be disabled via property toggles (env vars)
+            # because YAML profile-specific properties (from ConfigMap mounted via
+            # SPRING_CONFIG_ADDITIONAL_LOCATIONS) are loaded AFTER the auto-configuration
+            # phase. Environment variables are processed before any YAML files.
+            #
+            # These three properties are checked by @ConditionalOnProperty / @ConditionalOnDiscoveryEnabled
+            # in the auto-configuration classes themselves:
+            #   - eureka.client.enabled=false  → skips EurekaClientAutoConfiguration + EurekaDiscoveryClientConfiguration
+            #   - spring.cloud.config.enabled=false → skips ConfigClientAutoConfiguration
+            #   - spring.cloud.discovery.enabled=false → skips CompositeDiscoveryClientAutoConfiguration
+            - name: SPRING_EUREKA_CLIENT_ENABLED
+              value: "false"
+            - name: SPRING_CLOUD_DISCOVERY_ENABLED
+              value: "false"
+            # Distributed tracing: all four services send spans to the shared Zipkin
+            # collector in the observability namespace. Overrides the packaged default
+            # of localhost:9411 which is wrong inside Kubernetes.
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-service.claimassist-observability.svc.cluster.local:9411/api/v2/spans"
+            
+            # api-gateway is a reactive WebFlux service with no database. Spring Data JPA
+            # is on the classpath (common-lib transitive), but without a JDBC URL the
+            # DataSource auto-configuration fails. Exclude Hibernate/JPA for the gateway.
+            - name: SPRING_AUTOCONFIGURE_EXCLUDE
+              value: "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration"
+            
+            
+            
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: "file:/etc/claimassist/config/"
+            
+            
+            
+            
+            - name: APP_SECURITY_PUBLIC_ROUTES_0
+              value: "/actuator/health"
+            
+            
+            
+            
+            - name: APP_SECURITY_PUBLIC_ROUTES_1
+              value: "/actuator/health/**"
+            
+            
+            
+            
+            - name: APP_SECURITY_PUBLIC_ROUTES_2
+              value: "/actuator/info"
+            
+            
+            
+            
+            - name: APP_SECURITY_PUBLIC_ROUTES_3
+              value: "/actuator/prometheus"
+            
+            
+            
+            
+            - name: APP_SECURITY_PUBLIC_ROUTES_4
+              value: "/customer/auth/**"
+            
+            
+            
+            
+            # Task 6A-8: Redis wiring for this service. Uses the K8s Service DNS
+            # (claimassist-redis:6379), never localhost. No password env is set:
+            # Redis AUTH is intentionally NOT enabled (LOCAL uses no password, and
+            # claims-service's manual RedisConfig does not read a password).
+            - name: SPRING_DATA_REDIS_HOST
+              value: claimassist-redis
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+            
+            
+            
+            
+            # Task 6A-10: Keycloak wiring for api-gateway (reactive resource server).
+            # When keycloak.externalUrl is set (DEV), OIDC endpoints use the external
+            # URL so the issuer claim in JWTs matches what browsers/clients see.
+            # Otherwise, internal Service DNS is used. JWKS is always reachable.
+            - name: KEYCLOAK_ISSUER_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev"
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            
+            
+            
+          
+          volumeMounts:
+            - name: config
+              mountPath: /etc/claimassist/config
+              readOnly: true
+          
+          resources:
+            
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 192Mi
+          securityContext:
+            # Numeric UID/GID matching the runtime image user (`USER 1000:1000` in
+            # the Dockerfiles). runAsNonRoot then verifies a non-root identity
+            # without having to resolve a non-numeric image USER name.
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 15
+            failureThreshold: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+            
+            initialDelaySeconds: 10
+            
+          
+          
+          
+      volumes:
+        - name: config
+          configMap:
+            name: claimassist-api-gateway-config
+---
+# Source: claimassist/templates/deployment.yaml
+# Deployment for claims-service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claimassist-claims-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+spec:
+  replicas: 1
+  # Task 6A-11: ZERO-DOWNTIME rolling update. maxUnavailable: 0 guarantees the
+  # Deployment never runs below desired replicas during a rollout, so no capacity
+  # gap opens; maxSurge: 1 brings one new pod up (and ready) before any old pod is
+  # terminated. Readiness gates traffic: the Service only routes to ready pods, and
+  # the old ReplicaSet stays ready until the new one passes its probes. Combined
+  # with Spring graceful shutdown (server.shutdown: graceful) inside terminationGracePeriodSeconds.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/instance: "claimassist"
+      app.kubernetes.io/component: claims-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: claims-service
+      # Task 6A-13: OBSERVABILITY. Advertise the Prometheus scrape target on the
+      # pod so the shared Prometheus (kubernetes_sd_configs, role: pod) auto-
+      # discovers every application replica via its /actuator/prometheus endpoint.
+      # Metrics are tagged by namespace (which equals the env: dev/stage/prod) so
+      # no environment's data leaks into another.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8082"
+    spec:
+      serviceAccountName: claims-service-sa
+      
+      
+      
+      
+      
+      
+      
+      imagePullSecrets:
+        
+        - name: claimassist-registry-credentials
+        
+      
+      securityContext:
+        runAsNonRoot: true
+      terminationGracePeriodSeconds: 60
+      
+      # Task 6A-12 - STATELESS APPLICATION-LEVEL HA SCHEDULING (soft / preferred).
+      # topologySpreadConstraints spreads replicas evenly across nodes when more
+      # than one exists; whenUnsatisfiable: ScheduleAnyway keeps the current
+      # single node fully usable.
+      # podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution biases
+      # replica placement onto distinct nodes (weight 100) but again never blocks
+      # scheduling on the current one-node cluster.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/instance: "claimassist"
+              app.kubernetes.io/component: claims-service
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: "claimassist"
+                    app.kubernetes.io/instance: "claimassist"
+                    app.kubernetes.io/component: claims-service
+      
+      containers:
+        - name: claims-service
+          image: "claimassistdev/claims-service:6844af0"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8082
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "k8s"
+            # SPRING_CONFIG_IMPORT must be set as an env var (NOT just in profile-specific
+            # application-k8s.yaml) because Spring Boot processes spring.config.import
+            # during the bootstrap phase, BEFORE profile-specific config is loaded.
+            # The packaged application.yaml has spring.config.import: configserver:... which
+            # would cause the Config Client to attempt localhost:8888 connection at startup.
+            # Setting SPRING_CONFIG_IMPORT="" here clears the import before any YAML is read.
+            - name: SPRING_CONFIG_IMPORT
+              value: ""
+            - name: SPRING_CLOUD_CONFIG_ENABLED
+              value: "false"
+            # Eureka/Config Client must be disabled via property toggles (env vars)
+            # because YAML profile-specific properties (from ConfigMap mounted via
+            # SPRING_CONFIG_ADDITIONAL_LOCATIONS) are loaded AFTER the auto-configuration
+            # phase. Environment variables are processed before any YAML files.
+            #
+            # These three properties are checked by @ConditionalOnProperty / @ConditionalOnDiscoveryEnabled
+            # in the auto-configuration classes themselves:
+            #   - eureka.client.enabled=false  → skips EurekaClientAutoConfiguration + EurekaDiscoveryClientConfiguration
+            #   - spring.cloud.config.enabled=false → skips ConfigClientAutoConfiguration
+            #   - spring.cloud.discovery.enabled=false → skips CompositeDiscoveryClientAutoConfiguration
+            - name: SPRING_EUREKA_CLIENT_ENABLED
+              value: "false"
+            - name: SPRING_CLOUD_DISCOVERY_ENABLED
+              value: "false"
+            # Distributed tracing: all four services send spans to the shared Zipkin
+            # collector in the observability namespace. Overrides the packaged default
+            # of localhost:9411 which is wrong inside Kubernetes.
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-service.claimassist-observability.svc.cluster.local:9411/api/v2/spans"
+            
+            
+            
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: "file:/etc/claimassist/config/"
+            
+            
+            
+            # Task 6A-7: PostgreSQL wiring for this service (uses the K8s Service
+            # DNS, never localhost). Username/password come from the Secret;
+            # Flyway is DISABLED at app startup (migration is the separate Job);
+            # ddl-auto is explicitly none (schema owned by Flyway).
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://claimassist-postgresql:5432/claimassist_claims"
+            # Explicit JDBC driver. agent-service's packaged application.yaml
+            # defaults driver-class-name to org.h2.Driver (${SPRING_DATASOURCE_DRIVER:...});
+            # without this override it would try to open a Postgres URL with the H2
+            # driver and fail to start. Setting it for every DB service is the robust
+            # (and harmless) fix.
+            - name: SPRING_DATASOURCE_DRIVER
+              value: "org.postgresql.Driver"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: "none"
+            
+            
+            # Task 6A-8: Redis wiring for this service. Uses the K8s Service DNS
+            # (claimassist-redis:6379), never localhost. No password env is set:
+            # Redis AUTH is intentionally NOT enabled (LOCAL uses no password, and
+            # claims-service's manual RedisConfig does not read a password).
+            - name: SPRING_DATA_REDIS_HOST
+              value: claimassist-redis
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+            
+            
+            # Task 6A-9: Kafka wiring for this service. Uses the K8s Service DNS
+            # (claimassist-kafka:9092), never localhost / docker-compose service
+            # names. Single property override feeds OutboxKafkaConfig's outbox
+            # producer + all outbox consumers (spring.kafka.bootstrap-servers).
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: "claimassist-kafka:9092"
+            
+            
+            # Feign inter-service URLs: @FeignClient interfaces use
+            # ${CUSTOMER_SERVICE_URI:} / ${CLAIMS_SERVICE_URI:} for direct K8s
+            # Service DNS resolution (no Eureka discovery).
+            
+            - name: CUSTOMER_SERVICE_URI
+              value: "http://claimassist-customer-service:8081"
+            
+            
+            
+            
+            
+            # Task 6A-10: Keycloak wiring for the servlet resource services.
+            # spring.security.oauth2.resourceserver.jwt issuer + JWKS are discovered
+            # from KEYCLOAK_ISSUER_URI/KEYCLOAK_JWKS_URI (these exact env placeholders
+            # exist in the packaged application YAML and config-repo). The customer
+            # public client (claimassist-customer-app) and the confidential admin
+            # client (claimassist-admin-service) match the realm import. Internal
+            # Service DNS - never localhost. Secrets come from the Keycloak Secret.
+            - name: KEYCLOAK_SERVER_URL
+              value: "http://100.114.133.69:30080"
+            - name: KEYCLOAK_REALM
+              value: "claimassist-dev"
+            - name: KEYCLOAK_ISSUER_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev"
+            - name: KEYCLOAK_JWKS_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            # Explicit Spring Security resource-server JWKS URI. This is required
+            # for Claims/Customer/Agent services to auto-create JwtDecoder.
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            - name: KEYCLOAK_TOKEN_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token"
+            - name: SERVICE_TOKEN_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token"
+            - name: KEYCLOAK_ADMIN_CLIENT_ID
+              value: "claimassist-admin-service"
+            - name: SERVICE_CLIENT_ID
+              value: "claimassist-admin-service"
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            - name: SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            
+            
+          
+          volumeMounts:
+            - name: config
+              mountPath: /etc/claimassist/config
+              readOnly: true
+          
+          resources:
+            
+            limits:
+              cpu: 800m
+              memory: 640Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            # Numeric UID/GID matching the runtime image user (`USER 1000:1000` in
+            # the Dockerfiles). runAsNonRoot then verifies a non-root identity
+            # without having to resolve a non-numeric image USER name.
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 15
+            failureThreshold: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+            
+            initialDelaySeconds: 10
+            
+          
+          
+          
+      volumes:
+        - name: config
+          configMap:
+            name: claimassist-claims-service-config
+---
+# Source: claimassist/templates/deployment.yaml
+# Deployment for customer-service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claimassist-customer-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+spec:
+  replicas: 1
+  # Task 6A-11: ZERO-DOWNTIME rolling update. maxUnavailable: 0 guarantees the
+  # Deployment never runs below desired replicas during a rollout, so no capacity
+  # gap opens; maxSurge: 1 brings one new pod up (and ready) before any old pod is
+  # terminated. Readiness gates traffic: the Service only routes to ready pods, and
+  # the old ReplicaSet stays ready until the new one passes its probes. Combined
+  # with Spring graceful shutdown (server.shutdown: graceful) inside terminationGracePeriodSeconds.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/instance: "claimassist"
+      app.kubernetes.io/component: customer-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: customer-service
+      # Task 6A-13: OBSERVABILITY. Advertise the Prometheus scrape target on the
+      # pod so the shared Prometheus (kubernetes_sd_configs, role: pod) auto-
+      # discovers every application replica via its /actuator/prometheus endpoint.
+      # Metrics are tagged by namespace (which equals the env: dev/stage/prod) so
+      # no environment's data leaks into another.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8081"
+    spec:
+      serviceAccountName: customer-service-sa
+      
+      
+      
+      
+      
+      
+      
+      imagePullSecrets:
+        
+        - name: claimassist-registry-credentials
+        
+      
+      securityContext:
+        runAsNonRoot: true
+      terminationGracePeriodSeconds: 60
+      
+      # Task 6A-12 - STATELESS APPLICATION-LEVEL HA SCHEDULING (soft / preferred).
+      # topologySpreadConstraints spreads replicas evenly across nodes when more
+      # than one exists; whenUnsatisfiable: ScheduleAnyway keeps the current
+      # single node fully usable.
+      # podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution biases
+      # replica placement onto distinct nodes (weight 100) but again never blocks
+      # scheduling on the current one-node cluster.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/instance: "claimassist"
+              app.kubernetes.io/component: customer-service
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: "claimassist"
+                    app.kubernetes.io/instance: "claimassist"
+                    app.kubernetes.io/component: customer-service
+      
+      containers:
+        - name: customer-service
+          image: "claimassistdev/customer-service:6844af0"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "k8s"
+            # SPRING_CONFIG_IMPORT must be set as an env var (NOT just in profile-specific
+            # application-k8s.yaml) because Spring Boot processes spring.config.import
+            # during the bootstrap phase, BEFORE profile-specific config is loaded.
+            # The packaged application.yaml has spring.config.import: configserver:... which
+            # would cause the Config Client to attempt localhost:8888 connection at startup.
+            # Setting SPRING_CONFIG_IMPORT="" here clears the import before any YAML is read.
+            - name: SPRING_CONFIG_IMPORT
+              value: ""
+            - name: SPRING_CLOUD_CONFIG_ENABLED
+              value: "false"
+            # Eureka/Config Client must be disabled via property toggles (env vars)
+            # because YAML profile-specific properties (from ConfigMap mounted via
+            # SPRING_CONFIG_ADDITIONAL_LOCATIONS) are loaded AFTER the auto-configuration
+            # phase. Environment variables are processed before any YAML files.
+            #
+            # These three properties are checked by @ConditionalOnProperty / @ConditionalOnDiscoveryEnabled
+            # in the auto-configuration classes themselves:
+            #   - eureka.client.enabled=false  → skips EurekaClientAutoConfiguration + EurekaDiscoveryClientConfiguration
+            #   - spring.cloud.config.enabled=false → skips ConfigClientAutoConfiguration
+            #   - spring.cloud.discovery.enabled=false → skips CompositeDiscoveryClientAutoConfiguration
+            - name: SPRING_EUREKA_CLIENT_ENABLED
+              value: "false"
+            - name: SPRING_CLOUD_DISCOVERY_ENABLED
+              value: "false"
+            # Distributed tracing: all four services send spans to the shared Zipkin
+            # collector in the observability namespace. Overrides the packaged default
+            # of localhost:9411 which is wrong inside Kubernetes.
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-service.claimassist-observability.svc.cluster.local:9411/api/v2/spans"
+            
+            
+            # SharedExceptionAutoConfiguration (common-lib) defines a globalExceptionHandler
+            # bean that conflicts with customer-service's own GlobalExceptionHandler class.
+            # Allow bean definition overriding to resolve the conflict.
+            - name: SPRING_MAIN_ALLOW_BEAN_DEFINITION_OVERRIDING
+              value: "true"
+            
+            
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: "file:/etc/claimassist/config/"
+            
+            
+            
+            # Task 6A-7: PostgreSQL wiring for this service (uses the K8s Service
+            # DNS, never localhost). Username/password come from the Secret;
+            # Flyway is DISABLED at app startup (migration is the separate Job);
+            # ddl-auto is explicitly none (schema owned by Flyway).
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://claimassist-postgresql:5432/claimassist_customer"
+            # Explicit JDBC driver. agent-service's packaged application.yaml
+            # defaults driver-class-name to org.h2.Driver (${SPRING_DATASOURCE_DRIVER:...});
+            # without this override it would try to open a Postgres URL with the H2
+            # driver and fail to start. Setting it for every DB service is the robust
+            # (and harmless) fix.
+            - name: SPRING_DATASOURCE_DRIVER
+              value: "org.postgresql.Driver"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: "none"
+            
+            
+            # Task 6A-8: Redis wiring for this service. Uses the K8s Service DNS
+            # (claimassist-redis:6379), never localhost. No password env is set:
+            # Redis AUTH is intentionally NOT enabled (LOCAL uses no password, and
+            # claims-service's manual RedisConfig does not read a password).
+            - name: SPRING_DATA_REDIS_HOST
+              value: claimassist-redis
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+            
+            
+            
+            
+            
+            # Task 6A-10: Keycloak wiring for the servlet resource services.
+            # spring.security.oauth2.resourceserver.jwt issuer + JWKS are discovered
+            # from KEYCLOAK_ISSUER_URI/KEYCLOAK_JWKS_URI (these exact env placeholders
+            # exist in the packaged application YAML and config-repo). The customer
+            # public client (claimassist-customer-app) and the confidential admin
+            # client (claimassist-admin-service) match the realm import. Internal
+            # Service DNS - never localhost. Secrets come from the Keycloak Secret.
+            - name: KEYCLOAK_SERVER_URL
+              value: "http://100.114.133.69:30080"
+            - name: KEYCLOAK_REALM
+              value: "claimassist-dev"
+            - name: KEYCLOAK_ISSUER_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev"
+            - name: KEYCLOAK_JWKS_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            # Explicit Spring Security resource-server JWKS URI. This is required
+            # for Claims/Customer/Agent services to auto-create JwtDecoder.
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            - name: KEYCLOAK_TOKEN_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token"
+            - name: SERVICE_TOKEN_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token"
+            - name: KEYCLOAK_ADMIN_CLIENT_ID
+              value: "claimassist-admin-service"
+            - name: SERVICE_CLIENT_ID
+              value: "claimassist-admin-service"
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            - name: SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            
+            
+            - name: KEYCLOAK_CLIENT_ID
+              value: "claimassist-customer-app"
+            - name: KEYCLOAK_TOKEN_CLIENT_ID
+              value: "claimassist-customer-app"
+            - name: KEYCLOAK_REDIRECT_URI
+              value: "http://100.114.133.69:30070/customer/auth/callback"
+            
+          
+          volumeMounts:
+            - name: config
+              mountPath: /etc/claimassist/config
+              readOnly: true
+          
+          resources:
+            
+            limits:
+              cpu: 800m
+              memory: 640Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            # Numeric UID/GID matching the runtime image user (`USER 1000:1000` in
+            # the Dockerfiles). runAsNonRoot then verifies a non-root identity
+            # without having to resolve a non-numeric image USER name.
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            periodSeconds: 15
+            failureThreshold: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+            
+            initialDelaySeconds: 10
+            
+          
+          
+          
+      volumes:
+        - name: config
+          configMap:
+            name: claimassist-customer-service-config
+---
+# Source: claimassist/templates/deployment.yaml
+# Deployment for frontend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claimassist-frontend
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 1
+  # Task 6A-11: ZERO-DOWNTIME rolling update. maxUnavailable: 0 guarantees the
+  # Deployment never runs below desired replicas during a rollout, so no capacity
+  # gap opens; maxSurge: 1 brings one new pod up (and ready) before any old pod is
+  # terminated. Readiness gates traffic: the Service only routes to ready pods, and
+  # the old ReplicaSet stays ready until the new one passes its probes. Combined
+  # with Spring graceful shutdown (server.shutdown: graceful) inside terminationGracePeriodSeconds.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/instance: "claimassist"
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: frontend
+      # Task 6A-13: OBSERVABILITY. Advertise the Prometheus scrape target on the
+      # pod so the shared Prometheus (kubernetes_sd_configs, role: pod) auto-
+      # discovers every application replica via its /actuator/prometheus endpoint.
+      # Metrics are tagged by namespace (which equals the env: dev/stage/prod) so
+      # no environment's data leaks into another.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "80"
+    spec:
+      serviceAccountName: frontend-sa
+      
+      
+      
+      
+      
+      
+      
+      imagePullSecrets:
+        
+        - name: claimassist-registry-credentials
+        
+      
+      securityContext:
+        runAsNonRoot: true
+      terminationGracePeriodSeconds: 60
+      
+      # Task 6A-12 - STATELESS APPLICATION-LEVEL HA SCHEDULING (soft / preferred).
+      # topologySpreadConstraints spreads replicas evenly across nodes when more
+      # than one exists; whenUnsatisfiable: ScheduleAnyway keeps the current
+      # single node fully usable.
+      # podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution biases
+      # replica placement onto distinct nodes (weight 100) but again never blocks
+      # scheduling on the current one-node cluster.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/instance: "claimassist"
+              app.kubernetes.io/component: frontend
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: "claimassist"
+                    app.kubernetes.io/instance: "claimassist"
+                    app.kubernetes.io/component: frontend
+      
+      containers:
+        - name: frontend
+          image: "claimassistdev/claimassist-frontend:ui-v2"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "k8s"
+            # SPRING_CONFIG_IMPORT must be set as an env var (NOT just in profile-specific
+            # application-k8s.yaml) because Spring Boot processes spring.config.import
+            # during the bootstrap phase, BEFORE profile-specific config is loaded.
+            # The packaged application.yaml has spring.config.import: configserver:... which
+            # would cause the Config Client to attempt localhost:8888 connection at startup.
+            # Setting SPRING_CONFIG_IMPORT="" here clears the import before any YAML is read.
+            - name: SPRING_CONFIG_IMPORT
+              value: ""
+            - name: SPRING_CLOUD_CONFIG_ENABLED
+              value: "false"
+            # Eureka/Config Client must be disabled via property toggles (env vars)
+            # because YAML profile-specific properties (from ConfigMap mounted via
+            # SPRING_CONFIG_ADDITIONAL_LOCATIONS) are loaded AFTER the auto-configuration
+            # phase. Environment variables are processed before any YAML files.
+            #
+            # These three properties are checked by @ConditionalOnProperty / @ConditionalOnDiscoveryEnabled
+            # in the auto-configuration classes themselves:
+            #   - eureka.client.enabled=false  → skips EurekaClientAutoConfiguration + EurekaDiscoveryClientConfiguration
+            #   - spring.cloud.config.enabled=false → skips ConfigClientAutoConfiguration
+            #   - spring.cloud.discovery.enabled=false → skips CompositeDiscoveryClientAutoConfiguration
+            - name: SPRING_EUREKA_CLIENT_ENABLED
+              value: "false"
+            - name: SPRING_CLOUD_DISCOVERY_ENABLED
+              value: "false"
+            # Distributed tracing: all four services send spans to the shared Zipkin
+            # collector in the observability namespace. Overrides the packaged default
+            # of localhost:9411 which is wrong inside Kubernetes.
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-service.claimassist-observability.svc.cluster.local:9411/api/v2/spans"
+            
+            
+            
+            
+            
+            
+            - name: VITE_API_BASE_URL
+              value: "http://144.24.116.166:30070"
+            
+            
+            
+            
+            
+            
+            # Feign inter-service URLs: @FeignClient interfaces use
+            # ${CUSTOMER_SERVICE_URI:} / ${CLAIMS_SERVICE_URI:} for direct K8s
+            # Service DNS resolution (no Eureka discovery).
+            
+            - name: CUSTOMER_SERVICE_URI
+              value: "http://claimassist-customer-service:8081"
+            
+            
+            - name: CLAIMS_SERVICE_URI
+              value: "http://claimassist-claims-service:8082"
+            
+            
+            
+            
+            # Task 6A-10: Keycloak wiring for the servlet resource services.
+            # spring.security.oauth2.resourceserver.jwt issuer + JWKS are discovered
+            # from KEYCLOAK_ISSUER_URI/KEYCLOAK_JWKS_URI (these exact env placeholders
+            # exist in the packaged application YAML and config-repo). The customer
+            # public client (claimassist-customer-app) and the confidential admin
+            # client (claimassist-admin-service) match the realm import. Internal
+            # Service DNS - never localhost. Secrets come from the Keycloak Secret.
+            - name: KEYCLOAK_SERVER_URL
+              value: "http://100.114.133.69:30080"
+            - name: KEYCLOAK_REALM
+              value: "claimassist-dev"
+            - name: KEYCLOAK_ISSUER_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev"
+            - name: KEYCLOAK_JWKS_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            # Explicit Spring Security resource-server JWKS URI. This is required
+            # for Claims/Customer/Agent services to auto-create JwtDecoder.
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs"
+            - name: KEYCLOAK_TOKEN_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token"
+            - name: SERVICE_TOKEN_URI
+              value: "http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token"
+            - name: KEYCLOAK_ADMIN_CLIENT_ID
+              value: "claimassist-admin-service"
+            - name: SERVICE_CLIENT_ID
+              value: "claimassist-admin-service"
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            - name: SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            
+            
+          
+          resources:
+            
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            
+            runAsNonRoot: false
+          startupProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 15
+            failureThreshold: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+            
+            initialDelaySeconds: 5
+            
+          
+        
+
+---
+# Source: claimassist/templates/redis-deployment.yaml
+# Redis Deployment - Task 6A-8. Redis is a CACHE / ephemeral state resource.
+# Exactly ONE instance per K8s environment namespace (dev / stage / prod each get
+# their own isolated claimassist-redis). A Deployment (not a StatefulSet) is used
+# because Redis needs no stable pod identity and no persistent storage here.
+#
+# CACHE LOSS IS ACCEPTABLE: RDB save and AOF are disabled (--save "" --appendonly
+# no) and /data is an ephemeral emptyDir, so a restart clears the cache and
+# applications recover from their source of truth (PostgreSQL). Intentionally NO
+# PVC, NO persistence, NO replication, NO Sentinel, NO Cluster.
+#
+# protected-mode is disabled because this cluster has no Redis AUTH (LOCAL uses
+# no password), and the applications connect from OTHER pods via the ClusterIP
+# Service (their pod IP, not loopback); protected-mode would otherwise reject
+# those non-loopback connections. Runs as the official redis image user (999) with
+# all capabilities dropped.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claimassist-redis
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: "redis:7.4"
+          imagePullPolicy: IfNotPresent
+          command: ["redis-server"]
+          args:
+            - "--save"          # disable RDB snapshots (cache loss acceptable)
+            - ""
+            - "--appendonly"     # disable AOF persistence (cache loss acceptable)
+            - "no"
+            - "--protected-mode" # allow non-loopback (other-pod) clients without AUTH
+            - "no"
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 6
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+      volumes:
+        # Ephemeral scratch for the redis user's transient writes. NOT a PVC:
+        # data is lost on pod restart by design (cache-loss tolerant).
+        - name: data
+          emptyDir: {}
+---
+# Source: claimassist/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: claimassist-agent-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: claimassist-agent-service
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+---
+# Source: claimassist/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: claimassist-api-gateway
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: claimassist-api-gateway
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+---
+# Source: claimassist/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: claimassist-claims-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: claimassist-claims-service
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+---
+# Source: claimassist/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: claimassist-customer-service
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: claimassist-customer-service
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+
+---
+# Source: claimassist/templates/kafka-statefulset.yaml
+# Kafka StatefulSet - Task 6A-9. Kafka is an EVENT / LOG resource, so it needs
+# stable identity + persistent storage: a StatefulSet (replicas 1) with a PVC via
+# volumeClaimTemplates (NOT emptyDir - unlike Redis, event loss is not acceptable).
+#
+# KRaft combined broker+controller node (no ZooKeeper). The env mirrors the LOCAL
+# docker-compose broker configuration EXACTLY, except the LOCAL compose service
+# name (kafka) is replaced by the K8s Service DNS (claimassist-kafka) in the
+# advertised listener + controller quorum. 9093 (controller) is also exposed via
+# the ClusterIP Service so the single node's controller quorum hostname
+# (claimassist-kafka:9093) resolves.
+#
+# SINGLE-BROKER HONESTY: this is the free-learning-tier architecture, NOT
+# production HA. One broker => broker failure = Kafka downtime; RF = 1 everywhere
+# (topics, consumer offsets, transaction state log); no failover / rack awareness.
+# See the deployment help below.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: claimassist-kafka
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: kafka
+spec:
+  serviceName: claimassist-kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: kafka
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+      containers:
+        - name: kafka
+          image: "apache/kafka:3.8.0"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: kafka
+              containerPort: 9092
+              protocol: TCP
+            - name: external
+              containerPort: 19092
+              protocol: TCP
+            - name: controller
+              containerPort: 9093
+              protocol: TCP
+          env:
+            # KRaft single-node cluster identity.
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            # Internal listeners. The ADVERTISED broker listener uses the K8s
+            # Service DNS (claimassist-kafka) so external clients (apps) resolve
+            # the broker through the ClusterIP Service.
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://:9092,DEV://:19092,CONTROLLER://:9093"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://claimassist-kafka.claimassist-dev.svc.cluster.local:9092,DEV://vnic.taild219f3.ts.net:30092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,DEV:PLAINTEXT"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            # SINGLE-NODE KRaft SELF-QUORUM. The combined broker+controller must be
+            # able to reach the controller quorum BEFORE this pod is Ready. The
+            # ClusterIP Service (claimassist-kafka) only gets an endpoint once the
+            # pod passes readiness, and readiness requires KRaft startup to finish -
+            # a cycle that dead-locks the "controller acknowledge caught up" step and
+            # CrashLoopBackOffs the broker. Using the loopback address for the
+            # single-node controller quorum breaks that cycle: the controller
+            # listener binds :9093 on all interfaces, so the broker reaches its own
+            # controller via 127.0.0.1 regardless of Service/endpoint status. The
+            # controller listener is internal-only and never advertised to clients,
+            # so loopback is safe for a single combined node.
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@127.0.0.1:9093"
+            # Single broker => RF and ISR must be 1 everywhere (matches LOCAL
+            # and the application's replication-factor:1 / min-isr:1 outbox topics).
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            # Topics are created by the application's NewTopic beans (KafkaAdmin)
+            # and auto-created via this flag; no separate topic-init Job needed.
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
+            # JVM heap cap so the free-tier broker stays within its memory limit.
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xms512m -Xmx512m"
+          volumeMounts:
+            - name: data
+              mountPath: "/var/lib/kafka/data"
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            exec:
+              # Prefer a simple local TCP probe using bash if available (avoids
+              # relying on Kafka metadata which may advertise the Service DNS
+              # before endpoints are ready). If /bin/bash is not present in the
+              # image, fall back to the existing kafka-broker-api-versions.sh
+              # probe so we do not assume additional binaries.
+              command: ["/bin/sh", "-c", "if [ -x /bin/bash ]; then /bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9092'; else /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092; fi"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "if [ -x /bin/bash ]; then /bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9092'; else /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092; fi"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "if [ -x /bin/bash ]; then /bin/bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9092'; else /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092; fi"]
+            periodSeconds: 20
+            failureThreshold: 6
+            timeoutSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: "claimassist"
+          app.kubernetes.io/instance: "claimassist"
+          app.kubernetes.io/version: "1.0.0"
+          app.kubernetes.io/part-of: "claimassist"
+          app.kubernetes.io/managed-by: "Helm"
+          environment: "dev"
+          app.kubernetes.io/component: kafka
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "8Gi"
+
+
+
+---
+# Source: claimassist/templates/keycloak-postgresql-statefulset.yaml
+# Dedicated Keycloak PostgreSQL StatefulSet - one per K8s environment namespace.
+# ISOLATED from the application PostgreSQL (postgresql.*) with its own stable
+# pod identity, ClusterIP Service and persistent storage via volumeClaimTemplates
+# (NOT emptyDir: Keycloak schema is durable). Credentials come from the dedicated
+# Secret. Probes use pg_isready against the Keycloak DB. Security context is
+# intentionally left unset by default: the official postgres image must start as
+# root to chown its volume during init (same reasoning as the app PostgreSQL).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: claimassist-keycloak-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak-postgresql
+spec:
+  serviceName: claimassist-keycloak-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak-postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: keycloak-postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: "postgres:16"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_PASSWORD
+            - name: TZ
+              value: "Asia/Kolkata"
+            - name: PGTZ
+              value: "Asia/Kolkata"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          startupProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+            timeoutSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: "claimassist"
+          app.kubernetes.io/instance: "claimassist"
+          app.kubernetes.io/version: "1.0.0"
+          app.kubernetes.io/part-of: "claimassist"
+          app.kubernetes.io/managed-by: "Helm"
+          environment: "dev"
+          app.kubernetes.io/component: keycloak-postgresql
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "2Gi"
+
+---
+# Source: claimassist/templates/keycloak-statefulset.yaml
+# Keycloak StatefulSet - one per K8s environment namespace. INTERNAL ONLY.
+# replicaCount defaults to 1 (learning-tier; NOT real Keycloak HA - see values).
+# Keycloak's persistent state lives in the dedicated Keycloak PostgreSQL, so it
+# does NOT request a PVC (no volumeClaimTemplates). The deterministic realm import
+# is mounted read-only from the realm ConfigMap and consumed with the official
+# `start --import-realm` bootstrap (the SAME mechanism LOCAL uses). Admin and DB
+# credentials come from Secrets - never committed. Probes use Keycloak's health
+# endpoints with generous startup timing (Keycloak + PostgreSQL + realm import).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: claimassist-keycloak
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak
+spec:
+  serviceName: claimassist-keycloak
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: keycloak
+    spec:
+      # Deterministic dependency: do not start Keycloak (or crash-loop against a
+      # still-initializing DB) until the dedicated Keycloak PostgreSQL accepts
+      # connections. Polls pg_isready via Service DNS; runs as the postgres image's
+      # own tooling but as a non-root numeric uid with dropped caps.
+      initContainers:
+        - name: wait-for-db
+          image: "postgres:16"
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -h claimassist-keycloak-postgresql -p 5432 -U "$KC_DB_USERNAME" -d keycloak >/dev/null 2>&1; do
+                echo "waiting for claimassist-keycloak-postgresql:5432 (keycloak) to be ready..."
+                sleep 5
+              done
+              echo "claimassist-keycloak-postgresql is ready"
+          env:
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_USER
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: realm-import
+          configMap:
+            name: claimassist-keycloak-realm
+            defaultMode: 0444
+      containers:
+        - name: keycloak
+          image: "quay.io/keycloak/keycloak:26.0"
+          imagePullPolicy: IfNotPresent
+          # `args` (NOT `command`): the Keycloak image ENTRYPOINT is
+          # /opt/keycloak/bin/kc.sh, and `command` would REPLACE that entrypoint,
+          # making kubelet exec an executable named `start` that is not on $PATH
+          # (-> CrashLoopBackOff). `args` appends to the entrypoint, yielding the
+          # correct `kc.sh start --import-realm`.
+          args: ["start", "--import-realm"]
+          # Container-level securityContext (NOT pod-level): every key here
+          # (runAsNonRoot, allowPrivilegeEscalation, readOnlyRootFilesystem,
+          # capabilities, seccompProfile) is a CONTAINER securityContext field.
+          # Rendering them at spec.template.spec.securityContext is a Kubernetes
+          # schema error and is rejected by the API server.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: "jdbc:postgresql://claimassist-keycloak-postgresql:5432/keycloak"
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_USER
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-postgresql-credentials
+                  key: POSTGRES_PASSWORD
+            - name: KC_HOSTNAME
+              value: "100.114.133.69"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-keycloak-admin
+                  key: KEYCLOAK_ADMIN_PASSWORD
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /realms/claimassist-dev/.well-known/openid-configuration
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /realms/claimassist-dev/.well-known/openid-configuration
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /realms/claimassist-dev/.well-known/openid-configuration
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+            timeoutSeconds: 5
+
+---
+# Source: claimassist/templates/postgresql-statefulset.yaml
+# PostgreSQL StatefulSet - exactly ONE per K8s environment namespace (dev /
+# stage / prod each get their own instance + storage). Stable pod identity via a
+# dedicated ClusterIP Service + persistent storage via volumeClaimTemplates (a
+# PVC per pod). Data is NOT emptyDir. Credentials come from the Secret. Probes
+# use pg_isready against the postgres maintenance db (`postgres` always exists),
+# matching the LOCAL docker-compose healthcheck. Security context is
+# intentionally left unset by default: the official postgres image must start as
+# root to chown its volume during init, so runAsNonRoot would break it (see 6A-7
+# change log).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: claimassist-postgresql
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: postgresql
+spec:
+  serviceName: claimassist-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: postgresql
+    spec:
+      volumes:
+        - name: init-db
+          configMap:
+            name: claimassist-postgresql-init
+            defaultMode: 0755
+      containers:
+        - name: postgresql
+          image: "postgres:16"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claimassist-postgresql-credentials
+                  key: POSTGRES_PASSWORD
+            - name: TZ
+              value: "Asia/Kolkata"
+            - name: PGTZ
+              value: "Asia/Kolkata"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init-db
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 200m
+              memory: 256Mi
+          startupProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d postgres"]
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d postgres"]
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/bin/sh","-c","pg_isready -U \"$POSTGRES_USER\" -d postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+            timeoutSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: "claimassist"
+          app.kubernetes.io/instance: "claimassist"
+          app.kubernetes.io/version: "1.0.0"
+          app.kubernetes.io/part-of: "claimassist"
+          app.kubernetes.io/managed-by: "Helm"
+          environment: "dev"
+          app.kubernetes.io/component: postgresql
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "8Gi"
+
+---
+# Source: claimassist/templates/ingress.yaml
+# Task 6A-11: DEV public application edge.
+# Free OCI IP-based deployment:
+# Internet -> OCI public IP -> NGINX Ingress -> API Gateway.
+#
+# TLS and cert-manager are conditional. They remain disabled for the
+# current no-domain/free-tier deployment.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: claimassist-ingress
+  namespace: "claimassist-dev"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+
+spec:
+  ingressClassName: "nginx"
+
+  rules:
+    -
+      http:
+        paths:
+          - path: "/"
+            pathType: "Prefix"
+            backend:
+              service:
+                name: claimassist-api-gateway
+                port:
+                  number: 8080
+---
+# Source: claimassist/templates/hpa.yaml
+# =============================================================================
+# Task 6A-14B-3 + TASK 6A-14B-4B - HPA for the STATELESS application services ONLY.
+#
+#   api-gateway / customer-service / claims-service / agent-service
+#
+# NO HPA is ever created for PostgreSQL, Kafka, Redis, Keycloak-PostgreSQL or
+# Keycloak (stateful; fixed single-replica on the free tier). Only a service
+# listed in .Values.hpa.services gets an HPA - absent keys render nothing.
+#
+# CPU (Resource) target is driven by each pod's CPU *request* (see the Deployment
+# resources), so scaling tracks real utilization without inventing thresholds.
+# Task 6A-14B-4B bounds min/max to 1/2 for DEV, STAGE and PROD - max is NEVER 3.
+#
+# HPA SAFETY on the single 2-OCPU node: 2 replicas is an UPPER BOUND, not
+# guaranteed simultaneous capacity. If CPU pressure drives several services toward
+# their max together, the extra pods simply become unschedulable - the Kubernetes
+# scheduler keeps the node under its capacity, so HPA cannot overflow the budget.
+#
+# POD-LEVEL scaling only - this is NOT node-level scaling. The single-node
+# Always-Free A1.Flex (2 OCPU / 12GB) remains a node-level single point of
+# failure; HPA only adds/removes pods on that one node.
+# =============================================================================
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# =============================================================================
+# Task 6A-14B-3 - NETWORKPOLICY + ENVIRONMENT ISOLATION.
+#
+# Isolation model (default-deny at the namespace trust boundary):
+#   - A single DEFAULT-DENY (Ingress + Egress) selects every workload this chart
+#     manages in THIS namespace. Nothing may reach a ClaimAssist pod, and no
+#     ClaimAssist pod may leave the namespace, unless an allow policy below
+#     (or a peer pod rule in the same namespace) permits it.
+#   - CROSS-ENVIRONMENT isolation follows structurally: every allow rule selects
+#     same-namespace pods OR specific shared infra namespaces
+#     (kube-system for DNS, claimassist-observability for Prometheus,
+#     nginx-ingress for the public edge). No rule in this chart can ever match a
+#     pod in claimassist-stage / claimassist-prod, and vice versa - so dev can
+#     never reach stage/prod (or the reverse) at the network layer, regardless of
+#     any application-level configuration.
+#   - This is enforced with the CURRENT Helm labels only (app.kubernetes.io/name,
+#     app.kubernetes.io/instance, app.kubernetes.io/component). No legacy labels.
+# =============================================================================
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3) EXPLICIT EGRESS RULES - Workaround for kube-router EGRESS ipset bug.
+#    kube-router fails to populate EGRESS ipsets for same-namespace peer policies.
+#    These explicit per-component egress rules use distinct selectors that kube-router
+#    correctly programs, allowing client pods to reach their required dependencies.
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) INGRESS RULES FOR INFRASTRUCTURE PODS
+#    These allow application services to connect to infrastructure dependencies.
+#    The default-deny blocks all ingress; these policies explicitly permit required connections.
+---
+# Source: claimassist/templates/serviceaccounts.yaml
+# Foundation ServiceAccounts - one per application.
+# LEAST PRIVILEGE:
+# - No application is granted cluster-admin or additional RBAC permissions.
+# - automountServiceAccountToken=false prevents Kubernetes API credentials
+#   from being mounted into application pods.
+# - ServiceAccounts are namespace-scoped to claimassist-<env>.

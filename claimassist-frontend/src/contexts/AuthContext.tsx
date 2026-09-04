@@ -43,9 +43,16 @@ function extractUserId(token: string): string | null {
   return decoded?.userId || null;
 }
 
+// Extract username from JWT (preferred_username claim)
+function extractUsername(token: string): string | null {
+  const decoded = decodeJWT(token);
+  return decoded?.preferred_username || decoded?.email || null;
+}
+
 export interface AuthUser {
   customerId: number;
   fullName: string;
+  username: string;
   roles: RealmRole[];
   userId: string | null;
 }
@@ -179,11 +186,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Extract roles from access token
       const roles = extractRoles(response.accessToken);
       const userId = extractUserId(response.accessToken);
+      const username = extractUsername(response.accessToken);
 
       // Store user data
       const userData: AuthUser = {
         customerId: response.customerId,
         fullName: response.fullName,
+        username: username || 'Unknown',
         roles,
         userId,
       };
@@ -244,10 +253,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const roles = extractRoles(response.accessToken);
       const userId = extractUserId(response.accessToken);
+      const username = extractUsername(response.accessToken);
 
       const userData: AuthUser = {
         customerId: response.customerId,
         fullName: response.fullName,
+        username: username || 'Unknown',
         roles,
         userId,
       };

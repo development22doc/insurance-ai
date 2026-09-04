@@ -56,7 +56,8 @@ try {
     foreach ($d in $deployments) {
         $yamlFile = Join-Path $workspace $($d.out)
         if (Test-Path $yamlFile) {
-            Select-String -Path $yamlFile -Pattern "SPRING_PROFILES_ACTIVE|SPRING_CONFIG_IMPORT|SPRING_CLOUD_CONFIG_ENABLED|SPRING_CONFIG_ADDITIONAL_LOCATIONS|SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI|imagePullSecrets|serviceAccountName|volumeMounts|volumes|securityContext|readinessProbe|livenessProbe" -SimpleMatch | Tee-Object -FilePath (Join-Path $workspace ("extract-$(($d.name))-env-and-keys.txt"))
+            # accept both singular and plural forms of the additional locations env var
+            Select-String -Path $yamlFile -Pattern "SPRING_PROFILES_ACTIVE|SPRING_CONFIG_IMPORT|SPRING_CLOUD_CONFIG_ENABLED|SPRING_CONFIG_ADDITIONAL_LOCATION|SPRING_CONFIG_ADDITIONAL_LOCATIONS|SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI|imagePullSecrets|serviceAccountName|volumeMounts|volumes|securityContext|readinessProbe|livenessProbe" -SimpleMatch | Tee-Object -FilePath (Join-Path $workspace ("extract-$(($d.name))-env-and-keys.txt"))
         }
     }
 

@@ -1,0 +1,1157 @@
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 1) DEFAULT-DENY - ingress + egress for every managed pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-default-deny
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+  policyTypes: ["Ingress", "Egress"]
+  ingress: []
+  egress: []
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 2) INTRA-NAMESPACE TRUST BOUNDARY. Every legitimate connection required by the
+#    locked architecture is between this chart's own pods in ONE namespace:
+#      gateway -> customer/claims/agent            (K8s Service DNS routes)
+#      customer/claims/agent -> PostgreSQL:5432    (DataSources)
+#      all four apps        -> Redis:6379          (rate-limit / cache)
+#      claims/agent         -> Kafka:9092          (producer + consumer)
+#      Kafka controller self-quorum -> :9093       (single-node KRaft)
+#      apps                 -> Keycloak:8080       (JWKS/issuer/admin client)
+#      Keycloak             -> Keycloak-PostgreSQL:5432
+#      Flyway Job           -> PostgreSQL:5432     (schema migrations)
+#    Gridding out every peer x port here would only duplicate the egress matrix
+#    without tightening the real trust boundary (the namespace) and invites
+#    drift/guesswork. External and cross-environment traffic stay blocked.
+#    FIX: Explicit namespaceSelector on egress to force kube-router to program
+#    distinct EGRESS ipsets (bare podSelector fails on same-namespace peers).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-internal
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3a.1) customer-service EGRESS -> PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-customer-service-postgresql
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3a.2) customer-service EGRESS -> Redis:6379
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-customer-service-redis
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3a.3) customer-service EGRESS -> Kafka:9092
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-customer-service-kafka
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: kafka
+      ports:
+        - port: 9092
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3b.1) claims-service EGRESS -> PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-claims-service-postgresql
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3b.2) claims-service EGRESS -> Redis:6379
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-claims-service-redis
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3b.3) claims-service EGRESS -> Kafka:9092
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-claims-service-kafka
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: kafka
+      ports:
+        - port: 9092
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3c.1) agent-service EGRESS -> PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-postgresql
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3c.2) agent-service EGRESS -> Redis:6379
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-redis
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3c.3) agent-service EGRESS -> Kafka:9092
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-kafka
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: kafka
+      ports:
+        - port: 9092
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3d) Keycloak EGRESS -> Keycloak-PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-keycloak
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak-postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3e) Flyway Job EGRESS -> PostgreSQL:5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-flyway
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: flyway
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: postgresql
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3f) API Gateway EGRESS -> Customer/Claims/Agent Services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-api-gateway
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+      ports:
+        - port: 8081
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+      ports:
+        - port: 8082
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+      ports:
+        - port: 8083
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3g) Services EGRESS -> Keycloak:8080 (JWKS/issuer/admin client)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-services-keycloak
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-customer-service-keycloak
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-claims-service-keycloak
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-keycloak
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4a) PostgreSQL INGRESS <- customer-service, claims-service, agent-service, flyway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-postgresql
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: postgresql
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: flyway
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4b) Redis INGRESS <- customer-service, claims-service, agent-service, api-gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-redis
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: redis
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: api-gateway
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4c) Kafka INGRESS <- customer-service, claims-service, agent-service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-kafka
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: kafka
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: kafka-ui
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 9092
+          protocol: TCP
+    - from:
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 19092
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4d) Keycloak-PostgreSQL INGRESS <- keycloak + Tailscale VPN (DEV NodePort)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-keycloak-postgresql
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak-postgresql
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: keycloak
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4e) Keycloak INGRESS <- api-gateway, customer-service, claims-service, agent-service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-keycloak
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: keycloak
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: api-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: customer-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: claims-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "default"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "claimassist"
+              app.kubernetes.io/component: agent-service
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 5) DNS - cluster DNS (kube-system) is ALWAYS required and NEVER blocked.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-dns
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "kube-system"
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-agent-service
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: agent-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8083
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-api-gateway
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-claims-service
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: claims-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: claims-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8082
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) PROMETHEUS SCRAPING. The shared Prometheus (claimassist-observability,
+#    pod app=prometheus) auto-discoveries each application replica via the
+#    prometheus.io/* annotations on the Deployment and scrapes its actuator
+#    metrics endpoint on the service's own port. Stateful workloads are NOT
+#    scraped (no such annotation), so no Prometheus rule is needed for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-prometheus-customer-service
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: customer-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: customer-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "claimassist-observability"
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8081
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 5) PUBLIC EDGE - nginx ingress-controller -> claimassist-api-gateway:8080.
+#    The controller is installed separately (shared cluster component in its own
+#    namespace, Service type NodePort on the single free-tier node - no cloud LB),
+#    and is the F5 NGINX OSS controller (nginx.org/*), NOT the retired community
+#    ingress-nginx project.
+#    ONLY the gateway receives external traffic; every other service is internal.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-controller
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: api-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: api-gateway
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "nginx-ingress"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nginx-ingress
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# =============================================================================
+# Task 6A-14B-3 - NETWORKPOLICY + ENVIRONMENT ISOLATION.
+#
+# Isolation model (default-deny at the namespace trust boundary):
+#   - A single DEFAULT-DENY (Ingress + Egress) selects every workload this chart
+#     manages in THIS namespace. Nothing may reach a ClaimAssist pod, and no
+#     ClaimAssist pod may leave the namespace, unless an allow policy below
+#     (or a peer pod rule in the same namespace) permits it.
+#   - CROSS-ENVIRONMENT isolation follows structurally: every allow rule selects
+#     same-namespace pods OR specific shared infra namespaces
+#     (kube-system for DNS, claimassist-observability for Prometheus,
+#     nginx-ingress for the public edge). No rule in this chart can ever match a
+#     pod in claimassist-stage / claimassist-prod, and vice versa - so dev can
+#     never reach stage/prod (or the reverse) at the network layer, regardless of
+#     any application-level configuration.
+#   - This is enforced with the CURRENT Helm labels only (app.kubernetes.io/name,
+#     app.kubernetes.io/instance, app.kubernetes.io/component). No legacy labels.
+# =============================================================================
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 3) EXPLICIT EGRESS RULES - Workaround for kube-router EGRESS ipset bug.
+#    kube-router fails to populate EGRESS ipsets for same-namespace peer policies.
+#    These explicit per-component egress rules use distinct selectors that kube-router
+#    correctly programs, allowing client pods to reach their required dependencies.
+---
+# Source: claimassist/templates/networkpolicy.yaml
+# 4) INGRESS RULES FOR INFRASTRUCTURE PODS
+#    These allow application services to connect to infrastructure dependencies.
+#    The default-deny blocks all ingress; these policies explicitly permit required connections.

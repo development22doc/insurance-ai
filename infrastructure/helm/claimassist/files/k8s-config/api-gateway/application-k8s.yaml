@@ -35,14 +35,20 @@ spring:
               uri: http://claimassist-claims-service:8082
               predicates:
                 - Path=/claims/**
+              filters:
+                - StripPrefix=1
             - id: agent-service
               uri: http://claimassist-agent-service:8083
               predicates:
                 - Path=/agent/**
+              filters:
+                - StripPrefix=1
             - id: policy-service
               uri: http://claimassist-customer-service:8081
               predicates:
                 - Path=/policies/**
+              filters:
+                - StripPrefix=1
   autoconfigure:
     exclude:
       - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration

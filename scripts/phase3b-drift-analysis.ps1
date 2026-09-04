@@ -175,7 +175,8 @@ function Extract-FieldsFromBlock {
     $result['security_runAsNonRoot'] = $runAsNonRoot
 
     # specific env vars: search for each by name and capture value or valueFrom reference
-    $envNames = @('SPRING_PROFILES_ACTIVE','SPRING_CONFIG_IMPORT','SPRING_CLOUD_CONFIG_ENABLED','SPRING_CONFIG_ADDITIONAL_LOCATIONS','SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI','SPRING_DATASOURCE_URL','SPRING_DATA_REDIS_HOST','SPRING_DATA_REDIS_PORT','SPRING_KAFKA_BOOTSTRAP_SERVERS','KEYCLOAK_ISSUER_URI')
+    # Accept both the singular and legacy/plural env name to be tolerant of render differences
+    $envNames = @('SPRING_PROFILES_ACTIVE','SPRING_CONFIG_IMPORT','SPRING_CLOUD_CONFIG_ENABLED','SPRING_CONFIG_ADDITIONAL_LOCATION','SPRING_CONFIG_ADDITIONAL_LOCATIONS','SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI','SPRING_DATASOURCE_URL','SPRING_DATA_REDIS_HOST','SPRING_DATA_REDIS_PORT','SPRING_KAFKA_BOOTSTRAP_SERVERS','KEYCLOAK_ISSUER_URI')
     foreach ($ename in $envNames) {
         $val = ''
         for ($i=0; $i -lt $lines.Length; $i++) {
@@ -263,7 +264,8 @@ foreach ($svc in $services) {
     $liveFields = Extract-FieldsFromBlock $liveText
     $renderedFields = Extract-FieldsFromBlock $renderedBlock
 
-    $keysToCheck = @('image','imagePullPolicy','imagePullSecrets','SPRING_PROFILES_ACTIVE','SPRING_CONFIG_IMPORT','SPRING_CLOUD_CONFIG_ENABLED','SPRING_CONFIG_ADDITIONAL_LOCATIONS','SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI','SPRING_DATASOURCE_URL','SPRING_DATA_REDIS_HOST','SPRING_DATA_REDIS_PORT','SPRING_KAFKA_BOOTSTRAP_SERVERS','KEYCLOAK_ISSUER_URI','volumeMounts_config_name','volumeMounts_config_mountPath','volumeMounts_config_readOnly','volumes_config_name','volumes_config_configMap_name','serviceAccountName','readinessProbe_path','livenessProbe_path','security_runAsUser','security_runAsGroup','security_runAsNonRoot')
+    # include both singular and plural env names so drift checks capture either form
+    $keysToCheck = @('image','imagePullPolicy','imagePullSecrets','SPRING_PROFILES_ACTIVE','SPRING_CONFIG_IMPORT','SPRING_CLOUD_CONFIG_ENABLED','SPRING_CONFIG_ADDITIONAL_LOCATION','SPRING_CONFIG_ADDITIONAL_LOCATIONS','SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI','SPRING_DATASOURCE_URL','SPRING_DATA_REDIS_HOST','SPRING_DATA_REDIS_PORT','SPRING_KAFKA_BOOTSTRAP_SERVERS','KEYCLOAK_ISSUER_URI','volumeMounts_config_name','volumeMounts_config_mountPath','volumeMounts_config_readOnly','volumes_config_name','volumes_config_configMap_name','serviceAccountName','readinessProbe_path','livenessProbe_path','security_runAsUser','security_runAsGroup','security_runAsNonRoot')
 
     foreach ($k in $keysToCheck) {
         $lv = $liveFields[$k]

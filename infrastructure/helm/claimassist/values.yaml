@@ -145,18 +145,21 @@ probes:
 
 # -----------------------------------------------------------------------------
 # Deployment strategy - ZERO-DOWNTIME rolling update (Task 6A-11).
-# maxUnavailable: 0 => never run below desired replicas during a rollout.
-# maxSurge: 1 => bring one new ready pod up before terminating an old one.
+# maxUnavailable: 1 => allow one pod to be unavailable during rollout.
+# maxSurge: 0 => do NOT create additional replacement pods before terminating old ones.
 # KEPT CONFIGURABLE for when replicas >= 2 (future/enterprise HA). On the
 # free-tier single-replica profile (6A-14B-4B) a rolling update is effectively
 # a single-pod recreate (surge cannot help a 1-replica app), so availability
 # during a rollout is NOT guaranteed there - see "Zero-downtime vs free-tier".
+# FINAL K3S FIX: maxSurge: 0 prevents Kubernetes from requiring additional CPU
+# capacity for replacement pods on the single 2-OCPU node, eliminating the
+# "Insufficient cpu" surge problem during rollouts.
 # -----------------------------------------------------------------------------
 strategy:
   type: RollingUpdate
   rollingUpdate:
-    maxUnavailable: 0
-    maxSurge: 1
+    maxUnavailable: 1
+    maxSurge: 0
 
 # PodDisruptionBudget. Rendered ONLY for services with >= 2 replicas (see
 # templates/poddisruptionbudget.yaml); a single-replica free-tier workload gets no
@@ -296,10 +299,12 @@ services:
     devExternalAccess: false
     devExternalHost: ""
     devNodePort: 30070
-    # FINAL K3S FIX: Public routes for /actuator/* health probes. Spring security
-    # requires explicit pathMatchers.permitAll() for public endpoints; the ConfigMap
-    # app.security.public-routes binding did not work until these env vars were set.
-    # After manual fix in DEV K3s, all probes passed and Gateway became Ready.
+    # FINAL K3S FIX: Public routes for /actuator/* health probes and /customer/auth/**
+    # endpoints. Spring security requires explicit pathMatchers.permitAll() for public
+    # endpoints; the ConfigMap app.security.public-routes binding did not work until
+    # these env vars were set. After manual fix in DEV K3s, all probes passed and
+    # Gateway became Ready. Added /customer/auth/** to allow public authentication
+    # endpoints (signup, authorize, callback, refresh, logout).
     env:
       - name: APP_SECURITY_PUBLIC_ROUTES_0
         value: /actuator/health
@@ -309,6 +314,8 @@ services:
         value: /actuator/info
       - name: APP_SECURITY_PUBLIC_ROUTES_3
         value: /actuator/prometheus
+      - name: APP_SECURITY_PUBLIC_ROUTES_4
+        value: /customer/auth/**
     resources:
       requests: { cpu: 100m, memory: 192Mi }
       limits: { cpu: 500m, memory: 512Mi }

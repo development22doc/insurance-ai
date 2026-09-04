@@ -1,0 +1,230 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "14"
+    meta.helm.sh/release-name: claimassist-dev
+    meta.helm.sh/release-namespace: claimassist-dev
+  creationTimestamp: "2026-08-27T11:57:19Z"
+  generation: 21
+  labels:
+    app.kubernetes.io/component: claims-service
+    app.kubernetes.io/instance: claimassist-dev
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: claimassist
+    app.kubernetes.io/part-of: claimassist
+    app.kubernetes.io/version: 1.0.0
+    environment: dev
+  name: claimassist-claims-service
+  namespace: claimassist-dev
+  resourceVersion: "1222010"
+  uid: 84837df3-9dc6-44e0-b69c-91b1ccefcd2d
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: claims-service
+      app.kubernetes.io/instance: claimassist-dev
+      app.kubernetes.io/name: claimassist
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8082"
+        prometheus.io/scrape: "true"
+      labels:
+        app.kubernetes.io/component: claims-service
+        app.kubernetes.io/instance: claimassist-dev
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: claimassist
+        app.kubernetes.io/part-of: claimassist
+        app.kubernetes.io/version: 1.0.0
+        environment: dev
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: claims-service
+                  app.kubernetes.io/instance: claimassist-dev
+                  app.kubernetes.io/name: claimassist
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: k8s
+        - name: SPRING_CONFIG_IMPORT
+        - name: SPRING_CLOUD_CONFIG_ENABLED
+          value: "false"
+        - name: SPRING_EUREKA_CLIENT_ENABLED
+          value: "false"
+        - name: SPRING_CLOUD_DISCOVERY_ENABLED
+          value: "false"
+        - name: ZIPKIN_ENDPOINT
+          value: http://zipkin-service.claimassist-observability.svc.cluster.local:9411/api/v2/spans
+        - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+          value: file:/etc/claimassist/config/
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://claimassist-postgresql:5432/claimassist_claims
+        - name: SPRING_DATASOURCE_DRIVER
+          value: org.postgresql.Driver
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: POSTGRES_USER
+              name: claimassist-postgresql-credentials
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: POSTGRES_PASSWORD
+              name: claimassist-postgresql-credentials
+        - name: SPRING_FLYWAY_ENABLED
+          value: "false"
+        - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+          value: none
+        - name: SPRING_DATA_REDIS_HOST
+          value: claimassist-redis
+        - name: SPRING_DATA_REDIS_PORT
+          value: "6379"
+        - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+          value: claimassist-kafka:9092
+        - name: CUSTOMER_SERVICE_URI
+          value: http://claimassist-customer-service:8081
+        - name: KEYCLOAK_SERVER_URL
+          value: http://100.114.133.69:30080
+        - name: KEYCLOAK_REALM
+          value: claimassist-dev
+        - name: KEYCLOAK_ISSUER_URI
+          value: http://100.114.133.69:30080/realms/claimassist-dev
+        - name: KEYCLOAK_JWKS_URI
+          value: http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs
+        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
+          value: http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs
+        - name: KEYCLOAK_TOKEN_URI
+          value: http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token
+        - name: SERVICE_TOKEN_URI
+          value: http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token
+        - name: KEYCLOAK_ADMIN_CLIENT_ID
+          value: claimassist-admin-service
+        - name: SERVICE_CLIENT_ID
+          value: claimassist-admin-service
+        - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: KEYCLOAK_ADMIN_CLIENT_SECRET
+              name: claimassist-keycloak-admin
+        - name: SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: KEYCLOAK_ADMIN_CLIENT_SECRET
+              name: claimassist-keycloak-admin
+        image: claimassistdev/claims-service:6844af0
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8082
+            scheme: HTTP
+          periodSeconds: 15
+          successThreshold: 1
+          timeoutSeconds: 3
+        name: claims-service
+        ports:
+        - containerPort: 8082
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8082
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 800m
+            memory: 640Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 1000
+          runAsNonRoot: true
+          runAsUser: 1000
+        startupProbe:
+          failureThreshold: 30
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8082
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/claimassist/config
+          name: config
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: claimassist-registry-credentials
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        runAsNonRoot: true
+      serviceAccount: claims-service-sa
+      serviceAccountName: claims-service-sa
+      terminationGracePeriodSeconds: 60
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: claims-service
+            app.kubernetes.io/instance: claimassist-dev
+            app.kubernetes.io/name: claimassist
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: claimassist-claims-service-config
+        name: config
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-09-02T22:44:52Z"
+    lastUpdateTime: "2026-09-02T22:44:52Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-09-02T22:38:30Z"
+    lastUpdateTime: "2026-09-03T21:31:39Z"
+    message: ReplicaSet "claimassist-claims-service-77b7b57769" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 21
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0
+  updatedReplicas: 1

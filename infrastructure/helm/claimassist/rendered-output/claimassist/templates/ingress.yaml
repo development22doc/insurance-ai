@@ -1,0 +1,36 @@
+---
+# Source: claimassist/templates/ingress.yaml
+# Task 6A-11: DEV public application edge.
+# Free OCI IP-based deployment:
+# Internet -> OCI public IP -> NGINX Ingress -> API Gateway.
+#
+# TLS and cert-manager are conditional. They remain disabled for the
+# current no-domain/free-tier deployment.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: claimassist-ingress
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+
+spec:
+  ingressClassName: "nginx"
+
+  rules:
+    -
+      http:
+        paths:
+          - path: "/"
+            pathType: "Prefix"
+            backend:
+              service:
+                name: claimassist-api-gateway
+                port:
+                  number: 8080

@@ -1,0 +1,177 @@
+---
+# Source: claimassist/templates/keycloak-configmap.yaml
+# Keycloak realm import - rendered as a deterministic realm-export.json and mounted
+# into the official image's import dir, consumed by the SAME `--import-realm`
+# mechanism LOCAL uses (no second competing bootstrap). It faithfully mirrors the
+# repository's infrastructure/docker/keycloak/realm-export.json:
+#   - ONE realm per environment: claimassist-dev
+#   - client claimassist-customer-app (public, Authorization Code + PKCE S256)
+#   - client claimassist-admin-service (confidential, service-account)
+#   - realm roles CUSTOMER / ADJUSTER / AUDITOR + env-named default-role
+#   - client scopes incl. the userId-claim protocol mapper (legacy_user_id -> userId)
+# The realm name, the env-dependent default-role name, the confidential admin
+# client secret and the registered redirect URIs are parameterized from values so
+# every environment gets its own realm, clients and secrets. LOCAL's committed
+# `demo.customer` user + plaintext password are intentionally NOT reproduced here
+# (users are runtime data created via the app signup / KeycloakUserProvisioningService).
+# Non-secret by design: the admin client secret is injected at deploy time via
+# values.keycloak.credentials.adminClientSecret; REAL deployment credentials are
+# supplied via Secret references, never committed to this chart/Git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claimassist-keycloak-realm
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: keycloak
+data:
+  realm-export.json: |
+    {
+      "realm": "claimassist-dev",
+      "enabled": true,
+      "displayName": "ClaimAssist AI Platform",
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "accessTokenLifespan": 6000,
+      "ssoSessionIdleTimeout": 36000,
+      "ssoSessionMaxLifespan": 36000,
+      "roles": {
+        "realm": [
+          { "name": "CUSTOMER", "description": "Default role for customers" },
+          { "name": "ADJUSTER", "description": "Claims Adjuster" },
+          { "name": "AUDITOR", "description": "Compliance Auditor" },
+          {
+            "name": "default-roles-claimassist-dev",
+            "description": "Default roles assigned to users",
+            "composite": true,
+            "composites": { "realm": ["CUSTOMER"] }
+          }
+        ]
+      },
+      "defaultRole": {
+        "name": "default-roles-claimassist-dev",
+        "composite": true
+      },
+      "clientScopes": [
+        {
+          "name": "openid",
+          "description": "OpenID Connect",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "false",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "profile",
+          "description": "OpenID Connect profile scope",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "email",
+          "description": "OpenID Connect email scope",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "address",
+          "description": "OpenID Connect address scope",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "phone",
+          "description": "OpenID Connect phone scope",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "userId-claim",
+          "description": "Adds legacy_user_id as userId claim",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "userId",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "consentRequired": false,
+              "config": {
+                "userinfo.token.claim": "true",
+                "user.attribute": "legacy_user_id",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "userId",
+                "jsonType.label": "long",
+                "multivalued": "false"
+              }
+            }
+          ]
+        }
+      ],
+      "clients": [
+        {
+          "clientId": "claimassist-customer-app",
+          "name": "ClaimAssist Customer App",
+          "enabled": true,
+          "publicClient": true,
+          "protocol": "openid-connect",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "redirectUris": [
+            "http://100.114.133.69:30070/customer/auth/callback"
+          ],
+          "webOrigins": [
+            "http://100.114.133.69:30070"
+          ],
+          "defaultClientScopes": [
+            "openid",
+            "profile",
+            "email",
+            "userId-claim"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          }
+        },
+        {
+          "clientId": "claimassist-admin-service",
+          "name": "ClaimAssist Admin Service",
+          "enabled": true,
+          "publicClient": false,
+          "protocol": "openid-connect",
+          "secret": "",
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": true
+        }
+      ]
+    }
+

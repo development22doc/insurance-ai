@@ -1,0 +1,2023 @@
+{
+  "info": {
+    "name": "ClaimAssist Complete Collection",
+    "description": "Production-quality Postman collection for ClaimAssist insurance AI microservices platform. Comprehensive testing and debugging tool covering all REST endpoints, authentication, AI/LLM flows, Kafka event-driven architecture, Redis caching, and end-to-end business flows.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "collectionName",
+      "value": "ClaimAssist"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - Environment & Health",
+      "item": [
+        {
+          "name": "Gateway Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Check API Gateway health status including liveness and readiness probes"
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{customerServiceUrl}}/actuator/health",
+              "host": ["{{customerServiceUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Check Customer Service health status"
+          },
+          "response": []
+        },
+        {
+          "name": "Claims Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{claimsServiceUrl}}/actuator/health",
+              "host": ["{{claimsServiceUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Check Claims Service health status including Kafka connectivity"
+          },
+          "response": []
+        },
+        {
+          "name": "Agent Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{agentServiceUrl}}/actuator/health",
+              "host": ["{{agentServiceUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Check Agent Service health status including Ollama, Kafka, and Redis connectivity"
+          },
+          "response": []
+        },
+        {
+          "name": "Gateway Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/info",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "info"]
+            },
+            "description": "Get Gateway build and application information"
+          },
+          "response": []
+        },
+        {
+          "name": "Gateway Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "metrics"]
+            },
+            "description": "Get available metrics endpoints for Gateway"
+          },
+          "response": []
+        },
+        {
+          "name": "Gateway Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/prometheus",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "prometheus"]
+            },
+            "description": "Get Prometheus-formatted metrics for monitoring and observability"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 - Authentication",
+      "item": [
+        {
+          "name": "Signup",
+          "item": [
+            {
+              "name": "Valid Signup",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{testEmail}}\",\n  \"fullName\": \"{{testFullName}}\",\n  \"password\": \"{{testPassword}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/signup",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "signup"]
+                },
+                "description": "Create a new customer account with valid credentials"
+              },
+              "response": []
+            },
+            {
+              "name": "Duplicate Email",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{testEmail}}\",\n  \"fullName\": \"{{testFullName}}\",\n  \"password\": \"{{testPassword}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/signup",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "signup"]
+                },
+                "description": "Attempt to signup with duplicate email - should fail"
+              },
+              "response": []
+            },
+            {
+              "name": "Invalid Email Format",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"invalid-email\",\n  \"fullName\": \"{{testFullName}}\",\n  \"password\": \"{{testPassword}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/signup",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "signup"]
+                },
+                "description": "Attempt signup with invalid email format"
+              },
+              "response": []
+            },
+            {
+              "name": "Weak Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"newuser@example.com\",\n  \"fullName\": \"{{testFullName}}\",\n  \"password\": \"weak\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/signup",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "signup"]
+                },
+                "description": "Attempt signup with weak password (< 8 characters)"
+              },
+              "response": []
+            },
+            {
+              "name": "Missing Required Fields",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{testEmail}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/signup",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "signup"]
+                },
+                "description": "Attempt signup missing required fields"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Authorize",
+          "item": [
+            {
+              "name": "Initiate OAuth2 Authorization",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/authorize",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "authorize"]
+                },
+                "description": "Initiate OAuth2 PKCE authorization flow with Keycloak. Returns redirect to Keycloak login page."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Callback",
+          "item": [
+            {
+              "name": "Valid OAuth2 Callback",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/callback?code={{authCode}}&state={{state}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "callback"],
+                  "query": [
+                    {
+                      "key": "code",
+                      "value": "{{authCode}}",
+                      "description": "Authorization code from Keycloak"
+                    },
+                    {
+                      "key": "state",
+                      "value": "{{state}}",
+                      "description": "State parameter for CSRF protection"
+                    }
+                  ]
+                },
+                "description": "Handle OAuth2 callback from Keycloak with authorization code. Exchanges code for tokens."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () {",
+                      "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "});",
+                      "",
+                      "pm.test(\"Response has access token\", function () {",
+                      "    var jsonData = pm.response.json();",
+                      "    pm.expect(jsonData).to.have.property('accessToken');",
+                      "    pm.expect(jsonData).to.have.property('refreshToken');",
+                      "    pm.expect(jsonData).to.have.property('customerId');",
+                      "});",
+                      "",
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData.accessToken) {",
+                      "    pm.environment.set(\"accessToken\", jsonData.accessToken);",
+                      "}",
+                      "if (jsonData.refreshToken) {",
+                      "    pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+                      "}",
+                      "if (jsonData.customerId) {",
+                      "    pm.environment.set(\"customerId\", jsonData.customerId);",
+                      "    pm.environment.set(\"userId\", jsonData.customerId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "OAuth2 Error Callback",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/callback?error=access_denied&error_description=User%20denied%20access&state={{state}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "callback"],
+                  "query": [
+                    {
+                      "key": "error",
+                      "value": "access_denied"
+                    },
+                    {
+                      "key": "error_description",
+                      "value": "User denied access"
+                    },
+                    {
+                      "key": "state",
+                      "value": "{{state}}"
+                    }
+                  ]
+                },
+                "description": "Handle OAuth2 error callback when user denies authorization"
+              },
+              "response": []
+            },
+            {
+              "name": "Missing Authorization Code",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/callback?state={{state}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "callback"],
+                  "query": [
+                    {
+                      "key": "state",
+                      "value": "{{state}}"
+                    }
+                  ]
+                },
+                "description": "Handle callback missing authorization code"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "item": [
+            {
+              "name": "Valid Token Refresh",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/refresh?refreshToken={{refreshToken}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "refresh"],
+                  "query": [
+                    {
+                      "key": "refreshToken",
+                      "value": "{{refreshToken}}"
+                    }
+                  ]
+                },
+                "description": "Refresh access token using valid refresh token"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () {",
+                      "    pm.expect(pm.response.code).to.eql(200);",
+                      "});",
+                      "",
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData.accessToken) {",
+                      "    pm.environment.set(\"accessToken\", jsonData.accessToken);",
+                      "}",
+                      "if (jsonData.refreshToken) {",
+                      "    pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Invalid Refresh Token",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/refresh?refreshToken=invalid_token",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "refresh"],
+                  "query": [
+                    {
+                      "key": "refreshToken",
+                      "value": "invalid_token"
+                    }
+                  ]
+                },
+                "description": "Attempt token refresh with invalid refresh token"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "item": [
+            {
+              "name": "Valid Logout",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/logout?refreshToken={{refreshToken}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "logout"],
+                  "query": [
+                    {
+                      "key": "refreshToken",
+                      "value": "{{refreshToken}}"
+                    }
+                  ]
+                },
+                "description": "Logout user and invalidate refresh token"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 204\", function () {",
+                      "    pm.expect(pm.response.code).to.eql(204);",
+                      "});",
+                      "",
+                      "pm.environment.set(\"accessToken\", \"\");",
+                      "pm.environment.set(\"refreshToken\", \"\");"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - Customer APIs",
+      "item": [
+        {
+          "name": "Customer Profile",
+          "item": [
+            {
+              "name": "Update Customer Profile",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Updated Name\",\n  \"kycStatus\": \"VERIFIED\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/customers/{{customerId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "customers", "{{customerId}}"]
+                },
+                "description": "Update authenticated customer's profile information"
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Customer Account",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/customers/{{customerId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "customers", "{{customerId}}"]
+                },
+                "description": "Delete authenticated customer's account"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Policy Management",
+          "item": [
+            {
+              "name": "Create Policy",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"coveragePlanId\": {{coveragePlanId}},\n  \"effectiveDate\": \"2024-01-01T00:00:00Z\",\n  \"renewalDate\": \"2025-01-01T00:00:00Z\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies"]
+                },
+                "description": "Create a new insurance policy for the authenticated customer"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () {",
+                      "    pm.expect(pm.response.code).to.eql(200);",
+                      "});",
+                      "",
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData.id) {",
+                      "    pm.environment.set(\"policyId\", jsonData.id);",
+                      "}",
+                      "if (jsonData.policyNumber) {",
+                      "    pm.environment.set(\"policyNumber\", jsonData.policyNumber);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Get All My Policies",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/all",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "all"]
+                },
+                "description": "Retrieve all policies for the authenticated customer (uses cached query service)"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Policy By ID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/{{policyId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "{{policyId}}"]
+                },
+                "description": "Retrieve a specific policy by ID for the authenticated customer"
+              },
+              "response": []
+            },
+            {
+              "name": "Update Policy",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"renewalDate\": \"2025-06-01T00:00:00Z\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/{{policyId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "{{policyId}}"]
+                },
+                "description": "Update an existing policy for the authenticated customer"
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Policy",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/{{policyId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "{{policyId}}"]
+                },
+                "description": "Delete a policy for the authenticated customer"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 - Claims APIs",
+      "item": [
+        {
+          "name": "Claim Management",
+          "item": [
+            {
+              "name": "Submit Claim",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$randomUUID}}",
+                    "description": "Prevents duplicate claim submissions"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"policyId\": {{policyId}},\n  \"incidentType\": \"Auto Accident\",\n  \"incidentDate\": \"2024-08-15T10:30:00Z\",\n  \"estimatedAmountCents\": 500000\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/claims",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims"]
+                },
+                "description": "Submit a new insurance claim with idempotency key to prevent duplicates"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 201\", function () {",
+                      "    pm.expect(pm.response.code).to.eql(201);",
+                      "});",
+                      "",
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData.id) {",
+                      "    pm.environment.set(\"claimId\", jsonData.id);",
+                      "}",
+                      "if (jsonData.claimNumber) {",
+                      "    pm.environment.set(\"claimNumber\", jsonData.claimNumber);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Get My Claims",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/claims",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims"]
+                },
+                "description": "Retrieve all claims for the authenticated customer"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Claim By ID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/claims/{{claimId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims", "{{claimId}}"]
+                },
+                "description": "Retrieve a specific claim by ID"
+              },
+              "response": []
+            },
+            {
+              "name": "Update Claim Status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"note\": \"Claim under review by adjuster\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/claims/{{claimId}}/status",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims", "{{claimId}}", "status"]
+                },
+                "description": "Update claim status (requires UPDATE_STATUS permission). Triggers state machine validation."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 - AI / LLM / Agent",
+      "item": [
+        {
+          "name": "Agent Chat",
+          "item": [
+            {
+              "name": "Stream Agent Response",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What is the current status of my claim?\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Stream AI agent response using Server-Sent Events. Agent will use tools to retrieve claim status, policy coverage, and documents before responding."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Conversation History",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/agent/claims/{{claimId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "claims", "{{claimId}}"]
+                },
+                "description": "Retrieve complete conversation history for a claim including all user messages and AI responses with tool calls"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Tool Calling Scenarios",
+          "item": [
+            {
+              "name": "Agent Checks Claim Status",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What's the status of claim {{claimNumber}}?\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Agent will invoke get_claim_status tool to retrieve current claim status and history"
+              },
+              "response": []
+            },
+            {
+              "name": "Agent Checks Policy Coverage",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What's my coverage limit and deductible for this claim?\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Agent will invoke get_policy_coverage tool to retrieve policy details including deductible and coverage limits"
+              },
+              "response": []
+            },
+            {
+              "name": "Agent Checks Claim Documents",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What documents have been submitted for this claim?\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Agent will invoke get_claim_documents tool to retrieve submitted documents with OCR status and fraud scores"
+              },
+              "response": []
+            },
+            {
+              "name": "Agent Proposes Status Change",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"Please mark this claim as DOCS_REQUESTED since we need additional documentation\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Agent will invoke propose_claim_update tool to request status change. This triggers Kafka saga to claims-service for validation and application."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "AI Error Scenarios",
+          "item": [
+            {
+              "name": "Empty Message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Test agent behavior with empty message - should trigger validation error"
+              },
+              "response": []
+            },
+            {
+              "name": "Invalid Claim ID",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What's my claim status?\",\n  \"claimId\": 999999\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Test agent behavior with non-existent claim ID - tools should return NOT_FOUND errors"
+              },
+              "response": []
+            },
+            {
+              "name": "Unauthorized Access",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer invalid_token"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What's my claim status?\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Test agent behavior with invalid authentication token"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 - Internal APIs",
+      "item": [
+        {
+          "name": "Internal Customer Service",
+          "item": [
+            {
+              "name": "Get Policy Coverage (Internal)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "X-User-Id",
+                    "value": "{{userId}}",
+                    "description": "Required for service-to-service calls"
+                  }
+                ],
+                "url": {
+                  "raw": "{{customerServiceUrl}}/internal/v1/policies/{{policyId}}/coverage",
+                  "host": ["{{customerServiceUrl}}"],
+                  "path": ["internal", "v1", "policies", "{{policyId}}", "coverage"]
+                },
+                "description": "Internal API to get policy coverage. Used by agent-service. Supports both USER tokens and SERVICE tokens with X-User-Id header."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Internal Claims Service",
+          "item": [
+            {
+              "name": "Get Claim Status (Internal)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{claimsServiceUrl}}/internal/v1/claims/{{claimId}}/status",
+                  "host": ["{{claimsServiceUrl}}"],
+                  "path": ["internal", "v1", "claims", "{{claimId}}", "status"]
+                },
+                "description": "Internal API to get claim status with full history. Used by agent-service."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Claim Documents (Internal)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{claimsServiceUrl}}/internal/v1/claims/{{claimId}}/documents",
+                  "host": ["{{claimsServiceUrl}}"],
+                  "path": ["internal", "v1", "claims", "{{claimId}}", "documents"]
+                },
+                "description": "Internal API to get claim documents with OCR status and fraud scores. Used by agent-service."
+              },
+              "response": []
+            },
+            {
+              "name": "Check Claim Permission (Internal)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{claimsServiceUrl}}/internal/v1/claims/{{claimId}}/permissions/check?permission=VIEW",
+                  "host": ["{{claimsServiceUrl}}"],
+                  "path": ["internal", "v1", "claims", "{{claimId}}", "permissions", "check"],
+                  "query": [
+                    {
+                      "key": "permission",
+                      "value": "VIEW"
+                    }
+                  ]
+                },
+                "description": "Internal API to check if user has specific permission on a claim. Used by agent-service for tool authorization."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 - Gateway Routing",
+      "item": [
+        {
+          "name": "Route to Customer Service",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/policies/all",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "policies", "all"]
+            },
+            "description": "Test gateway routing to customer-service via /customer/** path"
+          },
+          "response": []
+        },
+        {
+          "name": "Route to Claims Service",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/claims",
+              "host": ["{{baseUrl}}"],
+              "path": ["claims"]
+            },
+            "description": "Test gateway routing to claims-service via /claims/** path"
+          },
+          "response": []
+        },
+        {
+          "name": "Route to Agent Service",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/agent/claims/{{claimId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["agent", "claims", "{{claimId}}"]
+            },
+            "description": "Test gateway routing to agent-service via /agent/** path"
+          },
+          "response": []
+        },
+        {
+          "name": "Route to Policies (Customer Service)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/policies/{{policyId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["policies", "{{policyId}}"]
+            },
+            "description": "Test gateway routing to customer-service via /policies/** path"
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid Route",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invalid/path",
+              "host": ["{{baseUrl}}"],
+              "path": ["invalid", "path"]
+            },
+            "description": "Test gateway behavior with invalid route - should return 404"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 - End-to-End Business Flows",
+      "item": [
+        {
+          "name": "Complete Customer Journey",
+          "item": [
+            {
+              "name": "1. Signup New Customer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{$randomEmail}}\",\n  \"fullName\": \"{{$randomFullName}}\",\n  \"password\": \"TestPassword123!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/signup",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "signup"]
+                },
+                "description": "Step 1: Create new customer account"
+              },
+              "response": []
+            },
+            {
+              "name": "2. Create Insurance Policy",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"coveragePlanId\": {{coveragePlanId}},\n  \"effectiveDate\": \"2024-01-01T00:00:00Z\",\n  \"renewalDate\": \"2025-01-01T00:00:00Z\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies"]
+                },
+                "description": "Step 2: Create insurance policy for the customer"
+              },
+              "response": []
+            },
+            {
+              "name": "3. Submit Insurance Claim",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$randomUUID}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"policyId\": {{policyId}},\n  \"incidentType\": \"Auto Accident\",\n  \"incidentDate\": \"2024-08-15T10:30:00Z\",\n  \"estimatedAmountCents\": 500000\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/claims",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims"]
+                },
+                "description": "Step 3: Submit an insurance claim against the policy"
+              },
+              "response": []
+            },
+            {
+              "name": "4. AI Agent Claim Inquiry",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What is the current status of my claim and what's my coverage?\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Step 4: Use AI agent to inquire about claim status and coverage (triggers tool calls)"
+              },
+              "response": []
+            },
+            {
+              "name": "5. Review Claim Status",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/claims/{{claimId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims", "{{claimId}}"]
+                },
+                "description": "Step 5: Verify final claim status after AI interaction"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "AI-Driven Claim Update Flow",
+          "item": [
+            {
+              "name": "1. Agent Requests Status Change",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"Please move this claim to UNDER_REVIEW status for manual review\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Step 1: Agent proposes status change via propose_claim_update tool"
+              },
+              "response": []
+            },
+            {
+              "name": "2. Check Kafka Event Publication",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/agent/claims/{{claimId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "claims", "{{claimId}}"]
+                },
+                "description": "Step 2: Verify agent recorded the proposal in conversation history (saga initiated)"
+              },
+              "response": []
+            },
+            {
+              "name": "3. Verify Claim Status Updated",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/claims/{{claimId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims", "{{claimId}}"]
+                },
+                "description": "Step 3: Verify claim status was updated by Kafka saga (after claims-service processes the event)"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 - Authorization / RBAC",
+      "item": [
+        {
+          "name": "Public Route Access",
+          "item": [
+            {
+              "name": "Access Without Token - Signup",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{$randomEmail}}\",\n  \"fullName\": \"Test User\",\n  \"password\": \"TestPassword123!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/auth/signup",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "auth", "signup"]
+                },
+                "description": "Public route - should work without authentication token"
+              },
+              "response": []
+            },
+            {
+              "name": "Access Without Token - Health",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/actuator/health",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["actuator", "health"]
+                },
+                "description": "Public health endpoint - should work without authentication"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Protected Route Access",
+          "item": [
+            {
+              "name": "Access Without Token - Policies",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/all",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "all"]
+                },
+                "description": "Protected route - should fail with 401 without token"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 401\", function () {",
+                      "    pm.expect(pm.response.code).to.eql(401);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Access With Invalid Token",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer invalid_token"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/all",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "all"]
+                },
+                "description": "Protected route - should fail with 401 with invalid token"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 401\", function () {",
+                      "    pm.expect(pm.response.code).to.eql(401);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "response": []
+            },
+            {
+              "name": "Access With Valid Token",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/all",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "all"]
+                },
+                "description": "Protected route - should succeed with valid token"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () {",
+                      "    pm.expect(pm.response.code).to.eql(200);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Resource Ownership",
+          "item": [
+            {
+              "name": "Access Another Customer's Policy",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/999",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "999"]
+                },
+                "description": "Attempt to access another customer's policy - should fail with 404 (security through obscurity)"
+              },
+              "response": []
+            },
+            {
+              "name": "Update Another Customer's Claim",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"note\": \"Unauthorized update attempt\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/claims/999/status",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims", "999", "status"]
+                },
+                "description": "Attempt to update another customer's claim - should fail with 404 or 403"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09 - Negative / Failure Tests",
+      "item": [
+        {
+          "name": "Validation Failures",
+          "item": [
+            {
+              "name": "Create Policy - Missing Required Field",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"effectiveDate\": \"2024-01-01T00:00:00Z\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies"]
+                },
+                "description": "Missing coveragePlanId - should fail validation"
+              },
+              "response": []
+            },
+            {
+              "name": "Submit Claim - Invalid Incident Date",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"policyId\": {{policyId}},\n  \"incidentType\": \"Auto Accident\",\n  \"incidentDate\": \"2025-12-31T00:00:00Z\",\n  \"estimatedAmountCents\": 500000\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/claims",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims"]
+                },
+                "description": "Incident date in future - should fail validation"
+              },
+              "response": []
+            },
+            {
+              "name": "Submit Claim - Missing Policy ID",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"incidentType\": \"Auto Accident\",\n  \"incidentDate\": \"2024-08-15T10:30:00Z\",\n  \"estimatedAmountCents\": 500000\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/claims",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims"]
+                },
+                "description": "Missing policyId - should fail validation"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Resource Not Found",
+          "item": [
+            {
+              "name": "Get Non-Existent Policy",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/999999",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "999999"]
+                },
+                "description": "Request non-existent policy - should return 404"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Non-Existent Claim",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/claims/999999",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims", "999999"]
+                },
+                "description": "Request non-existent claim - should return 404"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Non-Existent Agent Conversation",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/agent/claims/999999",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "claims", "999999"]
+                },
+                "description": "Request conversation for non-existent claim - should return empty array or 404"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Business Rule Failures",
+          "item": [
+            {
+              "name": "Invalid Status Transition",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"INVALID_STATUS\",\n  \"note\": \"Testing invalid transition\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/claims/{{claimId}}/status",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims", "{{claimId}}", "status"]
+                },
+                "description": "Attempt invalid status transition - should fail state machine validation"
+              },
+              "response": []
+            },
+            {
+              "name": "Submit Claim for Non-Owned Policy",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"policyId\": 999999,\n  \"incidentType\": \"Auto Accident\",\n  \"incidentDate\": \"2024-08-15T10:30:00Z\",\n  \"estimatedAmountCents\": 500000\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/claims",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["claims"]
+                },
+                "description": "Attempt to submit claim for policy you don't own - should fail authorization"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10 - Caching & Performance",
+      "item": [
+        {
+          "name": "Redis Cache Behavior",
+          "item": [
+            {
+              "name": "First Request - Cache Miss",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/all",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "all"]
+                },
+                "description": "First request should hit database (cache miss) - observe response time"
+              },
+              "response": []
+            },
+            {
+              "name": "Second Request - Cache Hit",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer/policies/all",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customer", "policies", "all"]
+                },
+                "description": "Second request should hit Redis cache (cache hit) - observe faster response time"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Agent Service Cache Invalidation",
+          "item": [
+            {
+              "name": "Agent Reads Claim Status (First Time)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What's my claim status?\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Agent first reads claim status - caches result in Redis"
+              },
+              "response": []
+            },
+            {
+              "name": "Agent Proposes Update (Invalidates Cache)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"Move to UNDER_REVIEW\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Agent proposes update - should invalidate claim status cache"
+              },
+              "response": []
+            },
+            {
+              "name": "Agent Reads Claim Status (Fresh)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"What's my claim status now?\",\n  \"claimId\": {{claimId}}\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/agent/stream",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["agent", "stream"]
+                },
+                "description": "Agent reads claim status again - should fetch fresh data from backend (cache was invalidated)"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

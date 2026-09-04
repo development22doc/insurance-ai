@@ -2,13 +2,13 @@
 services:
   frontend:
     replicas: 1
-    k8sConfig: true
+    k8sConfig: false
     port: 80
-    image: claimassist-frontend
-    imageTag: "<REPLACE_WITH_IMAGE_TAG>" # set to built image tag
+    image: claimassistdev/claimassist-frontend
+    imageTag: "frontend-final-e2e" # set to built image tag
     env:
       - name: VITE_API_BASE_URL
-        value: "<SET_AT_BUILD_TIME_OR_LOCALLY_OVERRIDE>" # Set via docker build --build-arg or override locally; do NOT hardcode an OCI IP in repo
+        value: "http://100.114.133.69:30070"
     devExternalAccess: true
     devNodePort: 30071
     resources:
@@ -18,3 +18,27 @@ services:
       limits:
         cpu: 250m
         memory: 256Mi
+    # Frontend-specific probes - nginx static files, not Spring Boot actuator
+    probes:
+      startup:
+        path: /
+        periodSeconds: 10
+        failureThreshold: 30
+        timeoutSeconds: 3
+      liveness:
+        path: /
+        periodSeconds: 15
+        failureThreshold: 10
+        timeoutSeconds: 3
+      readiness:
+        path: /
+        periodSeconds: 10
+        failureThreshold: 3
+        timeoutSeconds: 3
+        initialDelaySeconds: 5
+    # Frontend-specific - nginx needs to run as root to write to cache directories
+    # Override the default pod-level securityContext for frontend only
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0

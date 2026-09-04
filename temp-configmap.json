@@ -1,0 +1,27 @@
+{
+    "apiVersion": "v1",
+    "data": {
+        "realm-export.json": "{\n  \"realm\": \"claimassist-dev\",\n  \"enabled\": true,\n  \"displayName\": \"ClaimAssist AI Platform\",\n  \"sslRequired\": \"external\",\n  \"registrationAllowed\": false,\n  \"loginWithEmailAllowed\": true,\n  \"duplicateEmailsAllowed\": false,\n  \"resetPasswordAllowed\": true,\n  \"editUsernameAllowed\": false,\n  \"bruteForceProtected\": true,\n  \"accessTokenLifespan\": 6000,\n  \"ssoSessionIdleTimeout\": 36000,\n  \"ssoSessionMaxLifespan\": 36000,\n  \"roles\": {\n    \"realm\": [\n      { \"name\": \"CUSTOMER\", \"description\": \"Default role for customers\" },\n      { \"name\": \"ADJUSTER\", \"description\": \"Claims Adjuster\" },\n      { \"name\": \"AUDITOR\", \"description\": \"Compliance Auditor\" },\n      {\n        \"name\": \"default-roles-claimassist-dev\",\n        \"description\": \"Default roles assigned to users\",\n        \"composite\": true,\n        \"composites\": { \"realm\": [\"CUSTOMER\"] }\n      }\n    ]\n  },\n  \"defaultRole\": {\n    \"name\": \"default-roles-claimassist-dev\",\n    \"composite\": true\n  },\n  \"clientScopes\": [\n    {\n      \"name\": \"openid\",\n      \"description\": \"OpenID Connect\",\n      \"protocol\": \"openid-connect\",\n      \"attributes\": {\n        \"include.in.token.scope\": \"false\",\n        \"display.on.consent.screen\": \"true\"\n      }\n    },\n    {\n      \"name\": \"profile\",\n      \"description\": \"OpenID Connect profile scope\",\n      \"protocol\": \"openid-connect\",\n      \"attributes\": {\n        \"include.in.token.scope\": \"true\",\n        \"display.on.consent.screen\": \"true\"\n      }\n    },\n    {\n      \"name\": \"email\",\n      \"description\": \"OpenID Connect email scope\",\n      \"protocol\": \"openid-connect\",\n      \"attributes\": {\n        \"include.in.token.scope\": \"true\",\n        \"display.on.consent.screen\": \"true\"\n      }\n    },\n    {\n      \"name\": \"address\",\n      \"description\": \"OpenID Connect address scope\",\n      \"protocol\": \"openid-connect\",\n      \"attributes\": {\n        \"include.in.token.scope\": \"true\",\n        \"display.on.consent.screen\": \"true\"\n      }\n    },\n    {\n      \"name\": \"phone\",\n      \"description\": \"OpenID Connect phone scope\",\n      \"protocol\": \"openid-connect\",\n      \"attributes\": {\n        \"include.in.token.scope\": \"true\",\n        \"display.on.consent.screen\": \"true\"\n      }\n    },\n    {\n      \"name\": \"userId-claim\",\n      \"description\": \"Adds legacy_user_id as userId claim\",\n      \"protocol\": \"openid-connect\",\n      \"attributes\": {\n        \"include.in.token.scope\": \"true\",\n        \"display.on.consent.screen\": \"false\"\n      },\n      \"protocolMappers\": [\n        {\n          \"name\": \"userId\",\n          \"protocol\": \"openid-connect\",\n          \"protocolMapper\": \"oidc-usermodel-attribute-mapper\",\n          \"consentRequired\": false,\n          \"config\": {\n            \"userinfo.token.claim\": \"true\",\n            \"user.attribute\": \"legacy_user_id\",\n            \"id.token.claim\": \"true\",\n            \"access.token.claim\": \"true\",\n            \"claim.name\": \"userId\",\n            \"jsonType.label\": \"long\",\n            \"multivalued\": \"false\"\n          }\n        }\n      ]\n    }\n  ],\n  \"clients\": [\n    {\n      \"clientId\": \"claimassist-customer-app\",\n      \"name\": \"ClaimAssist Customer App\",\n      \"enabled\": true,\n      \"publicClient\": true,\n      \"protocol\": \"openid-connect\",\n      \"standardFlowEnabled\": true,\n      \"directAccessGrantsEnabled\": false,\n      \"redirectUris\": [\n        \"http://100.114.133.69:30070/customer/auth/callback\"\n      ],\n      \"webOrigins\": [\n        \"http://100.114.133.69:30070\"\n      ],\n      \"defaultClientScopes\": [\n        \"openid\",\n        \"profile\",\n        \"email\",\n        \"userId-claim\"\n      ],\n      \"attributes\": {\n        \"pkce.code.challenge.method\": \"S256\"\n      }\n    },\n    {\n      \"clientId\": \"claimassist-admin-service\",\n      \"name\": \"ClaimAssist Admin Service\",\n      \"enabled\": true,\n      \"publicClient\": false,\n      \"protocol\": \"openid-connect\",\n      \"secret\": \"\",\n      \"standardFlowEnabled\": false,\n      \"directAccessGrantsEnabled\": false,\n      \"serviceAccountsEnabled\": true\n    }\n  ]\n}\n"
+    },
+    "kind": "ConfigMap",
+    "metadata": {
+        "annotations": {
+            "meta.helm.sh/release-name": "claimassist-dev",
+            "meta.helm.sh/release-namespace": "claimassist-dev"
+        },
+        "creationTimestamp": "2026-08-27T11:57:18Z",
+        "labels": {
+            "app.kubernetes.io/component": "keycloak",
+            "app.kubernetes.io/instance": "claimassist-dev",
+            "app.kubernetes.io/managed-by": "Helm",
+            "app.kubernetes.io/name": "claimassist",
+            "app.kubernetes.io/part-of": "claimassist",
+            "app.kubernetes.io/version": "1.0.0",
+            "environment": "dev"
+        },
+        "name": "claimassist-keycloak-realm",
+        "namespace": "claimassist-dev",
+        "resourceVersion": "1226935",
+        "uid": "e79ceb89-0788-44a6-90d0-0a4cbcd129de"
+    }
+}

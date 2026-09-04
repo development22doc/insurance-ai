@@ -1,7 +1,7 @@
 # Multi-stage build: build React app with Node, serve with nginx
 # Accept VITE_API_BASE_URL as a build-arg so the production bundle is built
 # with the correct API base URL (required because Vite embeds env vars at build time).
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 ARG VITE_API_BASE_URL=""
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 WORKDIR /app

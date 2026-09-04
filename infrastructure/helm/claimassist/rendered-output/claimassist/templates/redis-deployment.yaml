@@ -1,0 +1,108 @@
+---
+# Source: claimassist/templates/redis-deployment.yaml
+# Redis Deployment - Task 6A-8. Redis is a CACHE / ephemeral state resource.
+# Exactly ONE instance per K8s environment namespace (dev / stage / prod each get
+# their own isolated claimassist-redis). A Deployment (not a StatefulSet) is used
+# because Redis needs no stable pod identity and no persistent storage here.
+#
+# CACHE LOSS IS ACCEPTABLE: RDB save and AOF are disabled (--save "" --appendonly
+# no) and /data is an ephemeral emptyDir, so a restart clears the cache and
+# applications recover from their source of truth (PostgreSQL). Intentionally NO
+# PVC, NO persistence, NO replication, NO Sentinel, NO Cluster.
+#
+# protected-mode is disabled because this cluster has no Redis AUTH (LOCAL uses
+# no password), and the applications connect from OTHER pods via the ClusterIP
+# Service (their pod IP, not loopback); protected-mode would otherwise reject
+# those non-loopback connections. Runs as the official redis image user (999) with
+# all capabilities dropped.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claimassist-redis
+  namespace: "default"
+  labels:
+    app.kubernetes.io/name: "claimassist"
+    app.kubernetes.io/instance: "claimassist"
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/part-of: "claimassist"
+    app.kubernetes.io/managed-by: "Helm"
+    environment: "dev"
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "claimassist"
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "claimassist"
+        app.kubernetes.io/instance: "claimassist"
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/part-of: "claimassist"
+        app.kubernetes.io/managed-by: "Helm"
+        environment: "dev"
+        app.kubernetes.io/component: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: "redis:7.4"
+          imagePullPolicy: IfNotPresent
+          command: ["redis-server"]
+          args:
+            - "--save"          # disable RDB snapshots (cache loss acceptable)
+            - ""
+            - "--appendonly"     # disable AOF persistence (cache loss acceptable)
+            - "no"
+            - "--protected-mode" # allow non-loopback (other-pod) clients without AUTH
+            - "no"
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 6
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+      volumes:
+        # Ephemeral scratch for the redis user's transient writes. NOT a PVC:
+        # data is lost on pod restart by design (cache-loss tolerant).
+        - name: data
+          emptyDir: {}

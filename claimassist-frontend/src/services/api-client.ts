@@ -21,6 +21,17 @@ class ApiClient {
     return token ? { Authorization: 'Bearer ' + token } : {};
   }
 
+  // Determine if an endpoint requires authentication
+  private requiresAuth(endpoint: string): boolean {
+    // Public/unauthenticated endpoints that should NOT have auth headers
+    const publicEndpoints = [
+      API_ENDPOINTS.AUTH_AUTHORIZE,
+      API_ENDPOINTS.AUTH_SIGNUP,
+      API_ENDPOINTS.AUTH_CALLBACK,
+    ];
+    return !publicEndpoints.some(pub => endpoint === pub);
+  }
+
   // Handle 401 errors by attempting token refresh
   private async handle401Error(): Promise<void> {
     if (refreshPromise) {
@@ -88,7 +99,7 @@ class ApiClient {
     const url = `${this.baseURL}${endpoint}`;
     const headers = {
       ...this.defaultHeaders,
-      ...this.getAuthHeader(),
+      ...(this.requiresAuth(endpoint) ? this.getAuthHeader() : {}),
       ...options.headers,
     };
 
@@ -104,14 +115,14 @@ class ApiClient {
 
       clearTimeout(timeoutId);
 
-      if (response.status === 401 && getAccessToken()) {
+      if (response.status === 401 && getAccessToken() && this.requiresAuth(endpoint)) {
         await this.handle401Error();
 
         response = await fetch(url, {
           ...options,
           headers: {
             ...headers,
-            ...this.getAuthHeader(),
+            ...(this.requiresAuth(endpoint) ? this.getAuthHeader() : {}),
           },
           signal: controller.signal,
         });
@@ -171,7 +182,7 @@ class ApiClient {
     const url = `${this.baseURL}${endpoint}`;
     const headers = {
       ...this.defaultHeaders,
-      ...this.getAuthHeader(),
+      ...(this.requiresAuth(endpoint) ? this.getAuthHeader() : {}),
       Accept: 'text/event-stream',
     };
 
