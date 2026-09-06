@@ -141,3 +141,8 @@ logging:
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
+
+# Policy Service configuration for future migration
+# Phase 6: Integration preparation only. Not activated in existing flow.
+policy-service:
+  uri: ${POLICY_SERVICE_URI:http://localhost:8084}

@@ -86,6 +86,11 @@ keycloak:
   admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:${SERVICE_CLIENT_ID:claimassist-admin-service}}
   admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:${SERVICE_CLIENT_SECRET:local-dev-admin-client-secret}}
 
+# Policy Service configuration for future migration
+# Phase 6: Integration preparation only. Not activated in existing flow.
+policy-service:
+  uri: ${POLICY_SERVICE_URI:http://localhost:8084}
+
 security:
   service-client:
     registration-id: internal-service

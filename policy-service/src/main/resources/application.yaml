@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: policy-service
+
+server:
+  port: 8084
+
+# Defer config imports to environment-specific files (local/local-k8s/dev)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+# Common-lib observability defaults are used via dependency

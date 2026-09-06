@@ -1,0 +1,78 @@
+package com.claimassist.platform.policy_service.controller;
+
+import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
+import com.claimassist.platform.policy_service.service.PolicyCoverageQueryService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/internal/v1/policies")
+@RequiredArgsConstructor
+public class InternalPolicyController {
+
+    private final PolicyCoverageQueryService policyCoverageQueryService;
+    private final com.claimassist.platform.policy_service.security.InternalRequestIdentity internalRequestIdentity;
+    private final com.claimassist.platform.policy_service.service.PolicyCreationService policyCreationService;
+
+
+    /**
+     * Internal coverage lookup used by Claims and Agent services.
+     * Phase 1: scaffold only. Implementation returns ServiceUnavailable by default.
+     */
+    @GetMapping("/{policyId}/coverage")
+    public ResponseEntity<PolicyCoverageDto> getPolicyCoverage(
+            @PathVariable Long policyId,
+            @RequestHeader(value = "X-User-Id", required = false) String xUserId) {
+
+        // Resolve the calling user id according to the platform's internal endpoint contract
+        Long callingUserId = internalRequestIdentity.resolveCallingUserId(xUserId);
+
+        String callingUserIdStr = callingUserId == null ? null : callingUserId.toString();
+        PolicyCoverageDto dto = policyCoverageQueryService.getPolicyCoverage(policyId, callingUserIdStr);
+        if (dto == null) {
+            return ResponseEntity.status(503).build();
+        }
+        return ResponseEntity.ok(dto);
+    }
+
+    @PostMapping
+    public ResponseEntity<com.claimassist.platform.policy_service.dto.PolicyCreateResponseDto> createPolicy(
+            @RequestBody com.claimassist.platform.policy_service.dto.PolicyCreateRequestDto body,
+            @RequestHeader(value = "X-User-Id", required = false) String xUserId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+
+        // Require idempotency header at controller boundary for internal API
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new com.claimassist.platform.common_lib.error.BadRequestException("Missing Idempotency-Key header");
+        }
+
+        // Resolve the calling user id according to the platform's internal endpoint contract
+        Long callingUserId = internalRequestIdentity.resolveCallingUserId(xUserId);
+        String callingUserIdStr = callingUserId == null ? null : callingUserId.toString();
+
+        // Map request DTO to service request
+        com.claimassist.platform.policy_service.service.PolicyCreationRequest svcReq = new com.claimassist.platform.policy_service.service.PolicyCreationRequest();
+        svcReq.setCustomerId(body.customerId);
+        svcReq.setProductCode(body.productCode);
+        svcReq.setPlanCode(body.planCode);
+        svcReq.setCoverageCode(body.coverageCode);
+        svcReq.setEffectiveDate(body.effectiveDate);
+        svcReq.setRenewalDate(body.renewalDate);
+        svcReq.setSuccessUrl(body.successUrl);
+        svcReq.setCancelUrl(body.cancelUrl);
+
+        com.claimassist.platform.policy_service.entity.Policy created = policyCreationService.createPolicy(svcReq, callingUserIdStr, idempotencyKey);
+
+        com.claimassist.platform.policy_service.dto.PolicyCreateResponseDto resp = new com.claimassist.platform.policy_service.dto.PolicyCreateResponseDto(
+                created.getId(), created.getPolicyNumber(), created.getStatus(), created.getStripePaymentIntentId());
+
+        return ResponseEntity.ok(resp);
+    }
+}
