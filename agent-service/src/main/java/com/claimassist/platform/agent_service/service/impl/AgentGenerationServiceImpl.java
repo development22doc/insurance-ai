@@ -24,7 +24,7 @@ import com.claimassist.platform.agent_service.security.OutputGuardrails;
 import com.claimassist.platform.agent_service.service.AgentGenerationService;
 import com.claimassist.platform.agent_service.service.AgentTurnPersistence;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyCoverageGateway;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import com.claimassist.platform.common_lib.observability.MDCUtility;
@@ -68,7 +68,7 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
     private final AgentTurnPersistence agentTurnPersistenceService;
     private final ToolRegistry toolRegistry;
     private final ClaimsServiceGateway claimsServiceGateway;
-    private final CustomerServiceGateway customerServiceGateway;
+    private final PolicyCoverageGateway policyCoverageGateway;
     private final InputGuardrails inputGuardrails;
     private final OutputGuardrails outputGuardrails;
     private final ConversationMemoryService conversationMemoryService;
@@ -126,7 +126,7 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
         List<ProposedUpdate> proposedUpdates = new CopyOnWriteArrayList<>();
         List<ToolExecutionMetadata> executions = new CopyOnWriteArrayList<>();
         InsuranceAgentTools tools = new InsuranceAgentTools(
-                claimId, policyId, userId, claimsServiceGateway, customerServiceGateway, toolRegistry,
+                claimId, policyId, userId, claimsServiceGateway, policyCoverageGateway, toolRegistry,
                 agentAiProperties.getMaxNoteLength(), proposedUpdates::add,
                 agentTelemetry, requestId, correlation);
 

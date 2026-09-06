@@ -2,14 +2,24 @@
 spring:
   config:
     import: optional:file:../application-local.properties
+  datasource:
+    url: jdbc:postgresql://${POLICY_DB_HOST:localhost}:${POLICY_DB_PORT:5432}/claimassist_policy
+    username: ${POLICY_DB_USER:policy}
+    password: ${POLICY_DB_PASSWORD:policy}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://100.114.133.69:30080/realms/claimassist-dev}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs}
 
 server:
   port: 8084
 
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/claimassist_policy
-    username: ${POLICY_DB_USER:policy}
-    password: ${POLICY_DB_PASSWORD:policy}
+security:
+  internal:
+    trusted-service-client-ids: ${TRUSTED_SERVICE_CLIENT_IDS:claimassist-admin-service,claims-service,agent-service}
 
-# No DB access in Phase 1 (scaffold).
+policy:
+  migration:
+    legacy-coverage-plan-map: {}

@@ -19,6 +19,9 @@ spring:
           customer-service:
             connect-timeout: 2000
             read-timeout: 5000
+          policy-service:
+            connect-timeout: 2000
+            read-timeout: 5000
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -125,12 +128,22 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
+      policyService:
+        sliding-window-size: 20
+        sliding-window-type: COUNT_BASED
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
   bulkhead:
     instances:
       claimsService:
         max-concurrent-calls: 20
         max-wait-duration: 500ms
       customerService:
+        max-concurrent-calls: 20
+        max-wait-duration: 500ms
+      policyService:
         max-concurrent-calls: 20
         max-wait-duration: 500ms
   ratelimiter:
@@ -140,6 +153,10 @@ resilience4j:
         limit-refresh-period: 1s
         timeout-duration: 0s
       customerService:
+        limit-for-period: 100
+        limit-refresh-period: 1s
+        timeout-duration: 0s
+      policyService:
         limit-for-period: 100
         limit-refresh-period: 1s
         timeout-duration: 0s
@@ -158,6 +175,18 @@ resilience4j:
           - feign.FeignException.Unauthorized
           - feign.FeignException.NotFound
       customerService:
+        max-attempts: 3
+        wait-duration: 300ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - feign.FeignException.ServiceUnavailable
+          - feign.FeignException.GatewayTimeout
+          - java.io.IOException
+        ignore-exceptions:
+          - feign.FeignException.Unauthorized
+          - feign.FeignException.NotFound
+      policyService:
         max-attempts: 3
         wait-duration: 300ms
         enable-exponential-backoff: true

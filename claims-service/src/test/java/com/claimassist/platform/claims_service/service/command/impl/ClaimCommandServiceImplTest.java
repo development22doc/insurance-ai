@@ -9,7 +9,7 @@ import com.claimassist.platform.claims_service.repository.ClaimRepository;
 import com.claimassist.platform.claims_service.repository.ClaimStatusHistoryRepository;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.SubmitClaimCommand;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.UpdateClaimStatusCommand;
-import com.claimassist.platform.claims_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.claims_service.service.gateway.PolicyCoverageGateway;
 import com.claimassist.platform.claims_service.support.IdempotencyService;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import com.claimassist.platform.common_lib.enums.ClaimRole;
@@ -48,7 +48,7 @@ class ClaimCommandServiceImplTest {
     private ClaimPartyRepository claimPartyRepository;
     private ClaimStatusHistoryRepository claimStatusHistoryRepository;
     private ClaimMapper claimMapper;
-    private CustomerServiceGateway customerServiceGateway;
+    private PolicyCoverageGateway policyCoverageGateway;
     private IdempotencyService idempotencyService;
     private ClaimCommandServiceImpl service;
 
@@ -61,13 +61,13 @@ class ClaimCommandServiceImplTest {
         claimPartyRepository = mock(ClaimPartyRepository.class);
         claimStatusHistoryRepository = mock(ClaimStatusHistoryRepository.class);
         claimMapper = mock(ClaimMapper.class);
-        customerServiceGateway = mock(CustomerServiceGateway.class);
+        policyCoverageGateway = mock(PolicyCoverageGateway.class);
         idempotencyService = mock(IdempotencyService.class);
         EventLogger eventLogger = mock(EventLogger.class);
         PerformanceLogger performanceLogger = mock(PerformanceLogger.class);
         service = new ClaimCommandServiceImpl(
                 claimRepository, claimPartyRepository, claimStatusHistoryRepository,
-                claimMapper, customerServiceGateway, idempotencyService,
+                claimMapper, policyCoverageGateway, idempotencyService,
                 eventLogger, performanceLogger);
     }
 
@@ -83,7 +83,7 @@ class ClaimCommandServiceImplTest {
     @Test
     void submitClaimRefusesNonActivePolicy() {
         idempotencyRunsCommand();
-        when(customerServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID))
+        when(policyCoverageGateway.getPolicyCoverage(POLICY_ID, USER_ID))
                 .thenReturn(new PolicyCoverageDto(POLICY_ID, "P-1", "CANCELLED", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
 
         SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", Instant.now(), 1000L, USER_ID, "k-1");
@@ -96,7 +96,7 @@ class ClaimCommandServiceImplTest {
     @Test
     void submitClaimCreatesClaimAndRegistersSubmitterAsPolicyholder() {
         idempotencyRunsCommand();
-        when(customerServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID))
+        when(policyCoverageGateway.getPolicyCoverage(POLICY_ID, USER_ID))
                 .thenReturn(new PolicyCoverageDto(POLICY_ID, "P-1", "ACTIVE", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
         Claim saved = newClaim(1L, ClaimStatus.SUBMITTED);
         when(claimRepository.save(any(Claim.class))).thenReturn(saved);

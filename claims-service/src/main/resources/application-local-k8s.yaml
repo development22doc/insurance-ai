@@ -37,6 +37,10 @@ spring:
             url: ${CUSTOMER_SERVICE_URI:http://localhost:8081}
             connect-timeout: 2000
             read-timeout: 5000
+          policy-service:
+            url: ${POLICY_SERVICE_URI:http://localhost:8084}
+            connect-timeout: 2000
+            read-timeout: 5000
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_claims
     username: ${POSTGRES_USER:claimassist}

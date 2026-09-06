@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${POLICY_DB_HOST:postgres}:${POLICY_DB_PORT:5432}/claimassist_policy_dev
+    username: ${POLICY_DB_USER:policy}
+    password: ${POLICY_DB_PASSWORD:policy}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8180/realms/claimassist}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://keycloak:8180/realms/claimassist/protocol/openid-connect/certs}
+
+server:
+  port: 8084
+
+security:
+  internal:
+    trusted-service-client-ids: ${TRUSTED_SERVICE_CLIENT_IDS:claimassist-admin-service,claims-service,agent-service}
+
+policy:
+  migration:
+    legacy-coverage-plan-map: {}

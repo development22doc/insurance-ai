@@ -31,10 +31,13 @@ public class PolicyVersion {
     @JoinColumn(name = "plan_id", nullable = false)
     Plan plan;
 
+    @Column(name = "premium_cents")
     Long premiumCents;
 
+    @Column(name = "deductible_cents")
     Long deductibleCents;
 
+    @Column(name = "coverage_limit_cents")
     Long coverageLimitCents;
 
     @Column(name = "effective_from")

@@ -34,4 +34,5 @@ class PolicyLifecycleTest {
         p.transitionTo(LifecycleStatus.ACTIVE);
         assertThat(p.getStatus()).isEqualTo("ACTIVE");
     }
+
 }

@@ -71,6 +71,9 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://100.114.133.69:30080/realms/claimassist-dev}
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs}
 
+policy-service:
+  uri: ${POLICY_SERVICE_URI:http://localhost:8084}
+
 security:
   service-client:
     registration-id: internal-service

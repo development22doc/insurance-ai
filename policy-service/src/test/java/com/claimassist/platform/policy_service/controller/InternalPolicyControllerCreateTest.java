@@ -36,6 +36,9 @@ class InternalPolicyControllerCreateTest {
     com.claimassist.platform.policy_service.service.PolicyCoverageQueryService coverageService;
 
     @MockBean
+    com.claimassist.platform.policy_service.service.PolicyLookupService policyLookupService;
+
+    @MockBean
     com.claimassist.platform.policy_service.security.InternalRequestIdentity internalRequestIdentity;
 
     @MockBean

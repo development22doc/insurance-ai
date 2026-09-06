@@ -60,7 +60,7 @@ spring:
                 - StripPrefix=1
 
             - id: policy-service
-              uri: http://localhost:8081
+              uri: http://localhost:8084
               predicates:
                 - Path=/policies/**
               filters:

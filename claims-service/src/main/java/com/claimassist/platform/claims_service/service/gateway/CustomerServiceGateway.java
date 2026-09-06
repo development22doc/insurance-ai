@@ -28,7 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class CustomerServiceGateway {
+public class CustomerServiceGateway implements PolicyCoverageGateway {
 
     private static final String INSTANCE = "customerService";
 

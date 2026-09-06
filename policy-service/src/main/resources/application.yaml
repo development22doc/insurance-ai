@@ -1,9 +1,23 @@
 spring:
   application:
     name: policy-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
 
 server:
   port: 8084
+
+security:
+  internal:
+    trusted-service-client-ids: ${TRUSTED_SERVICE_CLIENT_IDS:claimassist-admin-service,claims-service,agent-service}
+
+policy:
+  migration:
+    legacy-coverage-plan-map: {}
 
 # Defer config imports to environment-specific files (local/local-k8s/dev)
 

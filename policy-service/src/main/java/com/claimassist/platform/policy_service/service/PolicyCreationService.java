@@ -294,11 +294,17 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
     }
 
     private void createInitialPolicyVersion(Policy policy, Plan plan, Coverage coverage) {
+        // Policy Service's current catalog model does not have an authoritative premium source
+        // for a plan or coverage item. The Customer source model holds annualPremiumCents at the
+        // aggregate CoveragePlan level, but the target policy-version snapshot does not currently
+        // define a guaranteed conversion from that legacy value. Avoid silently writing the
+        // deductible into the premium field because that would corrupt the meaning of the versioned
+        // premium snapshot. This remains nullable until a business-approved premium source is added.
         PolicyVersion version = PolicyVersion.builder()
                 .policy(policy)
                 .versionNumber(1)
                 .plan(plan)
-                .premiumCents(plan.getDeductibleCents())
+                .premiumCents(null)
                 .deductibleCents(coverage.getDeductibleCents())
                 .coverageLimitCents(coverage.getLimitCents())
                 .effectiveFrom(policy.getEffectiveDate())

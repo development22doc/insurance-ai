@@ -5,7 +5,7 @@ import com.claimassist.platform.agent_service.ai.tool.ToolRegistry;
 import com.claimassist.platform.agent_service.observability.AgentTelemetry;
 import com.claimassist.platform.agent_service.observability.AuditEvent;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyCoverageGateway;
 import com.claimassist.platform.common_lib.dto.ClaimDocumentSummaryDto;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
@@ -65,7 +65,7 @@ public class InsuranceAgentTools {
     private final Long policyId;
     private final Long userId;
     private final ClaimsServiceGateway claimsServiceGateway;
-    private final CustomerServiceGateway customerServiceGateway;
+    private final PolicyCoverageGateway policyCoverageGateway;
     private final ToolRegistry registry;
 
     /**
@@ -92,15 +92,15 @@ public class InsuranceAgentTools {
 
     /** Convenience constructor without telemetry (kept for backward compatibility). */
     public InsuranceAgentTools(Long claimId, Long policyId, Long userId, ClaimsServiceGateway claimsServiceGateway,
-                               CustomerServiceGateway customerServiceGateway, ToolRegistry registry,
+                               PolicyCoverageGateway policyCoverageGateway, ToolRegistry registry,
                                int maxNoteLength, Consumer<ProposedUpdate> onProposedUpdate) {
-        this(claimId, policyId, userId, claimsServiceGateway, customerServiceGateway, registry,
+        this(claimId, policyId, userId, claimsServiceGateway, policyCoverageGateway, registry,
                 maxNoteLength, onProposedUpdate, null, "", "");
     }
 
     /** Constructor with an optional telemetry sink for security/audit observability. */
     public InsuranceAgentTools(Long claimId, Long policyId, Long userId, ClaimsServiceGateway claimsServiceGateway,
-                               CustomerServiceGateway customerServiceGateway, ToolRegistry registry,
+                               PolicyCoverageGateway policyCoverageGateway, ToolRegistry registry,
                                int maxNoteLength, Consumer<ProposedUpdate> onProposedUpdate,
                                @Nullable AgentTelemetry agentTelemetry,
                                String requestId, String correlationId) {
@@ -108,7 +108,7 @@ public class InsuranceAgentTools {
         this.policyId = policyId;
         this.userId = userId;
         this.claimsServiceGateway = claimsServiceGateway;
-        this.customerServiceGateway = customerServiceGateway;
+        this.policyCoverageGateway = policyCoverageGateway;
         this.registry = registry;
         this.maxNoteLength = maxNoteLength;
         this.onProposedUpdate = onProposedUpdate;
@@ -155,7 +155,7 @@ public class InsuranceAgentTools {
             return unauthorized().toJson();
         }
         try {
-            PolicyCoverageDto coverage = customerServiceGateway.getPolicyCoverage(policyId, userId);
+            PolicyCoverageDto coverage = policyCoverageGateway.getPolicyCoverage(policyId, userId);
             log.info("Tool call: get_policy_coverage(policyId={}, userId={})", policyId, userId);
             if (coverage == null || NOT_FOUND.equals(coverage.status())) {
                 return ToolResult.failure("POLICY_NOT_FOUND", false,
@@ -164,7 +164,7 @@ public class InsuranceAgentTools {
             return ToolResult.success(coverage, meta.source()).toJson();
         } catch (Exception e) {
             log.warn("get_policy_coverage failed for policy {}: {}", policyId, e.toString());
-            return ToolResult.failure("CUSTOMER_SERVICE_UNAVAILABLE", true,
+            return ToolResult.failure("POLICY_SERVICE_UNAVAILABLE", true,
                     "Unable to retrieve the policy coverage right now.").toJson();
         }
     }

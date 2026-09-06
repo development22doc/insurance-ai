@@ -78,6 +78,11 @@ class FlywayMigrationTest {
                 assertThat(tables.toString()).contains("products");
                 assertThat(tables.toString()).contains("policy_version");
                 assertThat(tables.toString()).contains("policy_version_coverage");
+
+                try (ResultSet versionColumns = stmt.executeQuery(
+                        "SELECT column_name FROM information_schema.columns WHERE table_name = 'policies' AND column_name = 'version'")) {
+                    assertThat(versionColumns.next()).isTrue();
+                }
             }
         }
     }

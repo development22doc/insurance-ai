@@ -54,7 +54,7 @@ class AgentSagaResponseHandlerTest {
                 .sagaId("saga-1").claimId(10L).success(true).build();
 
         handler().handleClaimUpdateResponse(json(response), "claim-update-response-event",
-                0, 1L, "corr-1", null, null, mockAck());
+                0, 1L, "corr-1", null, null, "req-1", mockAck());
 
         assertThat(event.getStatus()).isEqualTo(AgentEventStatus.CONFIRMED);
         verify(eventLogger).logKafkaEvent(null, null, java.util.Map.ofEntries(
@@ -73,8 +73,8 @@ class AgentSagaResponseHandlerTest {
                 .sagaId("saga-1").claimId(10L).success(false).errorMessage("not allowed").build();
 
         handler().handleClaimUpdateResponse(json(response), "claim-update-response-event",
-                0, 1L, null, null, null, mockAck());
-
+                0, 1L, null, null, null, "req-2", mockAck());
+ 
         assertThat(event.getStatus()).isEqualTo(AgentEventStatus.FAILED);
         assertThat(event.getContent()).contains("REJECTED: not allowed");
     }
@@ -88,8 +88,8 @@ class AgentSagaResponseHandlerTest {
                 .sagaId("saga-1").claimId(10L).success(true).build();
 
         handler().handleClaimUpdateResponse(json(response), "claim-update-response-event",
-                0, 1L, null, null, null, mockAck());
-
+                0, 1L, null, null, null, "req-3", mockAck());
+ 
         assertThat(event.getStatus()).isEqualTo(AgentEventStatus.CONFIRMED);
         verify(repository, never()).save(any());
     }
@@ -103,8 +103,8 @@ class AgentSagaResponseHandlerTest {
                 .sagaId("saga-1").claimId(10L).success(false).errorMessage("late failure").build();
 
         handler().handleClaimUpdateResponse(json(response), "claim-update-response-event",
-                0, 1L, null, null, null, mockAck());
-
+                0, 1L, null, null, null, "req-4", mockAck());
+ 
         assertThat(event.getStatus()).isEqualTo(AgentEventStatus.CONFIRMED);
         assertThat(event.getContent()).doesNotContain("REJECTED");
     }

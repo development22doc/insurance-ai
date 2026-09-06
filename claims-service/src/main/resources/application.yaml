@@ -16,6 +16,9 @@ spring:
           customer-service:
             connect-timeout: 2000
             read-timeout: 5000
+          policy-service:
+            connect-timeout: 2000
+            read-timeout: 5000
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
@@ -85,9 +88,23 @@ resilience4j:
       customerService:
         sliding-window-size: 20
         minimum-number-of-calls: 10
+      policyService:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
   retry:
     instances:
       customerService:
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - feign.FeignException.ServiceUnavailable
+          - feign.FeignException.GatewayTimeout
+          - java.io.IOException
+        ignore-exceptions:
+          - feign.FeignException.Unauthorized
+          - feign.FeignException.NotFound
+          - feign.FeignException.BadRequest
+      policyService:
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
         retry-exceptions:
