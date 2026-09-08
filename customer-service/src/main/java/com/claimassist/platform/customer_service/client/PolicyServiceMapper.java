@@ -67,7 +67,7 @@ public class PolicyServiceMapper {
     /**
      * Maps Policy Service response to Customer's PolicyResponse format.
      *
-     * NOTE: Policy Service currently returns minimal fields (policyId, policyNumber, status, stripePaymentIntentId).
+     * NOTE: Policy Service returns (policyId, policyNumber, status, stripePaymentIntentId, clientSecret, amount, currency).
      * The effectiveDate and renewalDate are not returned in the current contract.
      * This method uses the original request dates as a workaround.
      *

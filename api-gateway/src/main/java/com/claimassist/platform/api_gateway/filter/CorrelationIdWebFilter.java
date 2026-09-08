@@ -42,15 +42,24 @@ public class CorrelationIdWebFilter {
 
     private final DeveloperIdentity developerIdentity;
 
+    public CorrelationIdWebFilter() {
+        this(new DeveloperIdentity("local", "unknown"));
+    }
+
     public CorrelationIdWebFilter(DeveloperIdentity developerIdentity) {
         this.developerIdentity = developerIdentity;
     }
 
     static final int MAX_LENGTH = 64;
 
+    @Bean(name = "gatewayDeveloperIdentity")
+    public DeveloperIdentity gatewayDeveloperIdentity() {
+        return new DeveloperIdentity("local", "unknown");
+    }
+
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE + 10)
-    public WebFilter correlationWebFilter(DeveloperIdentity developerIdentity) {
+    public WebFilter correlationWebFilter(@org.springframework.beans.factory.annotation.Qualifier("gatewayDeveloperIdentity") DeveloperIdentity developerIdentity) {
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
 

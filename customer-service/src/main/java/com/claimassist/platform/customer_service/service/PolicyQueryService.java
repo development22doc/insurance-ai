@@ -30,9 +30,16 @@ public class PolicyQueryService {
 
     private final PolicyRepository policyRepository;
     private final PolicyMapper policyMapper;
+    private final com.claimassist.platform.customer_service.client.PolicyServiceAdapter policyServiceAdapter;
+    private final com.claimassist.platform.customer_service.config.PolicyServiceProperties policyServiceProperties;
 
     @Cacheable(cacheNames = RedisCacheConfig.MY_POLICIES_CACHE, key = "#customerId")
     public List<PolicyResponse> getMyPolicies(Long customerId) {
+        if (policyServiceProperties.isReadDelegationEnabled()) {
+            // Delegate to Policy Service for authoritative read; cache the result under the same key
+            return policyServiceAdapter.getPoliciesForCustomer(customerId, customerId);
+        }
+
         return policyRepository.findByCustomerId(customerId).stream()
                 .map(policyMapper::toPolicyResponse)
                 .toList();
@@ -54,6 +61,13 @@ public class PolicyQueryService {
     // which was a redundant DB round-trip on every cache miss.
     @Cacheable(cacheNames = RedisCacheConfig.POLICY_COVERAGE_CACHE, key = "#policyId + '-' + #callingUserId", sync = true)
     public PolicyCoverageDto getPolicyCoverage(Long policyId, Long callingUserId) {
+        if (policyServiceProperties.isReadDelegationEnabled()) {
+            // Delegate to Policy Service internal API - do not fallback silently
+            com.claimassist.platform.common_lib.dto.PolicyCoverageDto dto = policyServiceAdapter.getPolicyCoverage(policyId, callingUserId);
+            if (dto == null) throw new ResourceNotFoundException("Policy", String.valueOf(policyId));
+            return dto;
+        }
+
         Policy policy = policyRepository.findByIdAndCustomerId(policyId, callingUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("Policy", policyId.toString()));
 

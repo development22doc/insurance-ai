@@ -47,6 +47,9 @@ public class PolicySecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/webhooks/**").permitAll()
+                        .requestMatchers("/internal/**").permitAll()
+                        .requestMatchers("/api/v1/policies/products/**").permitAll()
+                        .requestMatchers("/api/v1/policies/plans/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(

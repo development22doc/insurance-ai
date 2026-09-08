@@ -68,6 +68,7 @@ class PolicyCreationServiceStripeTest {
         plan.setActive(true);
         plan.setCreatedAt(Instant.now().minusSeconds(3600));
         plan.setDeductibleCents(1000L);
+        plan.setPremiumCents(2000L);
         when(planRepository.findByCodeAndProductId(any(), anyLong())).thenReturn(Optional.of(plan));
 
         Coverage coverage = new Coverage();
@@ -80,6 +81,9 @@ class PolicyCreationServiceStripeTest {
         // Mock stripe PaymentIntent.create static
         PaymentIntent mockIntent = mock(PaymentIntent.class);
         when(mockIntent.getId()).thenReturn("pi_test_123");
+        when(mockIntent.getClientSecret()).thenReturn("cs_test_123");
+        when(mockIntent.getAmount()).thenReturn(2000L);
+        when(mockIntent.getCurrency()).thenReturn("usd");
 
         try (MockedStatic<com.stripe.model.PaymentIntent> mocked = Mockito.mockStatic(com.stripe.model.PaymentIntent.class)) {
             mocked.when(() -> com.stripe.model.PaymentIntent.create(any(PaymentIntentCreateParams.class), any()))
@@ -128,6 +132,7 @@ class PolicyCreationServiceStripeTest {
         plan.setActive(true);
         plan.setCreatedAt(Instant.now().minusSeconds(3600));
         plan.setDeductibleCents(1000L);
+        plan.setPremiumCents(2000L);
         when(planRepository.findByCodeAndProductId(any(), anyLong())).thenReturn(Optional.of(plan));
 
         Coverage coverage = new Coverage();
@@ -139,6 +144,9 @@ class PolicyCreationServiceStripeTest {
 
         PaymentIntent mockIntent = mock(PaymentIntent.class);
         when(mockIntent.getId()).thenReturn("pi_test_123");
+        when(mockIntent.getClientSecret()).thenReturn("cs_test_123");
+        when(mockIntent.getAmount()).thenReturn(2000L);
+        when(mockIntent.getCurrency()).thenReturn("usd");
 
         AtomicReference<PolicyVersion> persistedVersion = new AtomicReference<>();
         doAnswer(invocation -> {
@@ -173,7 +181,7 @@ class PolicyCreationServiceStripeTest {
             service.createPolicy(req, "42", "idem-2");
 
             assertThat(persistedVersion.get()).isNotNull();
-            assertThat(persistedVersion.get().getPremiumCents()).isNull();
+            assertThat(persistedVersion.get().getPremiumCents()).isEqualTo(2000L);
             assertThat(persistedVersion.get().getDeductibleCents()).isEqualTo(1000L);
         }
     }

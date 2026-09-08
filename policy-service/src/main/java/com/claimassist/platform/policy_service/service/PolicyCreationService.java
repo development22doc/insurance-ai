@@ -32,18 +32,32 @@ public class PolicyCreationService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    @org.springframework.beans.factory.annotation.Value("${stripe.secret-key:}")
+    private String stripeSecretKey;
+
+    @org.springframework.beans.factory.annotation.Value("${stripe.webhook-signing-secret:}")
+    private String stripeWebhookSigningSecret;
+
     /**
      * Externalized Stripe secret key - configured via STRIPE_SECRET_KEY env var
-     * or spring.stripe.secret-key in application.yml. Never hardcoded.
+     * or stripe.secret-key in application.yml. Never hardcoded.
      */
     private String getStripeSecretKey() {
-        return Optional.ofNullable(System.getenv("STRIPE_SECRET_KEY"))
+        return Optional.ofNullable(stripeSecretKey)
+                .or(() -> Optional.ofNullable(System.getenv("STRIPE_SECRET_KEY")))
                 .or(() -> Optional.ofNullable(System.getProperty("STRIPE_SECRET_KEY")))
-                .orElseGet(() -> {
-                    // Spring Boot will bind from application.yml config;
-                    // misconfiguration will be caught at first Stripe API call.
-                    return null;
-                });
+                .orElse(null);
+    }
+
+    /**
+     * Externalized Stripe webhook signing secret - configured via SPRING_STRIPE_WEBHOOK_SIGNING_SECRET env var
+     * or stripe.webhook-signing-secret in application.yml. Never hardcoded.
+     */
+    private String getStripeWebhookSigningSecret() {
+        return Optional.ofNullable(stripeWebhookSigningSecret)
+                .or(() -> Optional.ofNullable(System.getenv("SPRING_STRIPE_WEBHOOK_SIGNING_SECRET")))
+                .or(() -> Optional.ofNullable(System.getProperty("SPRING_STRIPE_WEBHOOK_SIGNING_SECRET")))
+                .orElse(null);
     }
 
     /**
@@ -70,7 +84,7 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
         // Compute deterministic request fingerprint (exclude idempotency key and non-business fields)
         String requestFingerprint = computeRequestFingerprint(request);
 
-        // Execute creation under idempotency guard. We cache only a small response map (policyId/policyNumber)
+        // Execute creation under idempotency guard. We cache the full response including Stripe details
         java.util.Map<String, Object> result = idempotencyService.execute(
                 idempotencyKey,
                 "create-policy",
@@ -96,13 +110,19 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
                     // 7. Generate unique policy number
                     String policyNumber = generatePolicyNumber(request.getCustomerId());
 
-                    // 8. Create Stripe payment intent (use client-supplied idempotency key when available)
-                    String paymentIntentId = createStripePaymentIntent(request, coverage, policyNumber, idempotencyKey);
-
-                    // 9. Persist policy in PENDING_PAYMENT state. Activation will occur after server-side verification (e.g., webhook).
+                    // 8. Create and persist policy in PENDING_PAYMENT state so we have a server-generated policyId
                     Policy policy = createPolicyEntity(request, policyNumber, product, plan, coverage);
                     policy.setStatus(com.claimassist.platform.policy_service.entity.LifecycleStatus.PENDING_PAYMENT.name());
-                    // attach stripe payment intent id for deterministic correlation
+                    // Persist now to obtain an id for inclusion in Stripe metadata
+                    entityManager.flush();
+
+                    // 9. Create Stripe payment intent (use client-supplied idempotency key when available)
+                    java.util.Map<String, Object> paymentResult = createStripePaymentIntent(request, plan, policyNumber, idempotencyKey, policy.getId());
+                    String paymentIntentId = (String) paymentResult.get("paymentIntentId");
+                    String clientSecret = (String) paymentResult.get("clientSecret");
+                    Long amount = (Long) paymentResult.get("amount");
+
+                    // 10. Attach stripe payment intent id for deterministic correlation and create initial PolicyVersion
                     policy.setStripePaymentIntentId(paymentIntentId);
 
                     // 11. Create initial PolicyVersion (version 1)
@@ -111,7 +131,14 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
                     // 12. Persist transactionally - Policy + PolicyVersion atomic
                     Policy savedPolicy = policyRepository.save(policy);
 
-                    return java.util.Map.of("policyId", savedPolicy.getId(), "policyNumber", savedPolicy.getPolicyNumber());
+                    return java.util.Map.of(
+                            "policyId", savedPolicy.getId(),
+                            "policyNumber", savedPolicy.getPolicyNumber(),
+                            "stripePaymentIntentId", paymentIntentId,
+                            "clientSecret", clientSecret,
+                            "amount", amount,
+                            "currency", "usd"
+                    );
                 }
         );
 
@@ -119,6 +146,14 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
         Long policyId = policyIdNum == null ? null : policyIdNum.longValue();
         if (policyId == null) throw new IllegalStateException("Idempotent create returned no policy id");
         return policyRepository.findById(policyId).orElseThrow(() -> new IllegalStateException("Policy not found after creation: " + policyId));
+    }
+
+    /**
+     * Get the cached Stripe payment details for an idempotent create request.
+     * This is used by the controller to return client_secret for the initial request.
+     */
+    public java.util.Map<String, Object> getCachedPaymentDetails(String idempotencyKey, Long callingUserId) {
+        return idempotencyService.getCachedResponse(idempotencyKey, callingUserId, "create-policy");
     }
 
     // -- Authentication --
@@ -191,9 +226,9 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
         if (!Boolean.TRUE.equals(plan.getActive())) {
             throw new IllegalArgumentException("Cannot create policy on inactive plan");
         }
-        // Coverage must have valid pricing
-        if (coverage.getDeductibleCents() == null || coverage.getDeductibleCents() <= 0) {
-            throw new IllegalArgumentException("Coverage must have a positive deductible amount");
+        // Plan must have authoritative premium pricing
+        if (plan.getPremiumCents() == null || plan.getPremiumCents() <= 0) {
+            throw new IllegalArgumentException("Plan must have a positive premium amount");
         }
     }
 
@@ -214,7 +249,7 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
 
     // -- Stripe payment operations --
 
-    private String createStripePaymentIntent(PolicyCreationRequest request, Coverage coverage, String policyNumber, String idempotencyKey) {
+    private java.util.Map<String, Object> createStripePaymentIntent(PolicyCreationRequest request, Plan plan, String policyNumber, String idempotencyKey, Long policyId) {
         String secretKey = getStripeSecretKey();
         if (secretKey == null) {
             throw new ServiceUnavailableException("Stripe secret key not configured");
@@ -223,20 +258,22 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
         Stripe.apiKey = secretKey;
 
         try {
+            // Build metadata from server-side authoritative values only
+            java.util.Map<String, String> metadata = java.util.Map.of(
+                    "policy_id", policyId == null ? "" : String.valueOf(policyId),
+                    "policy_number", policyNumber,
+                    "policy_customer_id", request.getCustomerId() == null ? "" : request.getCustomerId().toString(),
+                    "product_code", request.getProductCode() == null ? "" : request.getProductCode(),
+                    "plan_code", request.getPlanCode() == null ? "" : request.getPlanCode(),
+                    "coverage_code", request.getCoverageCode() == null ? "" : request.getCoverageCode()
+            );
+
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-                    .setAmount(coverage.getDeductibleCents())
+                    .setAmount(plan.getPremiumCents())
                     .setCurrency("usd")
                     .addPaymentMethodType("card")
-                    .setDescription("Policy Coverage - " + coverage.getName() + " for policy " + request.getCustomerId())
-                    .putAllMetadata(
-                            java.util.Map.of(
-                                    "policy_number", policyNumber,
-                                    "policy_customer_id", request.getCustomerId().toString(),
-                                    "policy_product", request.getProductCode(),
-                                    "policy_plan", request.getPlanCode(),
-                                    "policy_coverage", request.getCoverageCode()
-                            )
-                    )
+                    .setDescription("ClaimAssist Policy Purchase - " + policyNumber)
+                    .putAllMetadata(metadata)
                     .build();
 
             // Use provided idempotency key when available (client-supplied) to ensure retries reuse the same Stripe key.
@@ -250,13 +287,18 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
 
             com.stripe.model.PaymentIntent intent = com.stripe.model.PaymentIntent.create(params, requestOptions);
 
-            return intent.getId();
+            return java.util.Map.of(
+                    "paymentIntentId", intent.getId(),
+                    "clientSecret", intent.getClientSecret(),
+                    "amount", intent.getAmount(),
+                    "currency", intent.getCurrency()
+            );
         } catch (com.stripe.exception.StripeException e) {
             throw new ServiceUnavailableException("Stripe payment creation failed: " + e.getMessage());
         }
     }
 
-    private boolean verifyStripePayment(String paymentIntentId) {
+    public boolean verifyStripePayment(String paymentIntentId) {
         String secretKey = getStripeSecretKey();
         if (secretKey == null) {
             return false;
@@ -270,6 +312,45 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
             return "succeeded".equals(intent.getStatus());
         } catch (com.stripe.exception.StripeException e) {
             // Log but do not expose sensitive payment information
+            throw new ServiceUnavailableException("Stripe payment verification failed");
+        }
+    }
+
+    /**
+     * Verify PaymentIntent status AND that the PaymentIntent metadata references the given policy.
+     * This defends against accepting a PaymentIntent that succeeded but was created for a different policy.
+     */
+    public boolean verifyStripePaymentForPolicy(String paymentIntentId, com.claimassist.platform.policy_service.entity.Policy policy) {
+        String secretKey = getStripeSecretKey();
+        if (secretKey == null) {
+            return false;
+        }
+
+        Stripe.apiKey = secretKey;
+
+        try {
+            com.stripe.model.PaymentIntent intent = com.stripe.model.PaymentIntent.retrieve(paymentIntentId);
+            boolean succeeded = "succeeded".equals(intent.getStatus());
+            if (!succeeded) return false;
+
+            // Additional metadata checks: policy_number and policy_customer_id if present
+            java.util.Map<String, String> metadata = intent.getMetadata();
+            if (metadata == null) return false;
+
+            String metaPolicyNumber = metadata.get("policy_number");
+            String metaCustomerId = metadata.get("policy_customer_id");
+
+            if (metaPolicyNumber != null && !metaPolicyNumber.isBlank()) {
+                if (!metaPolicyNumber.equals(policy.getPolicyNumber())) return false;
+            }
+
+            if (metaCustomerId != null && !metaCustomerId.isBlank()) {
+                if (policy.getCustomerId() == null) return false;
+                if (!metaCustomerId.equals(String.valueOf(policy.getCustomerId()))) return false;
+            }
+
+            return true;
+        } catch (com.stripe.exception.StripeException e) {
             throw new ServiceUnavailableException("Stripe payment verification failed");
         }
     }
@@ -294,19 +375,14 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
     }
 
     private void createInitialPolicyVersion(Policy policy, Plan plan, Coverage coverage) {
-        // Policy Service's current catalog model does not have an authoritative premium source
-        // for a plan or coverage item. The Customer source model holds annualPremiumCents at the
-        // aggregate CoveragePlan level, but the target policy-version snapshot does not currently
-        // define a guaranteed conversion from that legacy value. Avoid silently writing the
-        // deductible into the premium field because that would corrupt the meaning of the versioned
-        // premium snapshot. This remains nullable until a business-approved premium source is added.
+        // Use authoritative Plan premium for initial policy version
         PolicyVersion version = PolicyVersion.builder()
                 .policy(policy)
                 .versionNumber(1)
                 .plan(plan)
-                .premiumCents(null)
-                .deductibleCents(coverage.getDeductibleCents())
-                .coverageLimitCents(coverage.getLimitCents())
+                .premiumCents(plan.getPremiumCents())
+                .deductibleCents(plan.getDeductibleCents())
+                .coverageLimitCents(plan.getCoverageLimitCents())
                 .effectiveFrom(policy.getEffectiveDate())
                 .effectiveTo(null)
                 .build();

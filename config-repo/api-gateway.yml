@@ -81,7 +81,7 @@ spring:
             # ===========================
 
             - id: policy-service
-              uri: lb://CUSTOMER-SERVICE
+              uri: lb://POLICY-SERVICE
               predicates:
                 - Path=/policies/**
               metadata:
@@ -141,7 +141,7 @@ spring:
                 response-timeout: 15000
 
             - id: api-v1-policy-service
-              uri: lb://CUSTOMER-SERVICE
+              uri: lb://POLICY-SERVICE
               predicates:
                 - Path=/api/v1/policies/**
               filters:

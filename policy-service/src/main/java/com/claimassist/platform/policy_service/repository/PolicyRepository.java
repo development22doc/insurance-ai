@@ -2,12 +2,16 @@ package com.claimassist.platform.policy_service.repository;
 
 import com.claimassist.platform.policy_service.dto.PolicyCoverageProjection;
 import com.claimassist.platform.policy_service.entity.Policy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,8 +23,23 @@ public interface PolicyRepository extends CrudRepository<Policy, Long> {
     @EntityGraph(attributePaths = {"coveragePlan", "coveragePlan.product"})
     Optional<Policy> findByIdAndCustomerId(Long policyId, Long customerId);
 
+    /**
+     * Find policy and acquire a pessimistic write lock for concurrency-sensitive operations
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {"coveragePlan", "coveragePlan.product"})
+    @Query("select p from Policy p where p.id = :id")
+    Optional<Policy> findByIdForUpdate(@Param("id") Long id);
+
     @EntityGraph(attributePaths = {"coveragePlan", "coveragePlan.product"})
     List<Policy> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
+
+    /**
+     * Get all policies with pagination for admin/operations use.
+     * Uses EntityGraph to efficiently load plan and product relationships.
+     */
+    @EntityGraph(attributePaths = {"coveragePlan", "coveragePlan.product"})
+    Page<Policy> findAll(Pageable pageable);
 
     @Query(value = "SELECT p.id AS policyId, p.policy_number AS policyNumber, p.status AS status, \n" +
             "       pr.code AS productType, pl.name AS coveragePlanName, \n" +

@@ -36,7 +36,7 @@ class FlywayMigrationTest {
         flyway.clean();
         var migrateResult = flyway.migrate();
 
-        assertThat(migrateResult.migrationsExecuted).isEqualTo(11);
+        assertThat(migrateResult.migrationsExecuted).isEqualTo(12);
     }
 
     @Test
@@ -62,7 +62,7 @@ class FlywayMigrationTest {
                 boolean success = rs.getBoolean("success");
                 assertThat(success).isTrue();
             }
-            assertThat(count).isEqualTo(11);
+            assertThat(count).isEqualTo(12);
         }
     }
 

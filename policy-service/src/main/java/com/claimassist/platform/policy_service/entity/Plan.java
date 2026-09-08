@@ -37,6 +37,8 @@ public class Plan {
 
     Long coverageLimitCents;
 
+    Long premiumCents;
+
     @Column(nullable = false)
     Instant createdAt;
 

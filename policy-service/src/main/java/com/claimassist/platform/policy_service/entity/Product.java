@@ -27,6 +27,9 @@ public class Product {
     String name;
 
     @Column(nullable = false)
+    Boolean active = true;
+
+    @Column(nullable = false)
     Instant createdAt;
 
     @PrePersist

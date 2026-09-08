@@ -125,8 +125,13 @@ public class SharedSecurityAutoConfiguration {
     }
 
     @Bean
-    public CorrelationIdFilter correlationIdFilter (DeveloperIdentity developerIdentity) {
-        return new CorrelationIdFilter (developerIdentity);
+    public CorrelationIdFilter correlationIdFilter (ObjectProvider<com.claimassist.platform.common_lib.observability.DeveloperIdentity> developerIdentityProvider) {
+        com.claimassist.platform.common_lib.observability.DeveloperIdentity dev = developerIdentityProvider.getIfAvailable();
+        if (dev == null) {
+            // Fallback to default identity when no DeveloperIdentity bean is provided in the test context
+            dev = new com.claimassist.platform.common_lib.observability.DeveloperIdentity("local", "unknown");
+        }
+        return new CorrelationIdFilter (dev);
     }
 
     /**

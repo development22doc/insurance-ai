@@ -48,7 +48,13 @@ class PolicyServiceSecurityIntegrationTest {
     com.claimassist.platform.policy_service.repository.ProcessedStripeEventRepository processedStripeEventRepository;
 
     @MockBean
+    com.claimassist.platform.policy_service.repository.PolicyVersionRepository policyVersionRepository;
+
+    @MockBean
     com.claimassist.platform.policy_service.service.PolicyCreationService policyCreationService;
+
+    @MockBean
+    com.claimassist.platform.policy_service.service.PublicPolicyQueryService publicPolicyQueryService;
 
     @BeforeEach
     void setUp() {

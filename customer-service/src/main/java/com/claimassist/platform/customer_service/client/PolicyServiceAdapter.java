@@ -85,21 +85,6 @@ public class PolicyServiceAdapter {
      *
      * IMPORTANT: This method is NOT called from existing Customer policy flow.
      * It exists only for migration preparation.
-     *
-     * IDEMPOTENCY PROPAGATION:
-     * Policy Service requires Idempotency-Key header, but Customer's current API contract
-     * does not expose/receive this header. This is a contract gap that must be addressed
-     * in the cutover phase by adding Idempotency-Key to Customer's external API contract.
-     *
-     * CRITICAL: This method does NOT generate fallback UUIDs. If idempotencyKey is null/blank,
-     * the method will fail with an appropriate error. This ensures idempotency identity is
-     * never silently invented or changed during propagation.
-     *
-     * @param customerRequest Customer's policy creation request
-     * @param customerId Customer ID
-     * @param idempotencyKey Idempotency key from original request (must be supplied)
-     * @return Policy response
-     * @throws BadRequestException if idempotencyKey is null or blank
      */
     public PolicyResponse createPolicyViaPolicyService(
             PolicyCreateRequest customerRequest,
@@ -107,7 +92,6 @@ public class PolicyServiceAdapter {
             String idempotencyKey) {
 
         // Idempotency gap: Customer's current API does not expose Idempotency-Key
-        // This would need to be addressed in the cutover phase
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new BadRequestException(
                     "Idempotency-Key is required but was not provided. " +
@@ -122,7 +106,6 @@ public class PolicyServiceAdapter {
         // Map Customer request to Policy Service request
         PolicyCreateRequestDto policyServiceRequest;
 
-        // First, consult configuration-based mapping for the CoveragePlan id.
         var mappingOpt = policyServiceProperties.getMappingForCoveragePlan(coveragePlan.getId());
         if (mappingOpt.isPresent()) {
             var m = mappingOpt.get();
@@ -136,20 +119,16 @@ public class PolicyServiceAdapter {
             policyServiceRequest.setSuccessUrl(null);
             policyServiceRequest.setCancelUrl(null);
         } else {
-            // No configuration mapping found - fall back to existing mapper which intentionally
-            // throws when a safe mapping cannot be determined.
             try {
                 policyServiceRequest = PolicyServiceMapper.toPolicyServiceRequest(
                         coveragePlan,
                         customerId,
                         customerRequest.effectiveDate(),
                         customerRequest.renewalDate(),
-                        null, // successUrl - not in Customer contract
-                        null  // cancelUrl - not in Customer contract
+                        null,
+                        null
                 );
             } catch (UnsupportedOperationException e) {
-                // CoveragePlan → Product/Plan/Coverage mapping cannot be safely established
-                // This is a deliberate block to prevent incorrect policy creation
                 throw new BadRequestException(
                         "Cannot create policy via Policy Service: " + e.getMessage() +
                                 " The adapter is explicitly unavailable until the mapping is resolved.");
@@ -157,14 +136,12 @@ public class PolicyServiceAdapter {
         }
 
         try {
-            // Call Policy Service
             PolicyCreateResponseDto response = policyServiceClient.createPolicy(
                     policyServiceRequest,
                     customerId,
                     idempotencyKey
             );
 
-            // Map response back to Customer format
             return PolicyServiceMapper.toCustomerResponse(
                     response,
                     coveragePlan.getName(),
@@ -179,24 +156,61 @@ public class PolicyServiceAdapter {
         }
     }
 
+    // New read delegation helpers -------------------------------------------------
+
+    public PolicyResponse getPolicyById(Long policyId, Long actingUserId) {
+        com.claimassist.platform.customer_service.dto.PolicySummaryDto svcDto = policyServiceClient.getPolicyById(policyId, actingUserId);
+        if (svcDto == null) return null;
+        return new PolicyResponse(svcDto.id(), svcDto.policyNumber(), svcDto.status(), svcDto.coveragePlanName(), svcDto.productType(), svcDto.effectiveDate(), svcDto.renewalDate());
+    }
+
+    public java.util.List<PolicyResponse> getPoliciesForCustomer(Long customerId, Long actingUserId) {
+        java.util.List<com.claimassist.platform.customer_service.dto.PolicySummaryDto> list = policyServiceClient.getPoliciesForCustomer(customerId, actingUserId);
+        return list.stream().map(svcDto -> new PolicyResponse(svcDto.id(), svcDto.policyNumber(), svcDto.status(), svcDto.coveragePlanName(), svcDto.productType(), svcDto.effectiveDate(), svcDto.renewalDate())).toList();
+    }
+
+    public com.claimassist.platform.common_lib.dto.PolicyCoverageDto getPolicyCoverage(Long policyId, Long actingUserId) {
+        return policyServiceClient.getPolicyCoverage(policyId, actingUserId);
+    }
+
     /**
-     * Maps Feign exceptions to appropriate project exceptions.
-     * Follows existing project error handling patterns.
+     * Delegate cancel command to Policy Service public API. Forwards Authorization header from caller.
      */
+    public java.util.Map<String, Object> cancelPolicy(Long policyId, com.claimassist.platform.customer_service.dto.policy.CancelRequestDto body, String authorizationHeader) {
+        try {
+            return policyServiceClient.cancelPolicy(policyId, body, authorizationHeader);
+        } catch (FeignException e) {
+            log.error("Policy Service cancel failed: status={}, message={}", e.status(), e.getMessage());
+            throw mapFeignException(e);
+        }
+    }
+
+    /**
+     * Delegate reinstate command to Policy Service public API. Forwards Authorization and optional Idempotency-Key.
+     */
+    public java.util.Map<String, Object> reinstatePolicy(Long policyId, com.claimassist.platform.customer_service.dto.policy.ReinstateRequestDto body, String idempotencyKey, String authorizationHeader) {
+        try {
+            return policyServiceClient.reinstatePolicy(policyId, body, idempotencyKey, authorizationHeader);
+        } catch (FeignException e) {
+            log.error("Policy Service reinstate failed: status={}, message={}", e.status(), e.getMessage());
+            throw mapFeignException(e);
+        }
+    }
+
     private RuntimeException mapFeignException(FeignException e) {
         switch (e.status()) {
             case 400:
                 return new BadRequestException("Policy Service validation failed: " + e.getMessage());
             case 403:
-                return new AccessDeniedException("Policy Service access denied: " + e.getMessage());
+                return new org.springframework.security.access.AccessDeniedException("Policy Service access denied: " + e.getMessage());
             case 404:
                 return new ResourceNotFoundException("Policy Service resource", "unknown");
             case 409:
                 return new BadRequestException("Policy Service idempotency conflict: " + e.getMessage());
             case 503:
-                return new ServiceUnavailableException("Policy Service unavailable: " + e.getMessage());
+                return new com.claimassist.platform.common_lib.error.ServiceUnavailableException("Policy Service unavailable: " + e.getMessage());
             default:
-                return new ServiceUnavailableException("Policy Service error: " + e.getMessage());
+                return new com.claimassist.platform.common_lib.error.ServiceUnavailableException("Policy Service error: " + e.getMessage());
         }
     }
 }

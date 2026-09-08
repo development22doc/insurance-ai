@@ -132,6 +132,8 @@ services:
     replicas: 1
   agent-service:
     replicas: 1
+  policy-service:
+    replicas: 1
 
 # Task 6A-14B-3 + TASK 6A-14B-4B: HPA (PROD). Free-tier bound: 1 baseline
 # replica, ceiling 2 (never 3). CPU (request-based, 70%). Same bounded behavior
@@ -150,5 +152,8 @@ hpa:
       min: 1
       max: 2
     agent-service:
+      min: 1
+      max: 2
+    policy-service:
       min: 1
       max: 2

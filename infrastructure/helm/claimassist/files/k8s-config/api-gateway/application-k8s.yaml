@@ -44,7 +44,7 @@ spring:
               filters:
                 - StripPrefix=1
             - id: policy-service
-              uri: http://claimassist-customer-service:8081
+              uri: http://claimassist-policy-service:8084
               predicates:
                 - Path=/policies/**
               filters:

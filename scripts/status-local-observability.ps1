@@ -109,7 +109,8 @@ $servicePorts = @(
     @{ Port = 8080; Name = "API Gateway" },
     @{ Port = 8081; Name = "Customer Service" },
     @{ Port = 8082; Name = "Claims Service" },
-    @{ Port = 8083; Name = "Agent Service" }
+    @{ Port = 8083; Name = "Agent Service" },
+    @{ Port = 8084; Name = "Policy Service" }
 )
 
 $allServicesHealthy = $true
@@ -158,7 +159,7 @@ foreach ($svc in $servicePorts) {
 Write-Host ""
 Write-Host "[LOGS] Local Log Directories (logs/<service>/):" -ForegroundColor Cyan
 $logDir = Join-Path $repoRoot "logs"
-$serviceDirs = @("api-gateway", "customer-service", "claims-service", "agent-service", "discovery-service", "config-service")
+$serviceDirs = @("api-gateway", "customer-service", "claims-service", "agent-service", "policy-service", "discovery-service", "config-service")
 $allLogsOk = $true
 foreach ($svc in $serviceDirs) {
     $svcLogDir = Join-Path $logDir $svc

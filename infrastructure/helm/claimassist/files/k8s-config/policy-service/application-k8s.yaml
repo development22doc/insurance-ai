@@ -1,0 +1,28 @@
+# Kubernetes runtime configuration for policy-service.
+# Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
+# LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+spring:
+  config:
+    # Empty override removes the packaged `optional:configserver:` import so no
+    # Config Server dependency exists at runtime.
+    import: ""
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI}
+  cloud:
+    discovery:
+      enabled: false
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration
+      - org.springframework.cloud.config.client.ConfigClientAutoConfiguration
+
+eureka:
+  client:
+    enabled: false
+
+server:
+  port: 8084

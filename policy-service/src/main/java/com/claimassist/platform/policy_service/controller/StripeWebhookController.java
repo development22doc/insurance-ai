@@ -31,7 +31,7 @@ public class StripeWebhookController {
     private final PolicyRepository policyRepository;
     private final com.claimassist.platform.policy_service.repository.ProcessedStripeEventRepository processedStripeEventRepository;
 
-    @Value("${spring.stripe.webhook-signing-secret:}")
+    @org.springframework.beans.factory.annotation.Value("${stripe.webhook-signing-secret:}")
     private String webhookSigningSecret;
 
     @PostMapping
@@ -67,12 +67,27 @@ public class StripeWebhookController {
 
             if (piOptional.isPresent()) {
                 PaymentIntent pi = piOptional.get();
-                String policyNumber = pi.getMetadata().get("policy_number");
+                java.util.Map<String, String> metadata = pi.getMetadata();
+                String policyNumber = metadata == null ? null : metadata.get("policy_number");
+                String policyIdStr = metadata == null ? null : metadata.get("policy_id");
                 String paymentIntentId = pi.getId();
                 if (policyNumber != null) {
                     Optional<Policy> policyOpt = policyRepository.findByPolicyNumber(policyNumber);
                     if (policyOpt.isPresent()) {
                         Policy policy = policyOpt.get();
+
+                        // If policy_id metadata present, validate it matches the persisted policy id
+                        if (policyIdStr != null && !policyIdStr.isBlank()) {
+                            try {
+                                long metaPolicyId = Long.parseLong(policyIdStr);
+                                if (!Long.valueOf(metaPolicyId).equals(policy.getId())) {
+                                    return ResponseEntity.status(400).body("Metadata policy_id does not match policy record");
+                                }
+                            } catch (NumberFormatException nfe) {
+                                return ResponseEntity.status(400).body("Invalid metadata policy_id");
+                            }
+                        }
+
                         // idempotent: only activate if currently pending payment
                         if (!"ACTIVE".equals(policy.getStatus()) && "PENDING_PAYMENT".equals(policy.getStatus())) {
                             // Ensure stored payment intent matches (defense-in-depth)
@@ -95,8 +110,7 @@ public class StripeWebhookController {
             }
         }
 
-        // Mark event processed after successful business processing. If a concurrent insert occurs
-        // the unique constraint will cause DataIntegrityViolationException and we treat that as already-processed.
+        // Mark event processed after successful business processing. If a concurrent insert occurs        // the unique constraint will cause DataIntegrityViolationException and we treat that as already-processed.
         try {
             ProcessedStripeEvent marker = new ProcessedStripeEvent(eventId, eventType, Instant.now(), null);
             processedStripeEventRepository.save(marker);

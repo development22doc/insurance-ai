@@ -231,6 +231,7 @@ hpa:
     customer-service: {}
     claims-service: {}
     agent-service: {}
+    policy-service: {}
 
 # -----------------------------------------------------------------------------
 # Public application edge - nginx Ingress gateway (Task 6A-11).
@@ -269,7 +270,7 @@ certManager:
 
 # -----------------------------------------------------------------------------
 # Stateless application workloads (Task 6A-6). LOCKED K8s architecture:
-# ONLY the four application services below are deployed. discovery-service and
+# ONLY the five application services below are deployed. discovery-service and
 # config-service are NOT deployed in Kubernetes (they remain LOCAL-only).
 #
 # Kubernetes service discovery = K8s ClusterIP Service + DNS (no Eureka).
@@ -380,6 +381,17 @@ services:
       requests: { cpu: 100m, memory: 256Mi }
       limits: { cpu: 700m, memory: 640Mi }
 
+  policy-service:
+    image: policy-service
+    port: 8084
+    replicas: 1
+    k8sConfig: true
+    env: []
+    database: claimassist_policy
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 700m, memory: 640Mi }
+
 # -----------------------------------------------------------------------------
 # PostgreSQL (Task 6A-7). ONE StatefulSet + ClusterIP Service + PVC per K8s
 # environment (namespace claimassist-dev/stage/prod). Inside each instance the
@@ -449,6 +461,10 @@ postgresql:
         - V4__enhance_outbox_reliability.sql
         - V5__add_outbox_trace_context.sql
         - V6__add_query_indexes.sql
+    - name: claimassist_policy
+      service: policy-service
+      migrations:
+        - V1__init_policy_schema.sql
   # Credentials are NEVER committed. Created as a Kubernetes Secret when
   # `credentials.create` is true; real values must be supplied at deploy time via
   # -f overrides / --set (works here because rendering uses empty placeholders).

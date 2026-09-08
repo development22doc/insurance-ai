@@ -83,6 +83,11 @@ Complete production-grade observability implementation for the ClaimAssist micro
    - Tool-calling success rates
    - Streaming response metrics
 
+7. **policy-service** - Port 8084
+   - Policy lifecycle and version metrics
+   - Payment verification and idempotency monitoring
+   - Coverage and migration operational visibility
+
 ## Logging
 
 ### Logback Configuration

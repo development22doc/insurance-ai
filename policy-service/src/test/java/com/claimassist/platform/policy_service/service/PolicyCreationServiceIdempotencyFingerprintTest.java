@@ -20,7 +20,8 @@ class PolicyCreationServiceIdempotencyFingerprintTest {
 
     @BeforeEach
     void setUp() {
-        service = new IdempotencyService(repo, om);
+        org.springframework.transaction.PlatformTransactionManager tm = org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class);
+        service = new IdempotencyService(repo, om, tm);
     }
 
     @Test

@@ -28,6 +28,13 @@ public class PolicyLookupServiceImpl implements PolicyLookupService {
     }
 
     @Override
+    public PolicySummaryDto getPolicyForAdmin(Long policyId) {
+        Policy policy = policyRepository.findById(policyId)
+                .orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(policyId)));
+        return map(policy);
+    }
+
+    @Override
     public List<PolicySummaryDto> getPoliciesForCustomer(Long customerId, Long effectiveCustomerId) {
         if (!customerId.equals(effectiveCustomerId)) {
             throw new AccessDeniedException("Not authorized to view policies for customer " + customerId);

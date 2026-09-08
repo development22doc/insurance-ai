@@ -38,9 +38,11 @@ public class PolicyController {
      * @return The created policy response
      */
     @PostMapping
-    public ResponseEntity<PolicyResponse> createPolicy(@RequestBody @Valid PolicyCreateRequest request) {
+    public ResponseEntity<PolicyResponse> createPolicy(
+            @RequestBody @Valid PolicyCreateRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         Long customerId = currentUserProvider.getCurrentUserId();
-        PolicyResponse response = policyService.createPolicy(request, customerId);
+        PolicyResponse response = policyService.createPolicy(request, customerId, idempotencyKey);
         return ResponseEntity.ok(response);
     }
 
@@ -86,6 +88,27 @@ public class PolicyController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/{policyId}/cancel")
+    public ResponseEntity<java.util.Map<String, Object>> cancelPolicy(
+            @PathVariable Long policyId,
+            @RequestBody(required = false) com.claimassist.platform.customer_service.dto.policy.CancelRequestDto body,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+        Long customerId = currentUserProvider.getCurrentUserId();
+        java.util.Map<String, Object> resp = policyService.cancelPolicy(policyId, body, customerId, authorizationHeader);
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/{policyId}/reinstate")
+    public ResponseEntity<java.util.Map<String, Object>> reinstatePolicy(
+            @PathVariable Long policyId,
+            @RequestBody(required = false) com.claimassist.platform.customer_service.dto.policy.ReinstateRequestDto body,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+        Long customerId = currentUserProvider.getCurrentUserId();
+        java.util.Map<String, Object> resp = policyService.reinstatePolicy(policyId, body, customerId, idempotencyKey, authorizationHeader);
+        return ResponseEntity.ok(resp);
+    }
+
     /**
      * Deletes a policy for the authenticated customer.
      *
@@ -93,6 +116,7 @@ public class PolicyController {
      * @return 204 No Content on successful deletion
      */
     @DeleteMapping("/{policyId}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','OPERATIONS')")
     public ResponseEntity<Void> deletePolicy(@PathVariable Long policyId) {
         Long customerId = currentUserProvider.getCurrentUserId();
         policyService.deletePolicy(policyId, customerId);

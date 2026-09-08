@@ -70,8 +70,22 @@ class PolicyQueryCacheIsolationTest {
         }
 
         @Bean
-        PolicyQueryService policyQueryService(PolicyRepository repo, PolicyMapper mapper) {
-            return new PolicyQueryService(repo, mapper);
+        com.claimassist.platform.customer_service.client.PolicyServiceAdapter policyServiceAdapter() {
+            return mock(com.claimassist.platform.customer_service.client.PolicyServiceAdapter.class);
+        }
+
+        @Bean
+        com.claimassist.platform.customer_service.config.PolicyServiceProperties policyServiceProperties() {
+            com.claimassist.platform.customer_service.config.PolicyServiceProperties props = mock(com.claimassist.platform.customer_service.config.PolicyServiceProperties.class);
+            when(props.isReadDelegationEnabled()).thenReturn(false);
+            return props;
+        }
+
+        @Bean
+        PolicyQueryService policyQueryService(PolicyRepository repo, PolicyMapper mapper,
+                                            com.claimassist.platform.customer_service.client.PolicyServiceAdapter adapter,
+                                            com.claimassist.platform.customer_service.config.PolicyServiceProperties props) {
+            return new PolicyQueryService(repo, mapper, adapter, props);
         }
     }
 

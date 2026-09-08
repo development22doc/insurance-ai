@@ -19,7 +19,7 @@ public interface PolicyService {
      * @param customerId The authenticated customer's ID
      * @return The created policy response
      */
-    PolicyResponse createPolicy(PolicyCreateRequest request, Long customerId);
+    PolicyResponse createPolicy(PolicyCreateRequest request, Long customerId, String idempotencyKey);
 
     /**
      * Retrieves a policy by ID for the authenticated customer.
@@ -56,4 +56,17 @@ public interface PolicyService {
      * @param customerId The authenticated customer's ID
      */
     void deletePolicy(Long policyId, Long customerId);
+
+    /**
+     * Delegate cancellation to Policy Service lifecycle command.
+     * This does not mutate the Customer DB; it forwards the intent to Policy Service.
+     */
+    java.util.Map<String, Object> cancelPolicy(Long policyId, com.claimassist.platform.customer_service.dto.policy.CancelRequestDto body, Long customerId, String authorizationHeader);
+
+    /**
+     * Delegate reinstatement to Policy Service lifecycle command.
+     * This does not mutate the Customer DB; it forwards the intent to Policy Service.
+     */
+    java.util.Map<String, Object> reinstatePolicy(Long policyId, com.claimassist.platform.customer_service.dto.policy.ReinstateRequestDto body, Long customerId, String idempotencyKey, String authorizationHeader);
 }
+

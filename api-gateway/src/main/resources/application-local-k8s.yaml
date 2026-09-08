@@ -66,6 +66,13 @@ spring:
               filters:
                 - StripPrefix=1
 
+            - id: policy-service-api
+              uri: http://localhost:8084
+              predicates:
+                - Path=/api/v1/policies/**
+              filters:
+                - StripPrefix=2
+
   data:
     redis:
       host: ${REDIS_HOST:100.114.133.69}
@@ -120,9 +127,13 @@ app:
       - /claims/actuator/health/**
       - /agent/actuator/health
       - /agent/actuator/health/**
+      - /policies/actuator/health
+      - /policies/actuator/health/**
       - /v3/api-docs/**
       - /swagger-ui/**
       - /swagger-ui.html
+      - /api/v1/policies/products/**
+      - /api/v1/policies/plans/**
 
 management:
   endpoints:

@@ -41,7 +41,10 @@ class PolicyQueryServiceTest {
     void setUp() {
         policyRepository = mock(PolicyRepository.class);
         policyMapper = mock(PolicyMapper.class);
-        service = new PolicyQueryService(policyRepository, policyMapper);
+        com.claimassist.platform.customer_service.client.PolicyServiceAdapter adapter = mock(com.claimassist.platform.customer_service.client.PolicyServiceAdapter.class);
+        com.claimassist.platform.customer_service.config.PolicyServiceProperties props = mock(com.claimassist.platform.customer_service.config.PolicyServiceProperties.class);
+        when(props.isReadDelegationEnabled()).thenReturn(false);
+        service = new PolicyQueryService(policyRepository, policyMapper, adapter, props);
 
         plan = CoveragePlan.builder()
                 .id(5L)

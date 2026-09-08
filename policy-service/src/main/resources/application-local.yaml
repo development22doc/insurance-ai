@@ -23,3 +23,57 @@ security:
 policy:
   migration:
     legacy-coverage-plan-map: {}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+  metrics:
+    enable:
+      jvm: true
+      process: true
+      logback: true
+
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+    tags:
+      application: ${spring.application.name}
+      environment: local
+      source: intellij
+      developer: ${CLAIMASSIST_DEVELOPER_NAME:unknown}
+
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+tracing:
+  sampling:
+    probability: 1.0
+
+zipkin:
+  tracing:
+    endpoint: ${ZIPKIN_ENDPOINT:http://100.114.133.69:30941/api/v2/spans}
+
+logging:
+  level:
+    com.claimassist: DEBUG
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN

@@ -21,6 +21,10 @@ public class PolicyServiceProperties {
      */
     private Map<String, Mapping> coverageMapping;
 
+    // When true, customer-service will delegate reads to Policy Service internal APIs where possible.
+    // Default: false (preserve legacy reads). Enable per environment during staged cutover.
+    private boolean readDelegationEnabled = false;
+
     public Map<String, Mapping> getCoverageMapping() {
         return coverageMapping;
     }
@@ -33,6 +37,14 @@ public class PolicyServiceProperties {
         if (coverageMapping == null) return Optional.empty();
         Mapping m = coverageMapping.get(String.valueOf(coveragePlanId));
         return Optional.ofNullable(m);
+    }
+
+    public boolean isReadDelegationEnabled() {
+        return readDelegationEnabled;
+    }
+
+    public void setReadDelegationEnabled(boolean readDelegationEnabled) {
+        this.readDelegationEnabled = readDelegationEnabled;
     }
 
     /**

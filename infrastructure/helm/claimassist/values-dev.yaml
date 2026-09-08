@@ -194,6 +194,9 @@ services:
   agent-service:
     replicas: 1
     k8sConfig: true
+  policy-service:
+    replicas: 1
+    k8sConfig: true
   frontend:
     replicas: 1
     k8sConfig: false

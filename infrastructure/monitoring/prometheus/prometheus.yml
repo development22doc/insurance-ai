@@ -76,6 +76,16 @@ scrape_configs:
         labels:
           service: 'agent-service'
           instance_type: 'local'
+  # Policy Service
+  - job_name: 'policy-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    static_configs:
+      - targets: ['host.docker.internal:8084']
+        labels:
+          service: 'policy-service'
+          instance_type: 'local'
   # Zipkin - Distributed Tracing
   - job_name: 'zipkin'
     static_configs:
