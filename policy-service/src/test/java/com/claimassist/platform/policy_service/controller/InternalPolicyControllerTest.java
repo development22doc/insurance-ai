@@ -50,6 +50,9 @@ class InternalPolicyControllerTest {
     @MockBean
     com.claimassist.platform.policy_service.service.PolicyCreationService policyCreationService;
 
+    @MockBean
+    com.claimassist.platform.policy_service.service.IdempotencyService idempotencyService;
+
     @Test
     @WithMockUser
     void getPolicy_returnsSummaryDto() throws Exception {

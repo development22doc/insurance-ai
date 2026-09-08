@@ -25,6 +25,7 @@ public class InternalPolicyController {
     private final PolicyLookupService policyLookupService;
     private final com.claimassist.platform.policy_service.security.InternalRequestIdentity internalRequestIdentity;
     private final com.claimassist.platform.policy_service.service.PolicyCreationService policyCreationService;
+    private final com.claimassist.platform.policy_service.service.IdempotencyService idempotencyService;
 
 
     /**
@@ -91,8 +92,21 @@ public class InternalPolicyController {
 
         com.claimassist.platform.policy_service.entity.Policy created = policyCreationService.createPolicy(svcReq, callingUserIdStr, idempotencyKey);
 
+        // Retrieve the cached Stripe payment details from the idempotency service
+        java.util.Map<String, Object> cachedPaymentDetails = policyCreationService.getCachedPaymentDetails(idempotencyKey, callingUserId);
+
+        String clientSecret = cachedPaymentDetails != null ? (String) cachedPaymentDetails.get("clientSecret") : null;
+        Long amount = null;
+        if (cachedPaymentDetails != null) {
+            Object amountObj = cachedPaymentDetails.get("amount");
+            if (amountObj instanceof Number) {
+                amount = ((Number) amountObj).longValue();
+            }
+        }
+        String currency = cachedPaymentDetails != null ? (String) cachedPaymentDetails.get("currency") : "usd";
+
         com.claimassist.platform.policy_service.dto.PolicyCreateResponseDto resp = new com.claimassist.platform.policy_service.dto.PolicyCreateResponseDto(
-                created.getId(), created.getPolicyNumber(), created.getStatus(), created.getStripePaymentIntentId());
+                created.getId(), created.getPolicyNumber(), created.getStatus(), created.getStripePaymentIntentId(), clientSecret, amount, currency);
 
         return ResponseEntity.ok(resp);
     }

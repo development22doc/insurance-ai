@@ -44,6 +44,9 @@ class InternalPolicyControllerCreateTest {
     @MockBean
     PolicyCreationService policyCreationService;
 
+    @MockBean
+    com.claimassist.platform.policy_service.service.IdempotencyService idempotencyService;
+
     @org.springframework.web.bind.annotation.RestControllerAdvice
     static class TestExceptionAdvice {
         @org.springframework.web.bind.annotation.ExceptionHandler(BadRequestException.class)

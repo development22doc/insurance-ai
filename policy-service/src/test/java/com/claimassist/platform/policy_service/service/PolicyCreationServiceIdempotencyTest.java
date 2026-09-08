@@ -58,6 +58,7 @@ class PolicyCreationServiceIdempotencyTest {
         plan.setActive(true);
         plan.setCreatedAt(Instant.now().minusSeconds(3600));
         plan.setDeductibleCents(1000L);
+        plan.setPremiumCents(2000L);
         when(planRepository.findByCodeAndProductId(any(), anyLong())).thenReturn(Optional.of(plan));
 
         Coverage coverage = new Coverage();
@@ -70,6 +71,9 @@ class PolicyCreationServiceIdempotencyTest {
         // Mock stripe PaymentIntent.create static
         PaymentIntent mockIntent = mock(PaymentIntent.class);
         when(mockIntent.getId()).thenReturn("pi_test_123");
+        when(mockIntent.getClientSecret()).thenReturn("cs_test_123");
+        when(mockIntent.getAmount()).thenReturn(2000L);
+        when(mockIntent.getCurrency()).thenReturn("usd");
 
         // Prepare a saved policy to return from repository
         com.claimassist.platform.policy_service.entity.Policy saved = com.claimassist.platform.policy_service.entity.Policy.builder().id(10L).policyNumber("POL-900-000001").build();
