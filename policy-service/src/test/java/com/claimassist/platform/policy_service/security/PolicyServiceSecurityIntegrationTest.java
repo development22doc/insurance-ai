@@ -1,5 +1,6 @@
 package com.claimassist.platform.policy_service.security;
 
+import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import com.claimassist.platform.common_lib.error.ServiceUnavailableException;
 import com.claimassist.platform.policy_service.service.PolicyCoverageQueryService;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +32,9 @@ class PolicyServiceSecurityIntegrationTest {
 
     @MockBean
     PolicyCoverageQueryService policyCoverageQueryService;
+
+    @MockBean
+    com.claimassist.platform.policy_service.repository.LegacyCustomerPolicyIdMapRepository legacyCustomerPolicyIdMapRepository;
 
     @MockBean
     com.claimassist.platform.policy_service.repository.PolicyRepository policyRepository;
@@ -116,6 +120,24 @@ class PolicyServiceSecurityIntegrationTest {
     void xUserId_with_unauthorized_service_isRejected() throws Exception {
         mockMvc.perform(get("/internal/v1/policies/1/coverage").with(jwt().jwt(serviceJwt("evil-client"))).header("X-User-Id", "123").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userTokenIgnoresXUserIdHeader_whenResolvingCoverageOwner() throws Exception {
+        when(policyCoverageQueryService.getPolicyCoverage(any(), any()))
+                .thenAnswer(invocation -> {
+                    String userId = invocation.getArgument(1);
+                    if (!"1".equals(userId)) {
+                        throw new AssertionError("Expected user JWT identity to win over X-User-Id override: expected 1 but was " + userId);
+                    }
+                    return new PolicyCoverageDto(1L, "POL-1", "ACTIVE", "AUTO", "STANDARD", 1000L, 5000L, "2026-01-01");
+                });
+
+        mockMvc.perform(get("/internal/v1/policies/1/coverage")
+                        .with(jwt().jwt(userJwt()))
+                        .header("X-User-Id", "999")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
     }
 
     @Test

@@ -1,0 +1,9 @@
+# Use this workspace to collaborate
+workspace:
+  id: ""
+
+localResources:
+  collections:
+    - ../ClaimAssist-Complete.postman_collection.json
+  environments:
+    - ../ClaimAssist-DEV.postman_environment.json

@@ -81,6 +81,9 @@ class PolicyControllerCommandTest {
     private com.claimassist.platform.policy_service.repository.PolicyRepository policyRepository;
 
     @MockBean
+    private com.claimassist.platform.policy_service.repository.LegacyCustomerPolicyIdMapRepository legacyCustomerPolicyIdMapRepository;
+
+    @MockBean
     private com.claimassist.platform.policy_service.repository.CoverageRepository coverageRepository;
 
     @MockBean

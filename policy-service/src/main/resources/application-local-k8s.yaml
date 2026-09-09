@@ -1,8 +1,26 @@
 spring:
+  config:
+    import: optional:file:../application-local-k8s.properties
+  # CRITICAL WARNING: This profile connects to OCI PostgreSQL through Tailscale
+  # Flyway is DISABLED by default to protect the OCI read-only boundary
+  # DO NOT set FLYWAY_ENABLED=true - this WILL modify the remote OCI database
+  # OCI PostgreSQL is STRICTLY READ-ONLY - no migrations allowed
   datasource:
-    url: jdbc:postgresql://${POLICY_DB_HOST:100.114.133.69}:${POLICY_DB_PORT:30432}/claimassist_policy_local
-    username: ${POLICY_DB_USER:claimassist}
-    password: ${POLICY_DB_PASSWORD:claimassist}
+    url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_policy
+    username: ${POSTGRES_USER:claimassist}
+    password: ${POSTGRES_PASSWORD}
+  flyway:
+    # CRITICAL: Flyway is DISABLED for local-k8s to protect OCI read-only boundary
+    # WARNING: If FLYWAY_ENABLED=true is set as an environment variable, it WILL override this setting
+    # and Flyway WILL run against OCI PostgreSQL, violating the read-only boundary
+    enabled: false
+    # Use empty locations to ensure no migrations can run even if enabled accidentally
+    locations: ""
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   security:
     oauth2:
       resourceserver:
@@ -15,7 +33,7 @@ server:
 
 security:
   internal:
-    trusted-service-client-ids: ${TRUSTED_SERVICE_CLIENT_IDS:claimassist-admin-service,claims-service,agent-service}
+    trusted-service-client-ids: ${TRUSTED_SERVICE_CLIENT_IDS:claimassist-admin-service,claims-service,agent-service,customer-service}
 
 policy:
   migration:

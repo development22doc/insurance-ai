@@ -22,7 +22,7 @@ KEYCLOAK_JWKS_URI=http://100.114.133.69:30080/realms/claimassist-dev/protocol/op
 SERVICE_TOKEN_URI=http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/token
 
 # Service Client Configuration
-SERVICE_CLIENT_ID=internal-service-client
+SERVICE_CLIENT_ID=claimassist-admin-service
 SERVICE_CLIENT_SECRET=YOUR_SERVICE_CLIENT_SECRET_HERE
 
 # Zipkin Configuration

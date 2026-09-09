@@ -1,4 +1,10 @@
 spring:
+  # Flyway is DISABLED by default for dev environments
+  # Dev migrations should be managed through explicit database administration
+  flyway:
+    enabled: false
+    # Use empty locations to ensure no migrations can run even if enabled accidentally
+    locations: ""
   datasource:
     url: jdbc:postgresql://${POLICY_DB_HOST:postgres}:${POLICY_DB_PORT:5432}/claimassist_policy_dev
     username: ${POLICY_DB_USER:policy}

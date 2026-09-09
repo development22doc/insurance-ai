@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class PolicyCreationServiceStripeTest {
@@ -30,6 +31,7 @@ class PolicyCreationServiceStripeTest {
     CoverageRepository coverageRepository = mock(CoverageRepository.class);
     PolicyRepository policyRepository = mock(PolicyRepository.class);
     com.claimassist.platform.policy_service.service.IdempotencyService idempotencyService = mock(com.claimassist.platform.policy_service.service.IdempotencyService.class);
+    com.claimassist.platform.policy_service.security.InternalRequestIdentity internalRequestIdentity = mock(com.claimassist.platform.policy_service.security.InternalRequestIdentity.class);
 
     PolicyCreationService service;
     jakarta.persistence.EntityManager mockEm;
@@ -43,7 +45,7 @@ class PolicyCreationServiceStripeTest {
         };
         when(idempotencyService.execute(anyString(), anyString(), anyLong(), anyString(), any(), any())).thenAnswer(execAnswer);
 
-        service = new PolicyCreationService(policyRepository, planRepository, productRepository, coverageRepository, idempotencyService);
+        service = new PolicyCreationService(policyRepository, planRepository, productRepository, coverageRepository, idempotencyService, internalRequestIdentity);
         // Inject a mocked EntityManager because the service uses @PersistenceContext in production
         mockEm = mock(jakarta.persistence.EntityManager.class);
         jakarta.persistence.Query mockQuery = mock(jakarta.persistence.Query.class);
@@ -52,6 +54,9 @@ class PolicyCreationServiceStripeTest {
         java.lang.reflect.Field emField = PolicyCreationService.class.getDeclaredField("entityManager");
         emField.setAccessible(true);
         emField.set(service, mockEm);
+
+        // Mock InternalRequestIdentity to return a valid user ID
+        when(internalRequestIdentity.resolveCallingUserId(anyString())).thenReturn(1L);
     }
 
     @Test

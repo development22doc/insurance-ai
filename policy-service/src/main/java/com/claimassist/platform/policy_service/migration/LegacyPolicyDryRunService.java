@@ -110,6 +110,30 @@ public class LegacyPolicyDryRunService {
                 blockedCount == 0 && duplicateCount == 0 && unsupportedCount == 0 && reviewCount == 0);
     }
 
+    /**
+     * Public validation method for single record validation.
+     * Used by execution service to maintain consistency with dry-run logic.
+     */
+    public LegacyPolicyValidationResult validateRecordPublic(
+            LegacyPolicyRecord source,
+            LegacyPlanMappingResolver mappingResolver,
+            TargetPlanLookup targetPlanLookup,
+            LegacyPolicyReconciliationLookup reconciliationLookup) {
+
+        // Build seen maps for single record validation
+        Map<Long, Integer> seenLegacyPolicyIds = new HashMap<>();
+        Map<String, Integer> seenPolicyNumbers = new HashMap<>();
+
+        if (source != null && source.legacyPolicyId() != null) {
+            seenLegacyPolicyIds.put(source.legacyPolicyId(), 1);
+        }
+        if (source != null && source.legacyPolicyNumber() != null && !source.legacyPolicyNumber().isBlank()) {
+            seenPolicyNumbers.put(source.legacyPolicyNumber().trim(), 1);
+        }
+
+        return validateRecord(source, seenLegacyPolicyIds, seenPolicyNumbers, mappingResolver, targetPlanLookup, reconciliationLookup);
+    }
+
     private LegacyPolicyValidationResult validateRecord(
             LegacyPolicyRecord source,
             Map<Long, Integer> seenLegacyPolicyIds,

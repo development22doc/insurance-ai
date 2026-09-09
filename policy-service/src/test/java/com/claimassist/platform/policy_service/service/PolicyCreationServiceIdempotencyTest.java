@@ -19,6 +19,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class PolicyCreationServiceIdempotencyTest {
@@ -28,12 +29,13 @@ class PolicyCreationServiceIdempotencyTest {
     CoverageRepository coverageRepository = mock(CoverageRepository.class);
     PolicyRepository policyRepository = mock(PolicyRepository.class);
     IdempotencyService idempotencyService = mock(IdempotencyService.class);
+    com.claimassist.platform.policy_service.security.InternalRequestIdentity internalRequestIdentity = mock(com.claimassist.platform.policy_service.security.InternalRequestIdentity.class);
 
     PolicyCreationService service;
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new PolicyCreationService(policyRepository, planRepository, productRepository, coverageRepository, idempotencyService);
+        service = new PolicyCreationService(policyRepository, planRepository, productRepository, coverageRepository, idempotencyService, internalRequestIdentity);
         // Inject a mocked EntityManager because the service uses @PersistenceContext in production
         jakarta.persistence.EntityManager mockEm = mock(jakarta.persistence.EntityManager.class);
         jakarta.persistence.Query mockQuery = mock(jakarta.persistence.Query.class);
@@ -42,6 +44,9 @@ class PolicyCreationServiceIdempotencyTest {
         java.lang.reflect.Field emField = PolicyCreationService.class.getDeclaredField("entityManager");
         emField.setAccessible(true);
         emField.set(service, mockEm);
+
+        // Mock InternalRequestIdentity to return a valid user ID
+        when(internalRequestIdentity.resolveCallingUserId(anyString())).thenReturn(1L);
     }
 
     @Test

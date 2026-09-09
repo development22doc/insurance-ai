@@ -1,7 +1,15 @@
 # Kubernetes runtime configuration for policy-service.
 # Activated via the existing Spring `k8s` profile (SPRING_PROFILES_ACTIVE=k8s).
 # LOCKED K8s model: no Config Server, no Eureka/discovery - Kubernetes Service DNS.
+#
+# CRITICAL: Flyway is DISABLED for k8s deployments
+# Database migrations for production/dev k8s environments must be managed
+# through explicit database administration, not automatic application startup
 spring:
+  flyway:
+    enabled: false
+    # Use empty locations to ensure no migrations can run even if enabled accidentally
+    locations: ""
   config:
     # Empty override removes the packaged `optional:configserver:` import so no
     # Config Server dependency exists at runtime.

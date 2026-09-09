@@ -142,7 +142,37 @@ logging:
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
 
-# Policy Service configuration for future migration
-# Phase 6: Integration preparation only. Not activated in existing flow.
+# Policy Service configuration for purchase flow delegation
+# IMPORTANT: This configuration is for LOCAL DEVELOPMENT ONLY with synthetic seed data
+# For dev/prod environments, use actual Policy Service catalog data via environment-specific configuration
 policy-service:
   uri: ${POLICY_SERVICE_URI:http://localhost:8084}
+  # Mapping from Customer CoveragePlan IDs to Policy Service Product/Plan/Coverage codes
+  # When a customer purchases a policy with a mapped CoveragePlan, creation is delegated to Policy Service
+  #
+  # Customer CoveragePlans (from V1__init_customer_schema.sql):
+  # - ID 1: "Basic", productType "AUTO"
+  # - ID 2: "Standard", productType "AUTO"
+  # - ID 3: "Comprehensive", productType "AUTO"
+  #
+  # Policy Service catalog (from V9__seed_product_plan_coverage_data.sql - LOCAL SYNTHETIC DATA ONLY):
+  # - Product: AUTO
+  # - Plans: BASIC, STANDARD, COMPREHENSIVE
+  # - Coverage: COMPREHENSIVE (for each plan)
+  #
+  # WARNING: This mapping is ONLY valid with the synthetic seed data in V9 migration.
+  # Do NOT use this mapping in production without verifying actual Policy Service catalog.
+  coverage-mapping:
+    1:
+      productCode: AUTO
+      planCode: BASIC
+      coverageCode: COMPREHENSIVE
+    2:
+      productCode: AUTO
+      planCode: STANDARD
+      coverageCode: COMPREHENSIVE
+    3:
+      productCode: AUTO
+      planCode: COMPREHENSIVE
+      coverageCode: COMPREHENSIVE
+  read-delegation-enabled: true

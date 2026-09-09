@@ -88,13 +88,7 @@
             <version>29.4.0</version>
         </dependency>
 
-        <!-- Testcontainers + Flyway used by migration/integration tests (test scope) -->
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-
+        <!-- Testcontainers used by migration/integration tests -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
@@ -113,20 +107,33 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- PostgreSQL JDBC driver required for Spring Test datasource during integration tests -->
+        <!-- PostgreSQL JDBC driver required at runtime (align with other services) -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.6.0</version>
-            <scope>test</scope>
+            <version>42.7.13</version>
+            <scope>runtime</scope>
         </dependency>
 
-        <!-- Flyway database plugin for PostgreSQL required when invoking Flyway programmatically in tests -->
+        <!-- Flyway runtime support for local application startup in local-k8s profile -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- PostgreSQL-specific Flyway support for Spring Boot startup migrations -->
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
             <version>11.7.2</version>
-            <scope>test</scope>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- H2 in-memory DB for local/integration testing (runtime only) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 

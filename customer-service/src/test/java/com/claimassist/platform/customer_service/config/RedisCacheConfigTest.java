@@ -1,7 +1,7 @@
 package com.claimassist.platform.customer_service.config;
 
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
-import com.claimassist.platform.customer_service.dto.policy.PolicyResponse;
+import com.claimassist.platform.customer_service.dto.PolicySummaryDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -57,16 +57,16 @@ class RedisCacheConfigTest {
     }
 
     @Test
-    void policyResponseRoundTripsWithInstant() {
-        PolicyResponse original = new PolicyResponse(
-                7L, "POL-2002", "ACTIVE", "Comprehensive", "AUTO",
+    void policySummaryDtoRoundTripsWithInstant() {
+        PolicySummaryDto original = new PolicySummaryDto(
+                7L, "POL-2002", "ACTIVE", "AUTO", "Comprehensive",
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2027-01-01T00:00:00Z"));
 
         byte[] bytes = serializer().serialize(original);
         Object read = serializer().deserialize(bytes);
 
-        assertThat(read).isInstanceOf(PolicyResponse.class);
-        assertThat((PolicyResponse) read).isEqualTo(original);
+        assertThat(read).isInstanceOf(PolicySummaryDto.class);
+        assertThat((PolicySummaryDto) read).isEqualTo(original);
     }
 }

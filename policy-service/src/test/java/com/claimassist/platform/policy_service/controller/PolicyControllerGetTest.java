@@ -21,6 +21,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -152,6 +153,37 @@ class PolicyControllerGetTest {
     void unauthenticatedIsRejected() throws Exception {
         mockMvc.perform(get("/api/v1/policies/1").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void unauthenticatedMyPoliciesIsRejected() throws Exception {
+        mockMvc.perform(get("/api/v1/policies/my").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "CUSTOMER")
+    void myPoliciesUsesAuthenticatedCustomerIdentity() throws Exception {
+        long customerId = 7L;
+        PolicySummaryDto dto = new PolicySummaryDto(1L, "POL-1", "ACTIVE", "AUTO", "STANDARD_PLAN",
+                Instant.parse("2025-01-01T00:00:00Z"), Instant.parse("2026-01-01T00:00:00Z"));
+
+        when(currentUserProvider.getCurrentUserId()).thenReturn(customerId);
+        when(publicPolicyQueryService.getMyPolicies(eq(customerId))).thenReturn(List.of(dto));
+
+        mockMvc.perform(get("/api/v1/policies/my").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].policyNumber").value("POL-1"));
+    }
+
+    @Test
+    @WithMockUser(roles = "CUSTOMER")
+    void missingProductReturns404() throws Exception {
+        when(publicPolicyQueryService.getProduct(eq(99L))).thenThrow(new ResourceNotFoundException("Product", "99"));
+
+        mockMvc.perform(get("/api/v1/policies/products/99").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Product not found with id: 99"));
     }
 
     @Test

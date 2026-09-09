@@ -1,6 +1,12 @@
 spring:
   application:
     name: policy-service
+  # Flyway is DISABLED by default as a safety measure
+  # Individual profiles (local) can explicitly enable it for local databases
+  flyway:
+    enabled: false
+    # Use empty locations as a safety default - only specific profiles should override this
+    locations: ""
   security:
     oauth2:
       resourceserver:

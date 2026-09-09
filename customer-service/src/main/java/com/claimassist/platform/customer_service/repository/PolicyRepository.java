@@ -22,4 +22,9 @@ public interface PolicyRepository extends JpaRepository<Policy, Long> {
 
     @EntityGraph(attributePaths = "coveragePlan")
     Page<Policy> findByCustomerId(Long customerId, Pageable pageable);
+
+    // Return all policies with coveragePlan fetched to avoid N+1 when extracting for migration.
+    @Override
+    @EntityGraph(attributePaths = "coveragePlan")
+    Page<Policy> findAll(Pageable pageable);
 }

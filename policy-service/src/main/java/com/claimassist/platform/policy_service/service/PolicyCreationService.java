@@ -28,6 +28,7 @@ public class PolicyCreationService {
     private final ProductRepository productRepository;
     private final CoverageRepository coverageRepository;
     private final com.claimassist.platform.policy_service.service.IdempotencyService idempotencyService;
+    private final com.claimassist.platform.policy_service.security.InternalRequestIdentity internalRequestIdentity;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -159,14 +160,9 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
     // -- Authentication --
 
     private Long authenticateCaller(String xUserIdHeader) {
-        if (xUserIdHeader == null) {
-            throw new IllegalArgumentException("X-User-Id header is required for policy creation");
-        }
-        try {
-            return Long.valueOf(xUserIdHeader);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("X-User-Id must be a numeric user id");
-        }
+        // Use InternalRequestIdentity to properly resolve caller identity
+        // This handles both USER JWT (ignores X-User-Id) and SERVICE JWT (requires X-User-Id)
+        return internalRequestIdentity.resolveCallingUserId(xUserIdHeader);
     }
 
     // -- Validation helpers --

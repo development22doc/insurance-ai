@@ -21,9 +21,9 @@ public class PolicyServiceProperties {
      */
     private Map<String, Mapping> coverageMapping;
 
-    // When true, customer-service will delegate reads to Policy Service internal APIs where possible.
-    // Default: false (preserve legacy reads). Enable per environment during staged cutover.
-    private boolean readDelegationEnabled = false;
+    // Policy Service is the authoritative owner for policy data.
+    // Customer Service must not serve direct legacy policy reads or writes.
+    private boolean readDelegationEnabled = true;
 
     public Map<String, Mapping> getCoverageMapping() {
         return coverageMapping;

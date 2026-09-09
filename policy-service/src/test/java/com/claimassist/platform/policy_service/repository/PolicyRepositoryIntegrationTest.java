@@ -52,8 +52,8 @@ class PolicyRepositoryIntegrationTest {
         flyway.clean();
         flyway.migrate();
 
-        // Insert product
-        Long productId = jdbc.queryForObject("INSERT INTO products(code,name) VALUES('AUTO','Auto') RETURNING id", Long.class);
+        // Insert product using a test-specific code because the Flyway V9 seed intentionally creates a synthetic AUTO product for local testing.
+        Long productId = jdbc.queryForObject("INSERT INTO products(code,name) VALUES('AUTO_INTEGRATION_TEST','Auto Integration Test') RETURNING id", Long.class);
         // Insert plan
         Long planId = jdbc.queryForObject("INSERT INTO plans(product_id,code,name,active,deductible_cents,coverage_limit_cents) VALUES(?,?,?,?,?,?) RETURNING id",
                 Long.class, productId, "BASIC", "Basic Plan", true, 0L, 100000L);
@@ -84,7 +84,7 @@ class PolicyRepositoryIntegrationTest {
         assertThat(proj).isNotNull();
         assertThat(proj.getPolicyId()).isEqualTo(policyId);
         assertThat(proj.getPolicyNumber()).isEqualTo("POL-1");
-        assertThat(proj.getProductType()).isEqualTo("AUTO");
+        assertThat(proj.getProductType()).isEqualTo("AUTO_INTEGRATION_TEST");
         assertThat(proj.getCoveragePlanName()).isEqualTo("Basic Plan");
         // deductible and coverageLimit map from policy_version if present
         assertThat(proj.getDeductibleCents()).isEqualTo(0L);

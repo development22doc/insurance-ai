@@ -22,6 +22,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -42,6 +43,7 @@ import java.util.concurrent.TimeoutException;
  * Bean method to prevent duplicate bean definitions in services that override it.
  */
 @Slf4j
+@RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @Autowired(required = false)
@@ -289,16 +291,24 @@ public class GlobalExceptionHandler {
      * Sanitizes exception messages to prevent logging of sensitive information.
      */
     private String sanitizeMessage(String message) {
-        if (message == null || message.isEmpty()) {
+        if (message == null || message.isBlank()) {
             return "";
         }
 
+        String sanitized = message;
+
         // Remove JWT patterns
-        message = message.replaceAll("(?i)(bearer\\s+)?[A-Za-z0-9-_]{20,}", "***JWT_REDACTED***");
+        sanitized = sanitized.replaceAll("(?i)(bearer\\s+)?[A-Za-z0-9-_]{20,}", "***JWT_REDACTED***");
 
-        // Remove authorization/password/token/secret patterns
-        message = message.replaceAll("(?i)(authorization|password|token|refresh|secret|apikey)\\s*[=:][^\\s,;]+", "$1=***");
+        // Remove authorization/password/token/secret patterns, including secret-value and token-value forms.
+        // For cases like "secret-****** at com.acme.internal.Thing" the key name and internal package path are also stripped.
+        sanitized = sanitized.replaceAll("(?i)\\b(?:authorization|password|token|refresh|secret|api[_-]?key)\\s*[:=\\-]\\s*[^\\s,;]+", "***REDACTED***");
+        sanitized = sanitized.replaceAll("(?i)\\b(?:authorization|password|token|refresh|secret|api[_-]?key)\\s+[^\\s,;]+", "***REDACTED***");
 
-        return message;
+        // Remove internal package/class markers from stack traces and similar strings.
+        sanitized = sanitized.replaceAll("(?i)\\b(?:com|org|net|io)\\.[A-Za-z0-9_.]+", "[REDACTED_PACKAGE]");
+        sanitized = sanitized.replaceAll("(?i)\\bat\\s+[A-Za-z0-9_$.]+(?:\\.[A-Za-z0-9_$.]+)+", "at [REDACTED_LOCATION]");
+
+        return sanitized;
     }
 }

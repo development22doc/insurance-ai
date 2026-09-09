@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,6 +18,11 @@ class GlobalExceptionHandlerTest {
 
     private ApiError body(ResponseEntity<ApiError> response) {
         return response.getBody();
+    }
+
+    @Test
+    void globalExceptionHandlerIsRegisteredAsRestControllerAdvice() {
+        assertThat(GlobalExceptionHandler.class).hasAnnotation(RestControllerAdvice.class);
     }
 
     @Test
@@ -91,6 +97,17 @@ class GlobalExceptionHandlerTest {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(body(res).message()).isEqualTo("An unexpected error occurred. Please try again later.");
         assertThat(body(res).message()).doesNotContain("secret", "password", "com.acme");
+    }
+
+    @Test
+    void sanitizeMessageRedactsSecretsAndPackageNames() throws Exception {
+        java.lang.reflect.Method method = GlobalExceptionHandler.class.getDeclaredMethod("sanitizeMessage", String.class);
+        method.setAccessible(true);
+
+        String sanitized = (String) method.invoke(handler, "secret-****** at com.acme.internal.Thing");
+
+        assertThat(sanitized).doesNotContain("secret", "com.acme");
+        assertThat(sanitized).contains("REDACTED");
     }
 
     @Test
