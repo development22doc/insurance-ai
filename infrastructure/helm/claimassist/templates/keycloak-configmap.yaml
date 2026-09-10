@@ -87,7 +87,23 @@ data:
           "attributes": {
             "include.in.token.scope": "true",
             "display.on.consent.screen": "true"
-          }
+          },
+          "protocolMappers": [
+            {
+              "name": "preferred username",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "consentRequired": false,
+              "config": {
+                "userinfo.token.claim": "true",
+                "user.attribute": "username",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "preferred_username",
+                "jsonType.label": "String"
+              }
+            }
+          ]
         },
         {
           "name": "email",
@@ -96,7 +112,37 @@ data:
           "attributes": {
             "include.in.token.scope": "true",
             "display.on.consent.screen": "true"
-          }
+          },
+          "protocolMappers": [
+            {
+              "name": "email",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "consentRequired": false,
+              "config": {
+                "userinfo.token.claim": "true",
+                "user.attribute": "email",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "email",
+                "jsonType.label": "String"
+              }
+            },
+            {
+              "name": "email verified",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "consentRequired": false,
+              "config": {
+                "userinfo.token.claim": "true",
+                "user.attribute": "emailVerified",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "email_verified",
+                "jsonType.label": "Boolean"
+              }
+            }
+          ]
         },
         {
           "name": "address",
@@ -152,6 +198,7 @@ data:
           "protocol": "openid-connect",
           "standardFlowEnabled": true,
           "directAccessGrantsEnabled": false,
+          "fullScopeAllowed": true,
           "redirectUris": [
             {{- $redirectUris := .Values.keycloak.client.redirectUris }}
             {{- if .Values.keycloak.externalRedirectUris }}
