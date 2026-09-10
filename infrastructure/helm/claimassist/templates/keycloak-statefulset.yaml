@@ -59,11 +59,6 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-      volumes:
-        - name: realm-import
-          configMap:
-            name: {{ .Values.keycloak.realmConfigMapName }}
-            defaultMode: 0444
       containers:
         - name: keycloak
           image: "{{ .Values.keycloak.image.registry }}{{ if .Values.keycloak.image.registry }}/{{ end }}{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}"
@@ -73,7 +68,7 @@ spec:
           # making kubelet exec an executable named `start` that is not on $PATH
           # (-> CrashLoopBackOff). `args` appends to the entrypoint, yielding the
           # correct `kc.sh start --import-realm`.
-          args: ["start", "--import-realm"]
+          args: ["start"]
           # Container-level securityContext (NOT pod-level): every key here
           # (runAsNonRoot, allowPrivilegeEscalation, readOnlyRootFilesystem,
           # capabilities, seccompProfile) is a CONTAINER securityContext field.
@@ -118,10 +113,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.keycloak.credentials.secretName }}
                   key: KEYCLOAK_ADMIN_PASSWORD
-          volumeMounts:
-            - name: realm-import
-              mountPath: /opt/keycloak/data/import
-              readOnly: true
           resources:
             {{- toYaml .Values.keycloak.resources | nindent 12 }}
           {{- with .Values.keycloak.probes.startup }}
