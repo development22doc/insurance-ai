@@ -20,7 +20,6 @@
         <spring-ai.version>1.1.8</spring-ai.version>
         <spring-cloud.version>2025.0.0</spring-cloud.version>
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
-        <tomcat.version>10.1.57</tomcat.version>
         <!-- Security-fix alignment: Netty 4.1.135.Final (Boot default) -> 4.1.136.Final,
              Jackson 2.21.4 -> 2.21.6, Log4j 2.24.3 -> 2.26.1 (see api-gateway CVE notes). -->
         <netty.version>4.1.136.Final</netty.version>
@@ -64,7 +63,7 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.kafka</groupId>
@@ -143,6 +142,12 @@
             <groupId>com.claimassist.platform</groupId>
             <artifactId>common-lib</artifactId>
             <version>1.0.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
