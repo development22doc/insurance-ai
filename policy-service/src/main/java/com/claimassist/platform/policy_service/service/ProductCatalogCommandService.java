@@ -2,6 +2,7 @@ package com.claimassist.platform.policy_service.service;
 
 import com.claimassist.platform.common_lib.error.BadRequestException;
 import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
+import com.claimassist.platform.policy_service.config.RedisCacheConfig;
 import com.claimassist.platform.policy_service.dto.ProductCreateRequest;
 import com.claimassist.platform.policy_service.dto.ProductDto;
 import com.claimassist.platform.policy_service.dto.ProductStatusUpdateRequest;
@@ -9,14 +10,19 @@ import com.claimassist.platform.policy_service.dto.ProductUpdateRequest;
 import com.claimassist.platform.policy_service.entity.Product;
 import com.claimassist.platform.policy_service.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
 public class ProductCatalogCommandService {
 
     private final ProductRepository productRepository;
+    private final CacheManager cacheManager;
 
     @Transactional
     public ProductDto createProduct(ProductCreateRequest request) {
@@ -34,6 +40,7 @@ public class ProductCatalogCommandService {
                 .build();
 
         Product saved = productRepository.save(product);
+        evictProductCacheAfterCommit(saved.getId(), "all");
         return map(saved);
     }
 
@@ -55,7 +62,9 @@ public class ProductCatalogCommandService {
 
         product.setCode(code);
         product.setName(name);
-        return map(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        evictProductCacheAfterCommit(saved.getId(), "all");
+        return map(saved);
     }
 
     @Transactional
@@ -68,7 +77,46 @@ public class ProductCatalogCommandService {
                 .orElseThrow(() -> new ResourceNotFoundException("Product", String.valueOf(productId)));
 
         product.setActive(request.active());
-        return map(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        evictProductCacheAfterCommit(saved.getId(), "all");
+        return map(saved);
+    }
+
+    private void evictProductCacheAfterCommit(Long productId, Object... keys) {
+        Runnable evictTask = () -> {
+            Cache cache = cacheManager.getCache(RedisCacheConfig.PRODUCT_CACHE);
+            if (cache == null) {
+                return;
+            }
+            for (Object key : keys) {
+                if (key == null) {
+                    continue;
+                }
+                try {
+                    cache.evict(key);
+                } catch (Exception e) {
+                    System.err.println("Failed to evict product cache key " + key + " for product " + productId + ": " + e.getMessage());
+                }
+            }
+            if (productId != null) {
+                try {
+                    cache.evict(productId);
+                } catch (Exception e) {
+                    System.err.println("Failed to evict product cache key " + productId + " for product " + productId + ": " + e.getMessage());
+                }
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictTask.run();
+                }
+            });
+        } else {
+            evictTask.run();
+        }
     }
 
     private String normalizeCode(String value) {

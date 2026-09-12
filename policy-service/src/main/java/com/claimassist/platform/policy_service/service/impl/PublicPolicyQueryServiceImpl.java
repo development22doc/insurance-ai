@@ -1,6 +1,7 @@
 package com.claimassist.platform.policy_service.service.impl;
 
 import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
+import com.claimassist.platform.policy_service.config.RedisCacheConfig;
 import com.claimassist.platform.policy_service.dto.PlanDto;
 import com.claimassist.platform.policy_service.dto.PolicySummaryDto;
 import com.claimassist.platform.policy_service.dto.PolicyVersionDto;
@@ -15,6 +16,8 @@ import com.claimassist.platform.policy_service.repository.PolicyVersionRepositor
 import com.claimassist.platform.policy_service.repository.ProductRepository;
 import com.claimassist.platform.policy_service.service.PublicPolicyQueryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -63,6 +66,7 @@ public class PublicPolicyQueryServiceImpl implements PublicPolicyQueryService {
     }
 
     @Override
+    @Cacheable(value = RedisCacheConfig.PRODUCT_CACHE, key = "'all'")
     public List<ProductDto> getAllProducts() {
         return productRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
@@ -71,6 +75,7 @@ public class PublicPolicyQueryServiceImpl implements PublicPolicyQueryService {
     }
 
     @Override
+    @Cacheable(value = RedisCacheConfig.PRODUCT_CACHE, key = "#productId")
     public ProductDto getProduct(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", String.valueOf(productId)));
@@ -78,6 +83,7 @@ public class PublicPolicyQueryServiceImpl implements PublicPolicyQueryService {
     }
 
     @Override
+    @Cacheable(value = RedisCacheConfig.PLANS_BY_PRODUCT_CACHE, key = "#productId")
     public List<PlanDto> getPlansForProduct(Long productId) {
         return planRepository.findByProductIdOrderByCreatedAtDesc(productId)
                 .stream()
@@ -86,6 +92,7 @@ public class PublicPolicyQueryServiceImpl implements PublicPolicyQueryService {
     }
 
     @Override
+    @Cacheable(value = RedisCacheConfig.PLAN_CACHE, key = "#planId")
     public PlanDto getPlan(Long planId) {
         Plan plan = planRepository.findById(planId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plan", String.valueOf(planId)));

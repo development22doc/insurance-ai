@@ -2,10 +2,12 @@ package com.claimassist.platform.policy_service.service.impl;
 
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
+import com.claimassist.platform.policy_service.config.RedisCacheConfig;
 import com.claimassist.platform.policy_service.dto.PolicyCoverageProjection;
 import com.claimassist.platform.policy_service.repository.PolicyRepository;
 import com.claimassist.platform.policy_service.service.PolicyCoverageQueryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +19,7 @@ public class PolicyCoverageQueryServiceImpl implements PolicyCoverageQueryServic
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = RedisCacheConfig.POLICY_COVERAGE_CACHE, key = "#policyId")
     public PolicyCoverageDto getPolicyCoverage(Long policyId, String xUserIdHeader) {
         Long callingUserId = null;
         if (xUserIdHeader != null) {

@@ -34,6 +34,8 @@ class PolicyLifecycleConcurrencyTest {
 
     private IdempotencyService idempotencyService;
 
+    private org.springframework.cache.CacheManager cacheManager;
+
     private PolicyLifecycleService policyLifecycleService;
 
     private Policy policy;
@@ -45,11 +47,12 @@ class PolicyLifecycleConcurrencyTest {
         planRepository = mock(com.claimassist.platform.policy_service.repository.PlanRepository.class);
         policyCreationService = mock(PolicyCreationService.class);
         idempotencyService = mock(IdempotencyService.class);
+        cacheManager = mock(org.springframework.cache.CacheManager.class);
         com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
         // enable Java Time support for fingerprint serialization
         com.fasterxml.jackson.datatype.jsr310.JavaTimeModule jtm = new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule();
         om.registerModule(jtm);
-        policyLifecycleService = new PolicyLifecycleService(policyRepository, policyVersionRepository, planRepository, policyCreationService, idempotencyService, om);
+        policyLifecycleService = new PolicyLifecycleService(policyRepository, policyVersionRepository, planRepository, policyCreationService, idempotencyService, om, cacheManager);
 
         policy = Policy.builder()
                 .id(1L)

@@ -1,5 +1,6 @@
 package com.claimassist.platform.policy_service.controller;
 
+import com.claimassist.platform.policy_service.config.RedisCacheConfig;
 import com.claimassist.platform.policy_service.entity.Policy;
 import com.claimassist.platform.policy_service.repository.PolicyRepository;
 import com.stripe.Stripe;
@@ -10,9 +11,13 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.net.Webhook;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -30,6 +35,7 @@ public class StripeWebhookController {
 
     private final PolicyRepository policyRepository;
     private final com.claimassist.platform.policy_service.repository.ProcessedStripeEventRepository processedStripeEventRepository;
+    private final CacheManager cacheManager;
 
     @org.springframework.beans.factory.annotation.Value("${stripe.webhook-signing-secret:}")
     private String webhookSigningSecret;
@@ -96,6 +102,7 @@ public class StripeWebhookController {
                                     // Use domain transition to validate lifecycle
                                     policy.transitionTo(com.claimassist.platform.policy_service.entity.LifecycleStatus.ACTIVE);
                                     policyRepository.save(policy);
+                                    evictPolicyCoverageAfterCommit(policy.getId());
                                 } catch (IllegalArgumentException iae) {
                                     // Invalid transition - do not activate
                                     return ResponseEntity.status(400).body("Invalid lifecycle transition");
@@ -119,5 +126,30 @@ public class StripeWebhookController {
         }
 
         return ResponseEntity.ok("received");
+    }
+
+    private void evictPolicyCoverageAfterCommit(Long policyId) {
+        Runnable evictTask = () -> {
+            Cache cache = cacheManager.getCache(RedisCacheConfig.POLICY_COVERAGE_CACHE);
+            if (cache == null || policyId == null) {
+                return;
+            }
+            try {
+                cache.evict(policyId);
+            } catch (Exception e) {
+                System.err.println("Failed to evict policy coverage cache key " + policyId + ": " + e.getMessage());
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictTask.run();
+                }
+            });
+        } else {
+            evictTask.run();
+        }
     }
 }

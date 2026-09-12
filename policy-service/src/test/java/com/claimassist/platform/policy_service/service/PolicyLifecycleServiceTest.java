@@ -32,6 +32,7 @@ class PolicyLifecycleServiceTest {
     private PolicyCreationService policyCreationService;
     private IdempotencyService idempotencyService;
     private ObjectMapper objectMapper;
+    private org.springframework.cache.CacheManager cacheManager;
     private PolicyLifecycleService svc;
 
     @BeforeEach
@@ -42,7 +43,8 @@ class PolicyLifecycleServiceTest {
         policyCreationService = mock(PolicyCreationService.class);
         idempotencyService = mock(IdempotencyService.class);
         objectMapper = new ObjectMapper();
-        svc = new PolicyLifecycleService(policyRepository, policyVersionRepository, planRepository, policyCreationService, idempotencyService, objectMapper);
+        cacheManager = mock(org.springframework.cache.CacheManager.class);
+        svc = new PolicyLifecycleService(policyRepository, policyVersionRepository, planRepository, policyCreationService, idempotencyService, objectMapper, cacheManager);
     }
 
     @Test

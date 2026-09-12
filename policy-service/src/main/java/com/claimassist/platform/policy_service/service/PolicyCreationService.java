@@ -2,6 +2,7 @@ package com.claimassist.platform.policy_service.service;
 
 import com.claimassist.platform.common_lib.error.ServiceUnavailableException;
 import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
+import com.claimassist.platform.policy_service.config.RedisCacheConfig;
 import com.claimassist.platform.policy_service.entity.*;
 import com.claimassist.platform.policy_service.repository.CoverageRepository;
 import com.claimassist.platform.policy_service.repository.PlanRepository;
@@ -12,7 +13,11 @@ import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.model.PaymentIntent;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +34,7 @@ public class PolicyCreationService {
     private final CoverageRepository coverageRepository;
     private final com.claimassist.platform.policy_service.service.IdempotencyService idempotencyService;
     private final com.claimassist.platform.policy_service.security.InternalRequestIdentity internalRequestIdentity;
+    private final CacheManager cacheManager;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -131,6 +137,7 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
 
                     // 12. Persist transactionally - Policy + PolicyVersion atomic
                     Policy savedPolicy = policyRepository.save(policy);
+                    evictPolicyCoverageAfterCommit(savedPolicy.getId());
 
                     return java.util.Map.of(
                             "policyId", savedPolicy.getId(),
@@ -147,6 +154,31 @@ public Policy createPolicy(PolicyCreationRequest request, String xUserIdHeader, 
         Long policyId = policyIdNum == null ? null : policyIdNum.longValue();
         if (policyId == null) throw new IllegalStateException("Idempotent create returned no policy id");
         return policyRepository.findById(policyId).orElseThrow(() -> new IllegalStateException("Policy not found after creation: " + policyId));
+    }
+
+    private void evictPolicyCoverageAfterCommit(Long policyId) {
+        Runnable evictTask = () -> {
+            Cache cache = cacheManager.getCache(RedisCacheConfig.POLICY_COVERAGE_CACHE);
+            if (cache == null || policyId == null) {
+                return;
+            }
+            try {
+                cache.evict(policyId);
+            } catch (Exception e) {
+                System.err.println("Failed to evict policy coverage cache key " + policyId + ": " + e.getMessage());
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictTask.run();
+                }
+            });
+        } else {
+            evictTask.run();
+        }
     }
 
     /**

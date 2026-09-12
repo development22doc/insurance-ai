@@ -2,6 +2,7 @@ package com.claimassist.platform.policy_service.service;
 
 import com.claimassist.platform.common_lib.error.BadRequestException;
 import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
+import com.claimassist.platform.policy_service.config.RedisCacheConfig;
 import com.claimassist.platform.policy_service.dto.PlanCreateRequest;
 import com.claimassist.platform.policy_service.dto.PlanDto;
 import com.claimassist.platform.policy_service.dto.PlanStatusUpdateRequest;
@@ -11,8 +12,12 @@ import com.claimassist.platform.policy_service.entity.Product;
 import com.claimassist.platform.policy_service.repository.PlanRepository;
 import com.claimassist.platform.policy_service.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +25,7 @@ public class PlanCatalogCommandService {
 
     private final ProductRepository productRepository;
     private final PlanRepository planRepository;
+    private final CacheManager cacheManager;
 
     @Transactional
     public PlanDto createPlan(Long productId, PlanCreateRequest request) {
@@ -44,7 +50,9 @@ public class PlanCatalogCommandService {
                 .coverageLimitCents(coverageLimit)
                 .build();
 
-        return map(planRepository.save(plan));
+        Plan saved = planRepository.save(plan);
+        evictPlansByProductAfterCommit(productId);
+        return map(saved);
     }
 
     @Transactional
@@ -69,7 +77,9 @@ public class PlanCatalogCommandService {
         plan.setName(name);
         plan.setDeductibleCents(deductible);
         plan.setCoverageLimitCents(coverageLimit);
-        return map(planRepository.save(plan));
+        Plan saved = planRepository.save(plan);
+        evictPlanCacheAfterCommit(saved.getId(), saved.getProduct() != null ? saved.getProduct().getId() : null);
+        return map(saved);
     }
 
     @Transactional
@@ -82,7 +92,72 @@ public class PlanCatalogCommandService {
                 .orElseThrow(() -> new ResourceNotFoundException("Plan", String.valueOf(planId)));
 
         plan.setActive(request.active());
-        return map(planRepository.save(plan));
+        Plan saved = planRepository.save(plan);
+        evictPlanCacheAfterCommit(saved.getId(), saved.getProduct() != null ? saved.getProduct().getId() : null);
+        return map(saved);
+    }
+
+    private void evictPlanCacheAfterCommit(Long planId, Long... productIds) {
+        Runnable evictTask = () -> {
+            Cache planCache = cacheManager.getCache(RedisCacheConfig.PLAN_CACHE);
+            if (planCache != null && planId != null) {
+                try {
+                    planCache.evict(planId);
+                } catch (Exception e) {
+                    System.err.println("Failed to evict plan cache key " + planId + ": " + e.getMessage());
+                }
+            }
+
+            Cache productPlanCache = cacheManager.getCache(RedisCacheConfig.PLANS_BY_PRODUCT_CACHE);
+            if (productPlanCache != null) {
+                for (Long productId : productIds) {
+                    if (productId == null) {
+                        continue;
+                    }
+                    try {
+                        productPlanCache.evict(productId);
+                    } catch (Exception e) {
+                        System.err.println("Failed to evict plansByProduct cache key " + productId + ": " + e.getMessage());
+                    }
+                }
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictTask.run();
+                }
+            });
+        } else {
+            evictTask.run();
+        }
+    }
+
+    private void evictPlansByProductAfterCommit(Long productId) {
+        Runnable evictTask = () -> {
+            Cache productPlanCache = cacheManager.getCache(RedisCacheConfig.PLANS_BY_PRODUCT_CACHE);
+            if (productPlanCache == null || productId == null) {
+                return;
+            }
+            try {
+                productPlanCache.evict(productId);
+            } catch (Exception e) {
+                System.err.println("Failed to evict plansByProduct cache key " + productId + ": " + e.getMessage());
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictTask.run();
+                }
+            });
+        } else {
+            evictTask.run();
+        }
     }
 
     private String normalizeCode(String value) {

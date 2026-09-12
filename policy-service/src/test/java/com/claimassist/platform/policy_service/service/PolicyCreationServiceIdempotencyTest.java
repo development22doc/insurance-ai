@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
+import org.springframework.cache.CacheManager;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -30,12 +31,13 @@ class PolicyCreationServiceIdempotencyTest {
     PolicyRepository policyRepository = mock(PolicyRepository.class);
     IdempotencyService idempotencyService = mock(IdempotencyService.class);
     com.claimassist.platform.policy_service.security.InternalRequestIdentity internalRequestIdentity = mock(com.claimassist.platform.policy_service.security.InternalRequestIdentity.class);
+    CacheManager cacheManager = mock(CacheManager.class);
 
     PolicyCreationService service;
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new PolicyCreationService(policyRepository, planRepository, productRepository, coverageRepository, idempotencyService, internalRequestIdentity);
+        service = new PolicyCreationService(policyRepository, planRepository, productRepository, coverageRepository, idempotencyService, internalRequestIdentity, cacheManager);
         // Inject a mocked EntityManager because the service uses @PersistenceContext in production
         jakarta.persistence.EntityManager mockEm = mock(jakarta.persistence.EntityManager.class);
         jakarta.persistence.Query mockQuery = mock(jakarta.persistence.Query.class);

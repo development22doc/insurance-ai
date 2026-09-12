@@ -2,6 +2,7 @@ package com.claimassist.platform.policy_service.service;
 
 import com.claimassist.platform.common_lib.error.BadRequestException;
 import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
+import com.claimassist.platform.policy_service.config.RedisCacheConfig;
 import com.claimassist.platform.policy_service.dto.*;
 import com.claimassist.platform.policy_service.entity.Policy;
 import com.claimassist.platform.policy_service.entity.PolicyVersion;
@@ -12,9 +13,13 @@ import com.claimassist.platform.policy_service.repository.PolicyRepository;
 import com.claimassist.platform.policy_service.repository.PolicyVersionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -33,6 +38,7 @@ public class PolicyLifecycleService {
     private final PolicyCreationService policyCreationService; // for verifyStripePayment
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
+    private final CacheManager cacheManager;
 
     @Transactional
     public Policy issue(Long policyId, String suppliedPaymentIntentId) {
@@ -63,7 +69,9 @@ public class PolicyLifecycleService {
         // Payment verified -> transition
         try {
             policy.transitionTo(LifecycleStatus.ACTIVE);
-            return policyRepository.save(policy);
+            Policy saved = policyRepository.save(policy);
+            evictPolicyCoverageAfterCommit(policyId);
+            return saved;
         } catch (IllegalArgumentException iae) {
             throw new BadRequestException(iae.getMessage());
         } catch (OptimisticLockingFailureException olf) {
@@ -124,7 +132,9 @@ public class PolicyLifecycleService {
         Map<String, Object> result = idempotencyService.execute(idempotencyKey, "endorse-policy", null, fingerprint, (Class<Map<String, Object>>)(Class) Map.class, command);
         Long pid = (Number) result.get("policyId") == null ? null : ((Number) result.get("policyId")).longValue();
         if (pid == null) throw new IllegalStateException("Endorsement did not return policy id");
-        return policyRepository.findById(pid).orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(pid)));
+        Policy saved = policyRepository.findById(pid).orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(pid)));
+        evictPolicyCoverageAfterCommit(pid);
+        return saved;
     }
 
     @Transactional
@@ -184,7 +194,9 @@ public class PolicyLifecycleService {
         Map<String, Object> result = idempotencyService.execute(idempotencyKey, "renew-policy", null, fingerprint, (Class<Map<String, Object>>)(Class) Map.class, command);
         Long pid = (Number) result.get("policyId") == null ? null : ((Number) result.get("policyId")).longValue();
         if (pid == null) throw new IllegalStateException("Renewal did not return policy id");
-        return policyRepository.findById(pid).orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(pid)));
+        Policy saved = policyRepository.findById(pid).orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(pid)));
+        evictPolicyCoverageAfterCommit(pid);
+        return saved;
     }
 
     @Transactional
@@ -198,14 +210,16 @@ public class PolicyLifecycleService {
 
         try {
             policy.transitionTo(LifecycleStatus.CANCELLED);
-            return policyRepository.save(policy);
+            Policy saved = policyRepository.save(policy);
+            evictPolicyCoverageAfterCommit(policyId);
+            return saved;
         } catch (IllegalArgumentException iae) {
             throw new BadRequestException(iae.getMessage());
         }
     }
 
     @Transactional
-        public Policy reinstate(Long policyId, ReinstateRequestDto req, Long currentUserId, String idempotencyKey) {
+    public Policy reinstate(Long policyId, ReinstateRequestDto req, Long currentUserId, String idempotencyKey) {
             String paymentIntentId = req == null ? null : req.stripePaymentIntentId;
 
             // If payment intent supplied, require idempotency and execute the full mutation path under idempotency protection
@@ -268,7 +282,9 @@ public class PolicyLifecycleService {
                 Map<String, Object> result = idempotencyService.execute(idempotencyKey, "reinstate-policy", currentUserId, fingerprint, (Class<Map<String, Object>>)(Class) Map.class, command);
                 Long pid = (Number) result.get("policyId") == null ? null : ((Number) result.get("policyId")).longValue();
                 if (pid == null) throw new IllegalStateException("Reinstate did not return policy id");
-                return policyRepository.findById(pid).orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(pid)));
+                Policy saved = policyRepository.findById(pid).orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(pid)));
+                evictPolicyCoverageAfterCommit(pid);
+                return saved;
             }
 
             // No-payment path: preserve existing behavior (move to REINSTATEMENT_PENDING)
@@ -286,8 +302,34 @@ public class PolicyLifecycleService {
                 policyRepository.save(policy);
             }
 
-            return policyRepository.findById(policyId).orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(policyId)));
+            Policy saved = policyRepository.findById(policyId).orElseThrow(() -> new ResourceNotFoundException("Policy", String.valueOf(policyId)));
+            evictPolicyCoverageAfterCommit(policyId);
+            return saved;
         }
+
+    private void evictPolicyCoverageAfterCommit(Long policyId) {
+        Runnable evictTask = () -> {
+            Cache cache = cacheManager.getCache(RedisCacheConfig.POLICY_COVERAGE_CACHE);
+            if (cache == null || policyId == null) {
+                return;
+            }
+            try {
+                cache.evict(policyId);
+            } catch (Exception e) {
+                System.err.println("Failed to evict policy coverage cache key " + policyId + ": " + e.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictTask.run();
+                }
+            });
+        } else {
+            evictTask.run();
+        }
+    }
 
     private String computeFingerprint(Object obj) {
         try {

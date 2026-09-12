@@ -1,0 +1,36 @@
+server:
+  port: 8084
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/claimassist_policy_local
+    username: claimassist
+    password: claimassist
+    hikari:
+      pool-name: policy-service-pool
+      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_THRESHOLD_MS:60000}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+
+security:
+  service-client:
+    registration-id: ${SERVICE_CLIENT_REGISTRATION_ID:internal-service}
+    client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+    client-secret: ${SERVICE_CLIENT_SECRET:}
+    token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/token}

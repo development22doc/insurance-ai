@@ -14,6 +14,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -62,8 +64,9 @@ class PolicyServiceSecurityIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        when(policyCoverageQueryService.getPolicyCoverage(any(), any()))
-                .thenThrow(new ServiceUnavailableException("Policy service unavailable"));
+        doThrow(new ServiceUnavailableException("Policy service unavailable"))
+                .when(policyCoverageQueryService)
+                .getPolicyCoverage(any(), any());
     }
 
     private Jwt userJwt() {
@@ -124,14 +127,15 @@ class PolicyServiceSecurityIntegrationTest {
 
     @Test
     void userTokenIgnoresXUserIdHeader_whenResolvingCoverageOwner() throws Exception {
-        when(policyCoverageQueryService.getPolicyCoverage(any(), any()))
-                .thenAnswer(invocation -> {
+        doAnswer(invocation -> {
                     String userId = invocation.getArgument(1);
                     if (!"1".equals(userId)) {
                         throw new AssertionError("Expected user JWT identity to win over X-User-Id override: expected 1 but was " + userId);
                     }
                     return new PolicyCoverageDto(1L, "POL-1", "ACTIVE", "AUTO", "STANDARD", 1000L, 5000L, "2026-01-01");
-                });
+                })
+                .when(policyCoverageQueryService)
+                .getPolicyCoverage(any(), any());
 
         mockMvc.perform(get("/internal/v1/policies/1/coverage")
                         .with(jwt().jwt(userJwt()))

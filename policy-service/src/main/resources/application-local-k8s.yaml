@@ -1,6 +1,13 @@
 spring:
   config:
-    import: optional:file:../application-local-k8s.properties
+    import:
+      - optional:file:../application-local-k8s.properties
+      - optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  cloud:
+    config:
+      enabled: true
+      import-check:
+        enabled: true
   # CRITICAL WARNING: This profile connects to OCI PostgreSQL through Tailscale
   # Flyway is DISABLED by default to protect the OCI read-only boundary
   # DO NOT set FLYWAY_ENABLED=true - this WILL modify the remote OCI database

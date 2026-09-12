@@ -4,7 +4,14 @@
 # DO NOT use FLYWAY_ENABLED=true when connecting to remote databases (including OCI)
 spring:
   config:
-    import: optional:file:../application-local.properties
+    import:
+      - optional:file:../application-local.properties
+      - optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  cloud:
+    config:
+      enabled: true
+      import-check:
+        enabled: true
   datasource:
     url: jdbc:postgresql://${POLICY_DB_HOST:localhost}:${POLICY_DB_PORT:5432}/claimassist_policy
     username: ${POLICY_DB_USER:policy}
