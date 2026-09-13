@@ -4,8 +4,8 @@ import com.claimassist.platform.agent_service.ai.tool.ToolMetadata;
 import com.claimassist.platform.agent_service.ai.tool.ToolRegistry;
 import com.claimassist.platform.agent_service.observability.AgentTelemetry;
 import com.claimassist.platform.agent_service.observability.AuditEvent;
-import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGatewayApi;
+import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGatewayApi;
 import com.claimassist.platform.common_lib.dto.ClaimDocumentSummaryDto;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
@@ -51,7 +51,6 @@ import java.util.function.Consumer;
  *       error code, retryability and a source label.</li>
  * </ul>
  */
-@RequiredArgsConstructor
 @Slf4j
 public class InsuranceAgentTools {
 
@@ -64,9 +63,10 @@ public class InsuranceAgentTools {
     private final Long claimId;
     private final Long policyId;
     private final Long userId;
-    private final ClaimsServiceGateway claimsServiceGateway;
-    private final CustomerServiceGateway customerServiceGateway;
+    private final ClaimsServiceGatewayApi claimsServiceGateway;
+    private final CustomerServiceGatewayApi customerServiceGateway;
     private final ToolRegistry registry;
+    private final String jwtToken; // Explicit JWT token for permission checks
 
     /**
      * Maximum accepted length of a proposed-update note, so an oversized value
@@ -91,19 +91,19 @@ public class InsuranceAgentTools {
     public record ProposedUpdate(String proposedStatus, String note) {}
 
     /** Convenience constructor without telemetry (kept for backward compatibility). */
-    public InsuranceAgentTools(Long claimId, Long policyId, Long userId, ClaimsServiceGateway claimsServiceGateway,
-                               CustomerServiceGateway customerServiceGateway, ToolRegistry registry,
+    public InsuranceAgentTools(Long claimId, Long policyId, Long userId, ClaimsServiceGatewayApi claimsServiceGateway,
+                               CustomerServiceGatewayApi customerServiceGateway, ToolRegistry registry,
                                int maxNoteLength, Consumer<ProposedUpdate> onProposedUpdate) {
         this(claimId, policyId, userId, claimsServiceGateway, customerServiceGateway, registry,
-                maxNoteLength, onProposedUpdate, null, "", "");
+                maxNoteLength, onProposedUpdate, null, "", "", null);
     }
 
     /** Constructor with an optional telemetry sink for security/audit observability. */
-    public InsuranceAgentTools(Long claimId, Long policyId, Long userId, ClaimsServiceGateway claimsServiceGateway,
-                               CustomerServiceGateway customerServiceGateway, ToolRegistry registry,
+    public InsuranceAgentTools(Long claimId, Long policyId, Long userId, ClaimsServiceGatewayApi claimsServiceGateway,
+                               CustomerServiceGatewayApi customerServiceGateway, ToolRegistry registry,
                                int maxNoteLength, Consumer<ProposedUpdate> onProposedUpdate,
                                @Nullable AgentTelemetry agentTelemetry,
-                               String requestId, String correlationId) {
+                               String requestId, String correlationId, String jwtToken) {
         this.claimId = claimId;
         this.policyId = policyId;
         this.userId = userId;
@@ -115,6 +115,7 @@ public class InsuranceAgentTools {
         this.agentTelemetry = agentTelemetry;
         this.requestId = requestId == null ? "" : requestId;
         this.correlationId = correlationId == null ? "" : correlationId;
+        this.jwtToken = jwtToken;
     }
 
     @Tool(name = "get_claim_status",
@@ -129,7 +130,9 @@ public class InsuranceAgentTools {
             return unauthorized().toJson();
         }
         try {
-            ClaimStatusDto status = claimsServiceGateway.getClaimStatus(claimId);
+            // Use reactive variant with explicit JWT token to avoid blocking on reactive threads.
+            // Blocking is safe here because tool callbacks are already executed on boundedElastic.
+            ClaimStatusDto status = claimsServiceGateway.getClaimStatusReactive(claimId, jwtToken).block();
             log.info("Tool call: get_claim_status(claimId={})", claimId);
             if (status == null || NOT_FOUND.equals(status.status())) {
                 return ToolResult.failure("CLAIM_NOT_FOUND", false,
@@ -155,7 +158,9 @@ public class InsuranceAgentTools {
             return unauthorized().toJson();
         }
         try {
-            PolicyCoverageDto coverage = customerServiceGateway.getPolicyCoverage(policyId, userId);
+            // Use reactive variant with explicit JWT token to avoid blocking on reactive threads.
+            // Blocking is safe here because tool callbacks are already executed on boundedElastic.
+            PolicyCoverageDto coverage = customerServiceGateway.getPolicyCoverageReactive(policyId, userId, jwtToken).block();
             log.info("Tool call: get_policy_coverage(policyId={}, userId={})", policyId, userId);
             if (coverage == null || NOT_FOUND.equals(coverage.status())) {
                 return ToolResult.failure("POLICY_NOT_FOUND", false,
@@ -261,14 +266,18 @@ public class InsuranceAgentTools {
         // service is down), we DENY rather than risk reaching the backend.
         boolean denied;
         try {
-            denied = !claimsServiceGateway.checkPermission(claimId, meta.requiredPermission());
+            // Use reactive permission check with explicit JWT token to avoid depending on
+            // ReactiveSecurityContextHolder which may not be available on boundedElastic threads.
+            // Blocking is safe here because tool callbacks are already executed on boundedElastic.
+            Boolean hasPermission = claimsServiceGateway.checkPermissionWithToken(claimId, meta.requiredPermission(), jwtToken).block();
+            denied = hasPermission == null || !hasPermission;
         } catch (Exception e) {
             log.warn("Permission check failed for claim {} tool {} - denying: {}",
                     claimId, meta.name(), e.toString());
             denied = true;
         }
         if (denied && agentTelemetry != null) {
-            agentTelemetry.securityDenied(requestId, correlationId, claimId, null,
+            agentTelemetry.securityDenied(requestId, correlationId, claimId, userId,
                     meta.name(), "AUTHORIZATION_DENIED");
             agentTelemetry.audit(AuditEvent.of("AUTHORIZATION_DENIED", null, claimId,
                     requestId, correlationId, meta.name(), "DENIED", "UNAUTHORIZED"));

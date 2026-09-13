@@ -22,7 +22,7 @@ claimassist:
 
 spring:
   config:
-    import: optional:file:../application-local-k8s.properties
+    import: optional:file:../../application-local-k8s.properties
   cloud:
     config:
       enabled: false
@@ -31,7 +31,7 @@ spring:
     discovery:
       enabled: false
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_customer?sslmode=disable
+    url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_customer?sslmode=disable&options=-c timezone=Asia/Kolkata
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD}
     hikari:
@@ -93,7 +93,7 @@ spring:
 
       client:
         registration:
-          internal-service:
+          claimassist-admin-service:
             provider: keycloak
             client-id: ${SERVICE_CLIENT_ID}
             client-secret: ${SERVICE_CLIENT_SECRET}
@@ -103,15 +103,19 @@ spring:
           keycloak:
             token-uri: ${SERVICE_TOKEN_URI}
 
+security:
+  internal:
+    trusted-service-client-ids: internal-service-client
+
 # Keycloak User Provisioning Service Configuration (Admin API)
 keycloak:
   server-url: ${KEYCLOAK_SERVER_URL:http://100.114.133.69:30080}
   realm: ${KEYCLOAK_REALM:claimassist-dev}
   client-id: ${KEYCLOAK_CLIENT_ID:claimassist-customer-app}
   client-secret: ${KEYCLOAK_CLIENT_SECRET:}
-  redirect-uri: ${KEYCLOAK_REDIRECT_URI:http://localhost:8080/customer/auth/callback}
-  admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:${SERVICE_CLIENT_ID:internal-service-client}}
-  admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:${SERVICE_CLIENT_SECRET:internal-service-secret}}
+  redirect-uri: ${KEYCLOAK_REDIRECT_URI:http://localhost:5173/callback}
+  admin-client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:${SERVICE_CLIENT_ID:claimassist-admin-service}}
+  admin-client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:${SERVICE_CLIENT_SECRET:QvxMaUMQTE6dyLU8DHQ4YYaFo2WaTPqi}}
 
 eureka:
   client:
@@ -139,6 +143,7 @@ management:
 logging:
   level:
     com.claimassist: DEBUG
-    org.springframework.security: WARN
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: DEBUG
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN

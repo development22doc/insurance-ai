@@ -25,7 +25,7 @@
 # failure; HPA only adds/removes pods on that one node.
 # =============================================================================
 {{- range $name, $svc := .Values.services }}
-{{- if hasKey $.Values.hpa.services $name }}
+{{- if and (hasKey $.Values.hpa.services $name) (default true $svc.enabled) }}
 {{- $spec := index $.Values.hpa.services $name }}
 {{- $min := $spec.min | default $defMin }}
 {{- $max := $spec.max | default $defMax }}

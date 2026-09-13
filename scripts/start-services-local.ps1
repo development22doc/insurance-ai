@@ -110,6 +110,59 @@ Get-Content $envFile | ForEach-Object {
     }
 }
 
+# ------------------------------------------------------------
+# Attempt to retrieve authoritative Keycloak admin client secret from
+# the Kubernetes secret in the target namespace. This avoids keeping a
+# separate, stale copy of the credential in the local .env file and makes
+# the cluster secret the single source of truth for local-k8s runs.
+#
+# Behavior:
+#  - If kubectl is available and the secret exists, override the
+#    KEYCLOAK_ADMIN_CLIENT_SECRET loaded from .env.local-k3s with the
+#    value read from the cluster secret named in the Helm values
+#    (claimassist-keycloak-admin) in namespace claimassist-dev.
+#  - This does NOT commit any secret to source control and does not print
+#    the secret value. It only sets the process environment variable so
+#    the JVM processes started below pick it up. This aligns local runs
+#    with the authoritative runtime secret in the cluster.
+# ------------------------------------------------------------
+try {
+    # Only attempt if kubectl is present
+    $kubectlCmd = Get-Command kubectl.exe -ErrorAction SilentlyContinue
+    if (-not $kubectlCmd) { $kubectlCmd = Get-Command kubectl -ErrorAction SilentlyContinue }
+    if ($kubectlCmd) {
+        # Namespace and secret name are the cluster defaults used by the Helm chart
+        $kcNamespace = "claimassist-dev"
+        $kcSecretName = "claimassist-keycloak-admin"
+
+        Write-Host "[ENV] Checking Kubernetes secret $kcSecretName in namespace $kcNamespace..." -ForegroundColor Cyan
+        $json = & $kubectlCmd.Source -n $kcNamespace get secret $kcSecretName -o json 2>$null
+        if ($LASTEXITCODE -eq 0 -and $json) {
+            $secretObj = $json | ConvertFrom-Json
+            if ($secretObj.data -and $secretObj.data.KEYCLOAK_ADMIN_CLIENT_SECRET) {
+                $b64 = $secretObj.data.KEYCLOAK_ADMIN_CLIENT_SECRET
+                try {
+                    $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+                    if (-not [string]::IsNullOrWhiteSpace($decoded)) {
+                        # Override in-process environment and local envVars map
+                        $envVars["KEYCLOAK_ADMIN_CLIENT_SECRET"] = $decoded
+                        [Environment]::SetEnvironmentVariable("KEYCLOAK_ADMIN_CLIENT_SECRET", $decoded, "Process")
+                        Write-Host "[ENV] Overrode KEYCLOAK_ADMIN_CLIENT_SECRET from Kubernetes secret (authoritative)" -ForegroundColor Green
+                    }
+                } catch {
+                    Write-Host "[ENV] Failed to decode KEYCLOAK_ADMIN_CLIENT_SECRET from Kubernetes secret" -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host "[ENV] Kubernetes secret $kcSecretName does not contain KEYCLOAK_ADMIN_CLIENT_SECRET" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "[ENV] Kubernetes secret $kcSecretName not found in namespace $kcNamespace or kubectl returned an error" -ForegroundColor Yellow
+        }
+    }
+} catch {
+    Write-Host "[ENV] Error while attempting to read Keycloak secret from Kubernetes: $_" -ForegroundColor Yellow
+}
+
 # Validate required variables
 $requiredVars = @(
     "SPRING_PROFILES_ACTIVE",
@@ -123,7 +176,10 @@ $requiredVars = @(
     "ZIPKIN_ENDPOINT",
     "LOKI_HOST",
     "LOKI_PORT",
-    "CLAIMASSIST_DEV_ID"
+    "CLAIMASSIST_DEV_ID",
+    "KEYCLOAK_ADMIN_CLIENT_ID",
+    "KEYCLOAK_ADMIN_CLIENT_SECRET",
+    "INTERNAL_API_SECRET"
 )
 
 $missingVars = @()
@@ -242,16 +298,20 @@ $services = @(
             "SPRING_DATASOURCE_URL" = "jdbc:postgresql://$($envVars['POSTGRES_HOST']):$($envVars['POSTGRES_PORT'])/claimassist_customer?sslmode=disable"
             "SPRING_DATASOURCE_USERNAME" = $envVars["POSTGRES_USER"]
             "SPRING_DATASOURCE_PASSWORD" = $envVars["POSTGRES_PASSWORD"]
+            "SPRING_DATASOURCE_DRIVER" = "org.postgresql.Driver"
+            "SPRING_FLYWAY_ENABLED" = "false"
+            "SPRING_JPA_HIBERNATE_DDL_AUTO" = "none"
             "KEYCLOAK_ISSUER_URI" = $envVars["KEYCLOAK_ISSUER_URI"]
             "KEYCLOAK_JWKS_URI" = $envVars["KEYCLOAK_JWKS_URI"]
             "SERVICE_TOKEN_URI" = "$($envVars['KEYCLOAK_SERVER_URL'])/realms/$($envVars['KEYCLOAK_REALM'])/protocol/openid-connect/token"
-            "SERVICE_CLIENT_ID" = "claimassist-admin-service"
-            "SERVICE_CLIENT_SECRET" = "local-dev-admin-client-secret"
+            "SERVICE_CLIENT_ID" = $envVars["KEYCLOAK_ADMIN_CLIENT_ID"]
+            "SERVICE_CLIENT_SECRET" = $envVars["KEYCLOAK_ADMIN_CLIENT_SECRET"]
             "ZIPKIN_ENDPOINT" = $envVars["ZIPKIN_ENDPOINT"]
             "LOKI_HOST" = $envVars["LOKI_HOST"]
             "LOKI_PORT" = $envVars["LOKI_PORT"]
             "SERVER_PORT" = "8081"
             "CLAIMASSIST_DEV_ID" = $envVars["CLAIMASSIST_DEV_ID"]
+            "INTERNAL_API_SECRET" = $envVars["INTERNAL_API_SECRET"]
             "SPRING_CLOUD_CONFIG_ENABLED" = "false"
         }
     }
@@ -267,16 +327,20 @@ $services = @(
             "SPRING_DATASOURCE_URL" = "jdbc:postgresql://$($envVars['POSTGRES_HOST']):$($envVars['POSTGRES_PORT'])/claimassist_claims?serverTimezone=UTC"
             "SPRING_DATASOURCE_USERNAME" = $envVars["POSTGRES_USER"]
             "SPRING_DATASOURCE_PASSWORD" = $envVars["POSTGRES_PASSWORD"]
+            "SPRING_DATASOURCE_DRIVER" = "org.postgresql.Driver"
+            "SPRING_FLYWAY_ENABLED" = "false"
+            "SPRING_JPA_HIBERNATE_DDL_AUTO" = "none"
             "KEYCLOAK_ISSUER_URI" = $envVars["KEYCLOAK_ISSUER_URI"]
             "KEYCLOAK_JWKS_URI" = $envVars["KEYCLOAK_JWKS_URI"]
             "SERVICE_TOKEN_URI" = "$($envVars['KEYCLOAK_SERVER_URL'])/realms/$($envVars['KEYCLOAK_REALM'])/protocol/openid-connect/token"
-            "SERVICE_CLIENT_ID" = "claimassist-admin-service"
-            "SERVICE_CLIENT_SECRET" = "local-dev-admin-client-secret"
+            "SERVICE_CLIENT_ID" = $envVars["KEYCLOAK_ADMIN_CLIENT_ID"]
+            "SERVICE_CLIENT_SECRET" = $envVars["KEYCLOAK_ADMIN_CLIENT_SECRET"]
             "ZIPKIN_ENDPOINT" = $envVars["ZIPKIN_ENDPOINT"]
             "LOKI_HOST" = $envVars["LOKI_HOST"]
             "LOKI_PORT" = $envVars["LOKI_PORT"]
             "SERVER_PORT" = "8082"
             "CLAIMASSIST_DEV_ID" = $envVars["CLAIMASSIST_DEV_ID"]
+            "INTERNAL_API_SECRET" = $envVars["INTERNAL_API_SECRET"]
             "SPRING_CLOUD_CONFIG_ENABLED" = "false"
         }
     }
@@ -292,16 +356,20 @@ $services = @(
             "SPRING_DATASOURCE_URL" = "jdbc:postgresql://$($envVars['POSTGRES_HOST']):$($envVars['POSTGRES_PORT'])/claimassist_agent?serverTimezone=UTC"
             "SPRING_DATASOURCE_USERNAME" = $envVars["POSTGRES_USER"]
             "SPRING_DATASOURCE_PASSWORD" = $envVars["POSTGRES_PASSWORD"]
+            "SPRING_DATASOURCE_DRIVER" = "org.postgresql.Driver"
+            "SPRING_FLYWAY_ENABLED" = "false"
+            "SPRING_JPA_HIBERNATE_DDL_AUTO" = "none"
             "KEYCLOAK_ISSUER_URI" = $envVars["KEYCLOAK_ISSUER_URI"]
             "KEYCLOAK_JWKS_URI" = $envVars["KEYCLOAK_JWKS_URI"]
             "SERVICE_TOKEN_URI" = "$($envVars['KEYCLOAK_SERVER_URL'])/realms/$($envVars['KEYCLOAK_REALM'])/protocol/openid-connect/token"
-            "SERVICE_CLIENT_ID" = "internal-service-client"
-            "SERVICE_CLIENT_SECRET" = "internal-service-secret"
+            "SERVICE_CLIENT_ID" = $envVars["KEYCLOAK_ADMIN_CLIENT_ID"]
+            "SERVICE_CLIENT_SECRET" = $envVars["KEYCLOAK_ADMIN_CLIENT_SECRET"]
             "ZIPKIN_ENDPOINT" = $envVars["ZIPKIN_ENDPOINT"]
             "LOKI_HOST" = $envVars["LOKI_HOST"]
             "LOKI_PORT" = $envVars["LOKI_PORT"]
             "SERVER_PORT" = "8083"
             "CLAIMASSIST_DEV_ID" = $envVars["CLAIMASSIST_DEV_ID"]
+            "INTERNAL_API_SECRET" = $envVars["INTERNAL_API_SECRET"]
             "SPRING_CLOUD_CONFIG_ENABLED" = "false"
         }
     }
@@ -321,6 +389,7 @@ $services = @(
             "LOKI_PORT" = $envVars["LOKI_PORT"]
             "SERVER_PORT" = "8080"
             "CLAIMASSIST_DEV_ID" = $envVars["CLAIMASSIST_DEV_ID"]
+            "INTERNAL_API_SECRET" = $envVars["INTERNAL_API_SECRET"]
             "SPRING_CLOUD_CONFIG_ENABLED" = "false"
         }
     }

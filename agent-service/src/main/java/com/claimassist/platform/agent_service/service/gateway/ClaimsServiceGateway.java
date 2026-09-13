@@ -15,7 +15,7 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.CredentialsExpiredException;
-import org.springframework.stereotype.Component;
+import org.springframework.security.core.Authentication;
 
 import java.util.List;
 
@@ -31,16 +31,31 @@ import java.util.List;
  * claims-service hiccup shouldn't abort an entire in-flight agent response;
  * better to answer "I can't check that right now" than crash the chat.
  */
-@Component
-@RequiredArgsConstructor
 @Slf4j
-public class ClaimsServiceGateway {
+public class ClaimsServiceGateway implements ClaimsServiceGatewayApi {
 
     private static final String INSTANCE = "claimsService";
 
     private final ClaimsClient claimsClient;
     private final CacheService cacheService;
     private final CacheProperties cacheProperties;
+    private final org.springframework.web.reactive.function.client.WebClient claimsServiceWebClient;
+
+    public ClaimsServiceGateway(ClaimsClient claimsClient,
+                               CacheService cacheService,
+                               CacheProperties cacheProperties,
+                               org.springframework.web.reactive.function.client.WebClient claimsServiceWebClient) {
+        this.claimsClient = claimsClient;
+        this.cacheService = cacheService;
+        this.cacheProperties = cacheProperties;
+        this.claimsServiceWebClient = claimsServiceWebClient;
+    }
+
+    // Backwards-compatible constructor for tests and legacy callers
+    public ClaimsServiceGateway(ClaimsClient claimsClient, CacheService cacheService, CacheProperties cacheProperties) {
+        this(claimsClient, cacheService, cacheProperties,
+                org.springframework.web.reactive.function.client.WebClient.create());
+    }
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "statusFallback")
     @Retry(name = INSTANCE)
@@ -52,6 +67,54 @@ public class ClaimsServiceGateway {
                 key, new TypeReference<ClaimStatusDto>() {}, cacheProperties.getClaimStatusTtl(),
                 () -> claimsClient.getClaimStatus(claimId),
                 this::isCacheableStatus);
+    }
+
+    /**
+     * Reactive, non-blocking variant for use in WebFlux request paths. Returns
+     * an empty Mono when the remote service indicates NOT_FOUND or on 404.
+     */
+    public reactor.core.publisher.Mono<ClaimStatusDto> getClaimStatusReactive(Long claimId) {
+        String path = "/internal/v1/claims/" + claimId + "/status";
+
+        return org.springframework.security.core.context.ReactiveSecurityContextHolder.getContext()
+                .flatMap(securityContext -> {
+                    org.springframework.security.core.Authentication auth = securityContext.getAuthentication();
+                    String token = extractBearerToken(auth);
+
+                    return claimsServiceWebClient.get()
+                            .uri(path)
+                            .headers(h -> {
+                                if (token != null && !token.isBlank()) {
+                                    h.setBearerAuth(token);
+                                }
+                            })
+                            .retrieve()
+                            .onStatus(status -> status.value() == 404, resp -> reactor.core.publisher.Mono.empty())
+                            .bodyToMono(ClaimStatusDto.class);
+                })
+                .switchIfEmpty(reactor.core.publisher.Mono.empty())
+                .onErrorResume(ex -> reactor.core.publisher.Mono.empty());
+    }
+
+    /**
+     * Reactive claim status fetch that accepts an explicit JWT token instead of relying on
+     * ReactiveSecurityContextHolder. Use this from AI tool execution which runs
+     * on a non-reactive executor where the SecurityContext may not be available.
+     */
+    public reactor.core.publisher.Mono<ClaimStatusDto> getClaimStatusReactive(Long claimId, String jwtToken) {
+        String path = "/internal/v1/claims/" + claimId + "/status";
+
+        return claimsServiceWebClient.get()
+                .uri(path)
+                .headers(h -> {
+                    if (jwtToken != null && !jwtToken.isBlank()) {
+                        h.setBearerAuth(jwtToken);
+                    }
+                })
+                .retrieve()
+                .onStatus(status -> status.value() == 404, resp -> reactor.core.publisher.Mono.empty())
+                .bodyToMono(ClaimStatusDto.class)
+                .onErrorResume(ex -> reactor.core.publisher.Mono.empty());
     }
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "documentsFallback")
@@ -73,6 +136,53 @@ public class ClaimsServiceGateway {
     @RateLimiter(name = INSTANCE)
     public boolean checkPermission(Long claimId, ClaimPermission permission) {
         return claimsClient.checkPermission(claimId, permission);
+    }
+
+    /**
+     * Reactive permission check that propagates the JWT via WebClient.
+     * Use this from AI tool execution which runs on a non-reactive executor
+     * where Feign's interceptor cannot access the reactive SecurityContext.
+     */
+    public reactor.core.publisher.Mono<Boolean> checkPermissionReactive(Long claimId, ClaimPermission permission) {
+        String path = "/internal/v1/claims/" + claimId + "/permissions/check?permission=" + permission;
+
+        return org.springframework.security.core.context.ReactiveSecurityContextHolder.getContext()
+                .flatMap(securityContext -> {
+                    org.springframework.security.core.Authentication auth = securityContext.getAuthentication();
+                    String token = extractBearerToken(auth);
+
+                    return claimsServiceWebClient.get()
+                            .uri(path)
+                            .headers(h -> {
+                                if (token != null && !token.isBlank()) {
+                                    h.setBearerAuth(token);
+                                }
+                            })
+                            .retrieve()
+                            .bodyToMono(Boolean.class)
+                            .onErrorResume(ex -> reactor.core.publisher.Mono.just(false)); // fail closed
+                })
+                .switchIfEmpty(reactor.core.publisher.Mono.just(false)); // fail closed when no security context
+    }
+
+    /**
+     * Permission check that accepts an explicit JWT token instead of relying on
+     * ReactiveSecurityContextHolder. Use this from AI tool execution which runs
+     * on a non-reactive executor where the SecurityContext may not be available.
+     */
+    public reactor.core.publisher.Mono<Boolean> checkPermissionWithToken(Long claimId, ClaimPermission permission, String jwtToken) {
+        String path = "/internal/v1/claims/" + claimId + "/permissions/check?permission=" + permission;
+
+        return claimsServiceWebClient.get()
+                .uri(path)
+                .headers(h -> {
+                    if (jwtToken != null && !jwtToken.isBlank()) {
+                        h.setBearerAuth(jwtToken);
+                    }
+                })
+                .retrieve()
+                .bodyToMono(Boolean.class)
+                .onErrorResume(ex -> reactor.core.publisher.Mono.just(false)); // fail closed
     }
 
     /**
@@ -129,5 +239,22 @@ public class ClaimsServiceGateway {
             probe = probe.getCause();
         }
         return false;
+    }
+
+    private String extractBearerToken(org.springframework.security.core.Authentication auth) {
+        if (auth == null) {
+            return null;
+        }
+        Object principal = auth.getPrincipal();
+        if (principal instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
+            return jwt.getTokenValue();
+        }
+        if (auth.getCredentials() instanceof CharSequence cs) {
+            return cs.toString();
+        }
+        if (auth.getCredentials() instanceof org.springframework.security.oauth2.jwt.Jwt credJwt) {
+            return credJwt.getTokenValue();
+        }
+        return null;
     }
 }

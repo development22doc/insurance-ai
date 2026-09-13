@@ -82,10 +82,6 @@ public class ClaimQueryServiceImpl implements ClaimQueryService {
     }
 
     @Override
-    @org.springframework.cache.annotation.Cacheable(
-            cacheNames = com.claimassist.platform.claims_service.config.RedisCacheConfig.CLAIM_STATUS_CACHE,
-            key = "#claimId",
-            sync = true)
     public ClaimStatusDto getClaimStatusWithHistory(Long claimId) {
         long start = System.nanoTime();
         try {

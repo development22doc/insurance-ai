@@ -3,6 +3,7 @@ package com.claimassist.platform.customer_service.controller;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import com.claimassist.platform.customer_service.dto.customer.CustomerResponse;
 import com.claimassist.platform.customer_service.dto.customer.UpdateCustomerRequest;
+import com.claimassist.platform.customer_service.service.CustomerLookupService;
 import com.claimassist.platform.customer_service.service.CustomerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 /**
  * REST controller for customer profile operations.
- * Provides endpoints for updating and deleting customer profiles.
+ * Provides endpoints for retrieving, updating, and deleting customer profiles.
  * Follows the existing project architecture with thin controllers,
  * service layer business logic, and proper authorization.
  */
@@ -22,6 +23,20 @@ public class CustomerController {
 
     private final CustomerService customerService;
     private final CurrentUserProvider currentUserProvider;
+    private final CustomerLookupService customerLookupService;
+
+    /**
+     * Retrieves the authenticated customer's profile.
+     * Returns the current user's profile based on the authenticated user ID.
+     *
+     * @return The current customer's profile
+     */
+    @GetMapping("/me")
+    public ResponseEntity<CustomerResponse> getCurrentCustomer() {
+        Long currentUserId = currentUserProvider.getCurrentUserId();
+        CustomerResponse response = customerLookupService.findById(currentUserId);
+        return ResponseEntity.ok(response);
+    }
 
     /**
      * Updates the authenticated customer's profile.

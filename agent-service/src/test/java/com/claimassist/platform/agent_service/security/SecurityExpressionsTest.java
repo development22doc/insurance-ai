@@ -25,32 +25,58 @@ class SecurityExpressionsTest {
     @Test
     void canAccessClaimDelegatesToClaimsServiceRbacAndReturnsTrue() {
         ClaimsServiceGateway gateway = mock(ClaimsServiceGateway.class);
-        when(gateway.checkPermission(99L, ClaimPermission.VIEW)).thenReturn(true);
 
-        SecurityExpressions security = new SecurityExpressions(gateway);
-        assertThat(security.canAccessClaim(99L)).isTrue();
-        verify(gateway).checkPermission(99L, ClaimPermission.VIEW);
+        org.springframework.web.reactive.function.client.WebClient webClient = mock(org.springframework.web.reactive.function.client.WebClient.class);
+        var uriSpec = mock(org.springframework.web.reactive.function.client.WebClient.RequestHeadersUriSpec.class);
+        var headersSpec = mock(org.springframework.web.reactive.function.client.WebClient.RequestHeadersSpec.class);
+        var responseSpec = mock(org.springframework.web.reactive.function.client.WebClient.ResponseSpec.class);
+
+        when(webClient.get()).thenReturn(uriSpec);
+        when(uriSpec.uri(any(java.util.function.Function.class))).thenReturn(headersSpec);
+        when(headersSpec.headers(any())).thenReturn(headersSpec);
+        when(headersSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.bodyToMono(Boolean.class)).thenReturn(reactor.core.publisher.Mono.just(true));
+
+        SecurityExpressions security = new SecurityExpressions(gateway, webClient);
+        assertThat(security.canAccessClaim(99L).block()).isTrue();
     }
 
     @Test
     void returnsFalseWhenClaimsServiceDeniesAccess() {
         ClaimsServiceGateway gateway = mock(ClaimsServiceGateway.class);
-        when(gateway.checkPermission(anyLong(), any(ClaimPermission.class))).thenReturn(false);
 
-        SecurityExpressions security = new SecurityExpressions(gateway);
-        assertThat(security.canAccessClaim(99L)).isFalse();
+        org.springframework.web.reactive.function.client.WebClient webClient = mock(org.springframework.web.reactive.function.client.WebClient.class);
+        var uriSpec = mock(org.springframework.web.reactive.function.client.WebClient.RequestHeadersUriSpec.class);
+        var headersSpec = mock(org.springframework.web.reactive.function.client.WebClient.RequestHeadersSpec.class);
+        var responseSpec = mock(org.springframework.web.reactive.function.client.WebClient.ResponseSpec.class);
+
+        when(webClient.get()).thenReturn(uriSpec);
+        when(uriSpec.uri(any(java.util.function.Function.class))).thenReturn(headersSpec);
+        when(headersSpec.headers(any())).thenReturn(headersSpec);
+        when(headersSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.bodyToMono(Boolean.class)).thenReturn(reactor.core.publisher.Mono.just(false));
+
+        SecurityExpressions security = new SecurityExpressions(gateway, webClient);
+        assertThat(security.canAccessClaim(99L).block()).isFalse();
     }
 
     @Test
-    void passesGatewayErrorsThroughRatherThanSwallowing() {
-        // SecurityExpressions must NOT swallow gateway failures - the fail-closed
-        // decision belongs to the gateway's own fallback, not this expression.
+    void returnsFalseOnGatewayError() {
+        // On errors the expression must fail-closed and return false
         ClaimsServiceGateway gateway = mock(ClaimsServiceGateway.class);
-        when(gateway.checkPermission(anyLong(), any(ClaimPermission.class)))
-                .thenThrow(new IllegalStateException("claims-service down"));
 
-        SecurityExpressions security = new SecurityExpressions(gateway);
-        assertThatThrownBy(() -> security.canAccessClaim(99L))
-                .isInstanceOf(IllegalStateException.class);
+        org.springframework.web.reactive.function.client.WebClient webClient = mock(org.springframework.web.reactive.function.client.WebClient.class);
+        var uriSpec = mock(org.springframework.web.reactive.function.client.WebClient.RequestHeadersUriSpec.class);
+        var headersSpec = mock(org.springframework.web.reactive.function.client.WebClient.RequestHeadersSpec.class);
+        var responseSpec = mock(org.springframework.web.reactive.function.client.WebClient.ResponseSpec.class);
+
+        when(webClient.get()).thenReturn(uriSpec);
+        when(uriSpec.uri(any(java.util.function.Function.class))).thenReturn(headersSpec);
+        when(headersSpec.headers(any())).thenReturn(headersSpec);
+        when(headersSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.bodyToMono(Boolean.class)).thenReturn(reactor.core.publisher.Mono.error(new IllegalStateException("claims-service down")));
+
+        SecurityExpressions security = new SecurityExpressions(gateway, webClient);
+        assertThat(security.canAccessClaim(99L).block()).isFalse();
     }
 }

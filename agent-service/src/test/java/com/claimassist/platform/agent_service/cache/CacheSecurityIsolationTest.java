@@ -12,7 +12,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -34,13 +36,15 @@ class CacheSecurityIsolationTest {
     private InsuranceAgentTools tools(ClaimsServiceGateway claims, CustomerServiceGateway customer,
                                       AtomicReference<InsuranceAgentTools.ProposedUpdate> accepted) {
         return new InsuranceAgentTools(99L, 7L, 99L, claims, customer, registry, 1000,
-                accepted::set);
+                accepted::set, null, "", "", null);
     }
 
     @Test
     void unauthorizedUserIsBlockedBeforeAnyCacheableRead() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), eq(ClaimPermission.VIEW))).thenReturn(false);
+        when(claims.checkPermissionWithToken(anyLong(), eq(ClaimPermission.VIEW), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(false));
         when(claims.getClaimStatus(99L)).thenReturn(status); // would be a cache hit, but must not be reached
         AtomicReference<InsuranceAgentTools.ProposedUpdate> accepted = new AtomicReference<>();
         InsuranceAgentTools tools = tools(claims, mock(CustomerServiceGateway.class), accepted);
@@ -57,6 +61,8 @@ class CacheSecurityIsolationTest {
     void authorizedUserGetsCorrectData() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), eq(ClaimPermission.VIEW))).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), eq(ClaimPermission.VIEW), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimStatus(99L)).thenReturn(status);
         AtomicReference<InsuranceAgentTools.ProposedUpdate> accepted = new AtomicReference<>();
         InsuranceAgentTools tools = tools(claims, mock(CustomerServiceGateway.class), accepted);
@@ -71,14 +77,16 @@ class CacheSecurityIsolationTest {
     void differentClaimResourceIsIndependent() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), eq(ClaimPermission.VIEW))).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), eq(ClaimPermission.VIEW), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimStatus(99L)).thenReturn(status);
+        when(claims.getClaimStatus(200L)).thenReturn(
+                new ClaimStatusDto(200L, 7L, "CLM-200", "CLOSED", "FIRE", 0L, 100L, List.of()));
         AtomicReference<InsuranceAgentTools.ProposedUpdate> accepted = new AtomicReference<>();
         // Tools are request-scoped to one claim; another claim uses another instance.
         InsuranceAgentTools t99 = tools(claims, mock(CustomerServiceGateway.class), accepted);
         InsuranceAgentTools t200 = new InsuranceAgentTools(200L, 7L, 200L, claims,
-                mock(CustomerServiceGateway.class), registry, 1000, accepted::set);
-        when(claims.getClaimStatus(200L)).thenReturn(
-                new ClaimStatusDto(200L, 7L, "CLM-200", "CLOSED", "FIRE", 0L, 100L, List.of()));
+                mock(CustomerServiceGateway.class), registry, 1000, accepted::set, null, "", "", null);
 
         assertThat(t99.getClaimStatus()).contains("UNDER_REVIEW");
         assertThat(t200.getClaimStatus()).contains("CLOSED");
@@ -88,6 +96,8 @@ class CacheSecurityIsolationTest {
     void acceptedProposalInvalidatesReadCachesAfterTheWrite() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), eq(ClaimPermission.UPDATE_STATUS))).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), eq(ClaimPermission.UPDATE_STATUS), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         AtomicReference<InsuranceAgentTools.ProposedUpdate> accepted = new AtomicReference<>();
         InsuranceAgentTools tools = tools(claims, mock(CustomerServiceGateway.class), accepted);
 
@@ -103,6 +113,8 @@ class CacheSecurityIsolationTest {
     void rejectedProposalDoesNotInvalidate() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), eq(ClaimPermission.UPDATE_STATUS))).thenReturn(false);
+        when(claims.checkPermissionWithToken(anyLong(), eq(ClaimPermission.UPDATE_STATUS), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(false));
         AtomicReference<InsuranceAgentTools.ProposedUpdate> accepted = new AtomicReference<>();
         InsuranceAgentTools tools = tools(claims, mock(CustomerServiceGateway.class), accepted);
 

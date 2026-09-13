@@ -4,6 +4,7 @@ import com.claimassist.platform.common_lib.error.BadRequestException;
 import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.claimassist.platform.common_lib.observability.PerformanceLogger;
 import com.claimassist.platform.customer_service.dto.auth.AuthResponse;
+import com.claimassist.platform.customer_service.dto.auth.IdentityResponse;
 import com.claimassist.platform.customer_service.dto.auth.SignupRequest;
 import com.claimassist.platform.customer_service.service.CustomerSignupService;
 import com.claimassist.platform.customer_service.service.OAuth2AuthorizationService;
@@ -17,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import jakarta.servlet.http.HttpServletResponse;
 import java.net.URI;
 import java.util.Map;
 
@@ -49,6 +51,9 @@ class AuthControllerTest {
 
     @Mock
     private PerformanceLogger performanceLogger;
+
+    @Mock
+    private HttpServletResponse httpResponse;
 
     @InjectMocks
     private AuthController authController;
@@ -93,7 +98,7 @@ class AuthControllerTest {
     void callback_WithError_ShouldThrowBadRequestException() {
         // When & Then
         assertThatThrownBy(() -> authController.callback(
-                null, "access_denied", "User denied access", "state-123"))
+                null, "access_denied", "User denied access", "state-123", httpResponse))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Authorization failed: access_denied - User denied access");
     }
@@ -102,13 +107,13 @@ class AuthControllerTest {
     void callback_WithMissingCode_ShouldThrowBadRequestException() {
         // When & Then
         assertThatThrownBy(() -> authController.callback(
-                null, null, null, "state-123"))
+                null, null, null, "state-123", httpResponse))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Missing authorization code");
     }
 
     @Test
-    void callback_WithSuccess_ShouldReturnAuthResponse() {
+    void callback_WithSuccess_ShouldReturn302Redirect() {
         // Given
         when(authorizationService.consumeCodeVerifier("state-123")).thenReturn("test-verifier");
         when(tokenService.exchangeAuthorizationCode(anyString(), anyString()))
@@ -116,13 +121,13 @@ class AuthControllerTest {
                         "access-token", "refresh-token", "Bearer", 3600L, 3600L, "openid", "", 1L, "testuser"));
 
         // When
-        ResponseEntity<AuthResponse> response = authController.callback(
-                "authorization-code", null, null, "state-123");
+        ResponseEntity<Void> response = authController.callback(
+                "authorization-code", null, null, "state-123", httpResponse);
 
         // Then
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().customerId()).isEqualTo(1L);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
+        assertThat(response.getHeaders().get("Location")).isNotNull();
+        assertThat(response.getHeaders().get("Location").get(0)).isEqualTo("http://localhost:5173/#/dashboard");
         verify(tokenService).exchangeAuthorizationCode("authorization-code", "test-verifier");
     }
 
@@ -133,7 +138,7 @@ when(tokenService.refreshToken(anyString())).thenReturn(new AuthResponse(
                         "new-access-token", "new-refresh-token", "Bearer", 3600L, 3600L, "openid", "", 1L, "testuser"));
 
         // When
-        ResponseEntity<AuthResponse> response = authController.refresh("refresh-token-123");
+        ResponseEntity<IdentityResponse> response = authController.refresh("refresh-token-123", httpResponse);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -145,7 +150,7 @@ when(tokenService.refreshToken(anyString())).thenReturn(new AuthResponse(
     @Test
     void logout_ShouldReturnNoContent() {
         // When
-        ResponseEntity<Void> response = authController.logout("refresh-token-123");
+        ResponseEntity<Void> response = authController.logout("refresh-token-123", httpResponse);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);

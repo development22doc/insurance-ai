@@ -45,7 +45,7 @@ class RedisCacheConfigTest {
     @Test
     void policyCoverageDtoRoundTrips() {
         PolicyCoverageDto original = new PolicyCoverageDto(
-                42L, "POL-1001", "ACTIVE", "AUTO", "Comprehensive",
+                42L, "POL-1001", "Active", "AUTO", "Comprehensive",
                 500_00L, 1_000_000_00L, "2026-08-16");
 
         byte[] bytes = serializer().serialize(original);
@@ -59,7 +59,8 @@ class RedisCacheConfigTest {
     @Test
     void policyResponseRoundTripsWithInstant() {
         PolicyResponse original = new PolicyResponse(
-                7L, "POL-2002", "ACTIVE", "Comprehensive", "AUTO",
+                7L, "POL-2002", "Active", "Comprehensive", "AUTO",
+                140000L, 10000000L, 25000L,
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2027-01-01T00:00:00Z"));
 

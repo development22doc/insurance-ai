@@ -22,7 +22,7 @@ claimassist:
 
 spring:
   config:
-    import: optional:file:../application-local-k8s.properties
+    import: optional:file:../../application-local-k8s.properties,optional:file:../application-local-k8s.properties
   cloud:
     config:
       enabled: false
@@ -38,7 +38,7 @@ spring:
             connect-timeout: 2000
             read-timeout: 5000
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_claims
+    url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_claims?sslmode=disable&options=-c timezone=Asia/Kolkata
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD}
     hikari:

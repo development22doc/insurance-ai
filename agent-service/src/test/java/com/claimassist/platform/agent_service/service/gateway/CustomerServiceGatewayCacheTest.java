@@ -8,6 +8,7 @@ import com.claimassist.platform.agent_service.config.CacheProperties;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
 import java.util.Map;
@@ -30,7 +31,8 @@ class CustomerServiceGatewayCacheTest {
     private CustomerServiceGateway gateway(CustomerClient client, MemBackend backend) {
         CacheProperties props = new CacheProperties();
         CacheService cache = new CacheService(backend, new ObjectMapper(), props, new CacheMetrics());
-        return new CustomerServiceGateway(client, cache, props);
+        WebClient webClient = WebClient.builder().baseUrl("http://localhost:8081").build();
+        return new CustomerServiceGateway(client, cache, props, webClient);
     }
 
     private final PolicyCoverageDto coverage =

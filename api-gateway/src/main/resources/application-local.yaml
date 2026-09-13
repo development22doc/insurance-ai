@@ -107,10 +107,10 @@ zipkin:
 
 logging:
   level:
-    com.claimassist: DEBUG
-    org.springframework.cloud.gateway: DEBUG
-    org.springframework.security: INFO
-    reactor.netty.http.client: DEBUG
+    com.claimassist: INFO
+    org.springframework.cloud.gateway: INFO
+    org.springframework.security: WARN
+    reactor.netty.http.client: INFO
 
   pattern:
     level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"

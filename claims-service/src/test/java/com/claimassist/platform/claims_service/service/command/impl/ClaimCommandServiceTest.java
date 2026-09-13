@@ -90,7 +90,7 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     void submitClaim_WithActivePolicy_ShouldSubmitClaimSuccess() {
         // Given
         when(customerServiceGateway.getPolicyCoverage(1L, 1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
-                1L, "POL-001", "ACTIVE", "Plan Type A", "Health", 1000L, 100000L, null));
+                1L, "POL-001", "Active", "Plan Type A", "Health", 1000L, 100000L, null));
 
         when(claimRepository.save(any(Claim.class))).thenAnswer(invocation -> {
             Claim claim = invocation.getArgument(0);
@@ -122,7 +122,7 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     }
 
     @Test
-    void submitClaim_WithInactivePolicy_ShouldThrowBadRequestException() {
+    void submitClaim_WithNonActivePolicy_ShouldThrowBadRequestException() {
         // Given
         when(customerServiceGateway.getPolicyCoverage(1L, 1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
                 1L, "POL-001", "EXPIRED", "Plan Type A", "Health", 1000L, 100000L, null));
@@ -137,9 +137,38 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
         // When & Then
         assertThatThrownBy(() -> claimCommandService.submitClaim(submitCommand))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Cannot file a claim against a policy that is not ACTIVE");
+                .hasMessageContaining("Cannot file a claim against a policy that is not Active");
 
         verify(claimRepository, never()).save(any());
+    }
+
+    @Test
+    void submitClaim_WithActiveCanonicalStatus_ShouldSubmitClaimSuccess() {
+        // Test that canonical "Active" status (title case) is accepted
+        when(customerServiceGateway.getPolicyCoverage(1L, 1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
+                1L, "POL-001", "Active", "Plan Type A", "Health", 1000L, 100000L, null));
+
+        when(claimRepository.save(any(Claim.class))).thenAnswer(invocation -> {
+            Claim claim = invocation.getArgument(0);
+            claim.setId(1L);
+            return claim;
+        });
+
+        when(idempotencyService.execute(
+                eq("test-key-123"),
+                eq("claims.submitClaim"),
+                eq(1L),
+                eq(ClaimResponse.class),
+                any())).thenAnswer(invocation -> ((java.util.function.Supplier<?>) invocation.getArgument(4)).get());
+
+        when(claimMapper.toClaimResponse(any(Claim.class))).thenReturn(new ClaimResponse(1L, "CLM-1", "SUBMITTED", "ACCIDENT"));
+
+        // When
+        ClaimResponse response = claimCommandService.submitClaim(submitCommand);
+
+        // Then
+        assertThat(response).isNotNull();
+        verify(claimRepository).save(any(Claim.class));
     }
 
     @Test

@@ -2,6 +2,21 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "ollama/qwen2.5-coder:3b",
   "shell": "pwsh",
+  "provider": {
+    "ollama": {
+      "models": {
+        "qwen3:4b": {
+          "name": "Qwen3 4B"
+        },
+        "qwen2.5-coder:3b": {
+          "name": "Qwen2.5 Coder 3B"
+        },
+        "deepseek-coder:1.3b": {
+          "name": "DeepSeek Coder 1.3B"
+        }
+      }
+    }
+  },
   "mcp": {
     "sonarqube": {
       "type": "local",

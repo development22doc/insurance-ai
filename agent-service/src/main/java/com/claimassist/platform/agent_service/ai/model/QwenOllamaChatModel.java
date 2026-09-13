@@ -9,10 +9,15 @@ import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.util.retry.Retry;
+import java.time.Duration;
+import java.net.ConnectException;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -106,8 +111,15 @@ public class QwenOllamaChatModel extends OllamaChatModel {
 
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
-        Prompt requestPrompt = mergeOptions(prompt);
+        Prompt requestPrompt = boundGenerationProfile(mergeOptions(prompt));
         Set<String> registeredNames = registeredToolNames(requestPrompt);
+        log.info("QWEN_REQUEST_DIAGNOSTICS: messages={}, prompt_chars={}, tools={}, num_ctx={}, num_predict={}, temperature={}",
+                requestPrompt.getInstructions().size(),
+                requestPrompt.getInstructions().stream().mapToInt(msg -> msg.getText() == null ? 0 : msg.getText().length()).sum(),
+                registeredNames.size(),
+                requestPrompt.getOptions() instanceof OllamaChatOptions opts ? opts.getNumCtx() : null,
+                requestPrompt.getOptions() instanceof OllamaChatOptions opts2 ? opts2.getNumPredict() : null,
+                requestPrompt.getOptions() instanceof OllamaChatOptions opts3 ? opts3.getTemperature() : null);
         List<String> plan = ToolPlanner.plan(userText(requestPrompt), registeredNames);
         return streamWithToolExecution(requestPrompt, 0, new ToolCallLoopTracker(), new PlanState(plan));
     }
@@ -162,17 +174,18 @@ public class QwenOllamaChatModel extends OllamaChatModel {
      */
     private Flux<ChatResponse> streamWithToolExecution(Prompt requestPrompt, int round, ToolCallLoopTracker loopGuard,
                                                        PlanState planState) {
-        // Once the request's read-tool plan is complete, any prose that had been
-        // held back while completing the plan is flushed FIRST so nothing the model
-        // already drafted is lost. This runs at the start of the first turn where
-        // the plan is satisfied (heldProse is cleared after the single flush).
+        // Any prose held while the model was still deciding on a tool must never
+        // reach the browser. The actual final answer is produced only after the
+        // tool result has been inserted into the follow-up model turn.
         Flux<ChatResponse> prefix = Flux.empty();
-        if (planState.complete() && planState.heldProse.length() > 0) {
-            String held = planState.heldProse.toString();
+        // Do not leak intermediate tool-planning prose to the browser. When the
+        // request's read-tool plan is complete, any prose accumulated while the
+        // model was still deciding on a tool is not the user's final answer; it is
+        // an internal reasoning/tool-planning artifact and must be discarded. The
+        // actual final answer will be emitted on the next model turn, after the tool
+        // result has been injected into the conversation.
+        if (planState.complete()) {
             planState.heldProse.setLength(0);
-            prefix = Flux.just(ChatResponse.builder()
-                    .generations(List.of(new Generation(new AssistantMessage(held))))
-                    .build());
         }
 
         AtomicReference<StringBuilder> accumulator = new AtomicReference<>(new StringBuilder());
@@ -180,7 +193,10 @@ public class QwenOllamaChatModel extends OllamaChatModel {
         AtomicBoolean passthrough = new AtomicBoolean(false);
         final Set<String> registeredNames = registeredToolNames(requestPrompt);
 
-        Flux<ChatResponse> source = super.stream(requestPrompt);
+        Flux<ChatResponse> source = super.stream(requestPrompt)
+                .retryWhen(Retry.backoff(3, Duration.ofMillis(500))
+                        .filter(throwable -> isConnectionRefusedLike(throwable)));
+
 
         // Sanitize the raw per-chunk stream: buffer while the accumulated content is
         // still a possible tool-call prefix, suppress it once a complete Qwen tool
@@ -255,21 +271,18 @@ public class QwenOllamaChatModel extends OllamaChatModel {
                     log.debug("Completing read-tool plan: executing planned tool '{}' (round {}).", pendingTool, round + 1);
                     planState.executed.add(pendingTool);
                     QwenToolCall plannedCall = new QwenToolCall(pendingTool, Map.of());
-                    ToolExecutionResult plannedResult = qwenManager.executePlannedToolCall(requestPrompt, plannedCall);
-                    return streamWithToolExecution(
-                            new Prompt(plannedResult.conversationHistory(), requestPrompt.getOptions()),
-                            round + 1, loopGuard, planState);
+                    // Execute planned tool on boundedElastic to avoid blocking reactor event-loop threads
+                    return Mono.fromCallable(() -> qwenManager.executePlannedToolCall(requestPrompt, plannedCall))
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .flatMapMany(plannedResult -> streamWithToolExecution(
+                                    new Prompt(plannedResult.conversationHistory(), requestPrompt.getOptions()),
+                                    round + 1, loopGuard, planState));
                 }
 
-                // Plan complete (or planner unavailable / budget exhausted): emit any
-                // content that was being held as a possible-prefix, so it is not dropped.
-                if (planState.heldProse.length() > 0) {
-                    String held = planState.heldProse.toString();
-                    planState.heldProse.setLength(0);
-                    return Flux.just(ChatResponse.builder()
-                            .generations(List.of(new Generation(new AssistantMessage(held))))
-                            .build());
-                }
+                // Any held prose here is still an intermediate tool-planning artifact,
+                // not the final answer. Drop it so the browser only sees the actual
+                // model output after the tool result has been used in the follow-up turn.
+                planState.heldProse.setLength(0);
                 return Flux.empty();
             }
             if (round >= maxToolCalls) {
@@ -303,6 +316,30 @@ public class QwenOllamaChatModel extends OllamaChatModel {
                                     .generations(ToolExecutionResult.buildGenerations(result))
                                     .build());
                         }
+
+                        // DEBUG: log conversation history delivered back from tool execution
+                        try {
+                            List<Message> history = result.conversationHistory();
+                            log.debug("TOOL_RESULT_HISTORY: size={}", history == null ? 0 : history.size());
+                            if (history != null) {
+                                for (int i = 0; i < history.size(); i++) {
+                                    Message m = history.get(i);
+                                    String cls = m == null ? "null" : m.getClass().getSimpleName();
+                                    String text = "";
+                                    try {
+                                        if (m instanceof AssistantMessage a) text = a.getText();
+                                        else if (m instanceof ToolResponseMessage t) text = t.toString();
+                                        else text = m.toString();
+                                    } catch (Exception e) {
+                                        text = "<error retrieving text>";
+                                    }
+                                    log.debug("HISTORY[{}] type={} preview={}", i, cls, text == null ? "null" : (text.length() > 200 ? text.substring(0,200) : text));
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to log tool result history", e);
+                        }
+
                         return streamWithToolExecution(
                                 new Prompt(result.conversationHistory(), requestPrompt.getOptions()), round + 1,
                                 loopGuard, planState);
@@ -336,6 +373,27 @@ public class QwenOllamaChatModel extends OllamaChatModel {
             return null;
         }
         return chunk.getResult().getOutput().getText();
+    }
+
+    /**
+     * Small helper to classify transient connection/refused-like errors so the
+     * reactive stream can perform a short retry. Mirrors AiErrorResolver's
+     * "isConnectionRefused" behavior but scoped to retry decisions only.
+     */
+    private static boolean isConnectionRefusedLike(Throwable t) {
+        Throwable cur = t;
+        while (cur != null) {
+            if (cur instanceof ConnectException || cur instanceof WebClientRequestException) {
+                return true;
+            }
+            String msg = cur.getMessage();
+            if (msg != null && (msg.contains("Connection refused") || msg.contains("ConnectException")
+                    || msg.contains("Failed to connect"))) {
+                return true;
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
     private static Set<String> registeredToolNames(Prompt prompt) {
@@ -391,5 +449,23 @@ public class QwenOllamaChatModel extends OllamaChatModel {
             requestOptions.setToolContext(this.defaultOptions.getToolContext());
         }
         return new Prompt(prompt.getInstructions(), requestOptions);
+    }
+
+    private Prompt boundGenerationProfile(Prompt prompt) {
+        if (!(prompt.getOptions() instanceof OllamaChatOptions options)) {
+            return prompt;
+        }
+
+        OllamaChatOptions bounded = OllamaChatOptions.fromOptions(options);
+        if (bounded.getNumCtx() == null || bounded.getNumCtx() > 2048) {
+            bounded.setNumCtx(2048);
+        }
+        if (bounded.getNumPredict() == null || bounded.getNumPredict() > 128) {
+            bounded.setNumPredict(128);
+        }
+        if (bounded.getTemperature() == null || bounded.getTemperature() > 0.0) {
+            bounded.setTemperature(0.0);
+        }
+        return new Prompt(prompt.getInstructions(), bounded);
     }
 }

@@ -1,5 +1,6 @@
 package com.claimassist.platform.api_gateway.filter;
 
+import com.claimassist.platform.common_lib.observability.DeveloperIdentity;
 import com.claimassist.platform.common_lib.observability.LoggingConstants;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,7 +23,9 @@ import static org.mockito.Mockito.when;
 
 class CorrelationIdWebFilterTest {
 
-    private final WebFilter filter = new CorrelationIdWebFilter().correlationWebFilter();
+    private final DeveloperIdentity mockDeveloperIdentity = mock(DeveloperIdentity.class);
+    private final CorrelationIdWebFilter correlationIdWebFilter = new CorrelationIdWebFilter(mockDeveloperIdentity);
+    private final WebFilter filter = correlationIdWebFilter.correlationWebFilter(mockDeveloperIdentity);
 
     @Test
     void sanitizeRejectsBlankAndNull() {

@@ -31,16 +31,23 @@ public class KafkaExecutionTimeAspect {
     @Around("@annotation(org.springframework.kafka.annotation.KafkaListener)")
     public Object profileKafka(ProceedingJoinPoint pjp) throws Throwable {
         long start = System.nanoTime();
-        try {
-            return pjp.proceed();
-        } finally {
-            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
-            String op = pjp.getSignature().toShortString();
-            PerformanceLogger logger = resolvePerfLogger();
-            if (logger != null) {
-                logger.log("KAFKA", op, elapsedMs, null);
+        Object ret = pjp.proceed();
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+        String op = pjp.getSignature().toShortString();
+        PerformanceLogger logger = resolvePerfLogger();
+        if (logger != null) {
+            try {
+                if (ret instanceof reactor.core.publisher.Mono<?> mono) {
+                    return mono.doFinally(signal -> logger.log("KAFKA", op, elapsedMs, null));
+                }
+                if (ret instanceof reactor.core.publisher.Flux<?> flux) {
+                    return flux.doFinally(signal -> logger.log("KAFKA", op, elapsedMs, null));
+                }
+            } catch (NoClassDefFoundError ignore) {
             }
+            logger.log("KAFKA", op, elapsedMs, null);
         }
+        return ret;
     }
 
     private PerformanceLogger resolvePerfLogger() {

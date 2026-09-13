@@ -9,9 +9,9 @@ global:
   managedBy: helm
 
 image:
-  registry: ""   # Empty for DEV - use local images
+  registry: "claimassistdev"   # Docker Hub namespace for multi-arch images
   repository: claimassist
-  tag: "latest"   # DEV uses local latest build
+  tag: "b781cebe484a01fc9150f59cff7c5b9fc6ad2d0d" # DEV build tag - multi-arch image SHA
   pullPolicy: IfNotPresent
   # docker-registry imagePullSecret consumed by every application Deployment.
   # The DEV bootstrap creates it idempotently from the DOCKER_USERNAME/DOCKER_PASSWORD
@@ -83,8 +83,42 @@ kafka:
   # K3s node so Tailscale VPN clients can reach the broker at the MagicDNS
   # hostname. Disabled in values.yaml (global); only DEV enables it.
   devExternalAccess: true
-  devExternalHost: vnic.taild219f3.ts.net
+  devExternalHost: 100.114.133.69
   devNodePort: 30092
+
+# Ollama for DEV (namespace claimassist-dev). AI model inference service.
+# CPU-only, ARM64-compatible runtime with persistent model storage.
+# Conservative memory allocation for lightweight models on the 2-OCPU node.
+ollama:
+  enabled: true
+  serviceName: ollama
+  image:
+    registry: ""
+    repository: ollama/ollama
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  port: 11434
+  resources:
+    requests: { cpu: 100m, memory: 1Gi }
+    limits: { cpu: 500m, memory: 2Gi }
+  probes:
+    liveness:
+      initialDelaySeconds: 60
+      periodSeconds: 30
+      failureThreshold: 3
+      timeoutSeconds: 5
+    readiness:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      failureThreshold: 3
+      timeoutSeconds: 5
+  # DEV-only VPN Ollama external access.
+  # When enabled, a NodePort Service exposes Ollama (11434) on the K3s
+  # node so Tailscale VPN clients can reach the AI service at the
+  # Tailscale IP. Disabled in values.yaml (global); only DEV enables it.
+  devExternalAccess: true
+  devExternalHost: 100.114.133.69
+  devNodePort: 30134
 
 flyway:
   enabled: false
@@ -104,6 +138,10 @@ keycloak:
   # The JWKS endpoint is reachable via the NodePort from inside the cluster too.
   hostname: 100.114.133.69
   externalUrl: http://100.114.133.69:30080
+  credentials:
+    secretName: claimassist-keycloak-admin
+    adminUsername: "admin"
+    adminPassword: "claimassist951"
   resources:
     requests: { cpu: 100m, memory: 512Mi }
     limits: { cpu: 500m, memory: 1024Mi }
@@ -118,9 +156,11 @@ keycloak:
   # The browser must reach the callback URL after Keycloak authentication.
   # The redirect URI points to the API Gateway's external NodePort, not Keycloak's.
   externalRedirectUris:
+    - http://localhost:5173/callback
     - http://100.114.133.69:30070/customer/auth/callback
   externalWebOrigins:
     - http://100.114.133.69:30070
+    - http://localhost:5173
   postgresql:
     enabled: true
     storageClassName: ""        # K3s default (local-path); overridden at deploy time if provided
@@ -194,6 +234,11 @@ services:
   agent-service:
     replicas: 1
     k8sConfig: true
+    env:
+      - name: OLLAMA_BASE_URL
+        value: "http://ollama:11434"
+      - name: OLLAMA_MODEL
+        value: "qwen2.5-0.5b-instruct"
   frontend:
     replicas: 1
     k8sConfig: false

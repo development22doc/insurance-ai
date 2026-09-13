@@ -19,19 +19,15 @@ public class FeignAuthConfig {
 
     @Bean
     public RequestInterceptor feignAuthRequestInterceptor(CurrentUserProvider currentUserProvider) {
+        // Reactive environments do not expose the SecurityContext via ThreadLocal on
+        // reactor-http threads; calling blocking CurrentUserProvider here will throw
+        // IllegalStateException. Leave Feign interceptor as a no-op. Reactive
+        // propagation (ClaimsService permission checks) is performed via the
+        // reactive SecurityExpressions/WebClient path instead.
         return template -> {
-            try {
-                var jwt = currentUserProvider.getCurrentJwt();
-                if (jwt != null) {
-                    String token = jwt.getTokenValue();
-                    if (StringUtils.hasText(token)) {
-                        template.header("Authorization", "Bearer " + token);
-                    }
-                }
-            } catch (Exception e) {
-                // If the JWT cannot be read (no reactive context), do nothing.
-                // The ClaimsServiceGateway fails closed and logs the condition.
-                log.debug("FeignAuthConfig: no JWT available to propagate: {}", e.toString());
+            // Intentionally left blank to avoid blocking calls on reactor threads.
+            if (log.isTraceEnabled()) {
+                log.trace("FeignAuthConfig: request interceptor no-op under WebFlux");
             }
         };
     }

@@ -1,0 +1,133 @@
+# LOCAL-DOCKER: Claims Service connecting to local Docker Compose infrastructure
+# Profile: local-docker
+#
+# This profile is for IntelliJ/local debugging against local Docker Compose dependencies.
+# All services connect through localhost ports exposed by docker-compose.local.yml.
+#
+# Local Docker Compose infrastructure ports:
+#   PostgreSQL: localhost:5432
+#   Redis:      localhost:6379
+#   Kafka:      localhost:9092
+#   Keycloak:   localhost:8180
+#   Zipkin:     localhost:9411
+
+# Developer identity for observability
+claimassist:
+  dev:
+    id: ${CLAIMASSIST_DEV_ID:local}
+    name: ${CLAIMASSIST_DEVELOPER_NAME:unknown}
+
+spring:
+  config:
+    import: optional:file:../application-local-docker.properties
+  cloud:
+    config:
+      enabled: false
+      import-check:
+        enabled: false
+    discovery:
+      enabled: false
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_claims_local?sslmode=disable
+    username: ${POSTGRES_USER:claimassist}
+    password: ${POSTGRES_PASSWORD:claimassist}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+          time_zone: UTC
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+    producer:
+      acks: all
+      retries: 2147483647
+      batch-size: 16384
+      linger-ms: 10
+      compression-type: snappy
+      delivery-timeout-ms: 120000
+      properties:
+        linger.ms: 10
+        request.timeout.ms: 30000
+        retry.backoff.ms: 1000
+
+    consumer:
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+      group-id: claims-service-local-docker
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist-dev}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist-dev/protocol/openid-connect/certs}
+
+      client:
+        registration:
+          internal-service:
+            provider: keycloak
+            client-id: ${SERVICE_CLIENT_ID:claimassist-admin-service}
+            client-secret: ${SERVICE_CLIENT_SECRET:local-dev-admin-client-secret}
+            authorization-grant-type: client_credentials
+
+        provider:
+          keycloak:
+            token-uri: ${SERVICE_TOKEN_URI:http://localhost:8180/realms/claimassist-dev/protocol/openid-connect/token}
+
+eureka:
+  client:
+    enabled: ${EUREKA_CLIENT_ENABLED:false}
+    register-with-eureka: ${EUREKA_REGISTER_WITH_EUREKA:false}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:false}
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  level:
+    com.claimassist: DEBUG
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN

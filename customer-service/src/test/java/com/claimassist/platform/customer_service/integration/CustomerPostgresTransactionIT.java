@@ -167,7 +167,7 @@ class CustomerPostgresTransactionIT {
         firstPolicy.setCustomer(savedCustomer);
         firstPolicy.setCoveragePlan(savedCoveragePlan);
         firstPolicy.setPolicyNumber(policyNumber);
-        firstPolicy.setStatus("ACTIVE");
+        firstPolicy.setStatus("Active");
         firstPolicy.setEffectiveDate(Instant.now());
         policyRepository.saveAndFlush(firstPolicy);
 

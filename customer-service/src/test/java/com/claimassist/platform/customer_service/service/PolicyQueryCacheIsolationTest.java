@@ -92,12 +92,12 @@ class PolicyQueryCacheIsolationTest {
             PolicyQueryService proxy = ctx.getBean(PolicyQueryService.class);
 
             // User 1 owns policy 42.
-            when(repo.findByIdAndCustomerId(42L, 1L)).thenReturn(Optional.of(ownedPolicy(42L, "ACTIVE")));
+            when(repo.findByIdAndCustomerId(42L, 1L)).thenReturn(Optional.of(ownedPolicy(42L, "Active")));
             // User 2 does NOT own policy 42.
             when(repo.findByIdAndCustomerId(42L, 2L)).thenReturn(Optional.empty());
 
             PolicyCoverageDto first = proxy.getPolicyCoverage(42L, 1L);
-            assertThat(first.status()).isEqualTo("ACTIVE");
+            assertThat(first.status()).isEqualTo("Active");
 
             // Same caller -> cache hit, backend NOT hit again.
             PolicyCoverageDto second = proxy.getPolicyCoverage(42L, 1L);
@@ -123,13 +123,13 @@ class PolicyQueryCacheIsolationTest {
             PolicyQueryService proxy = ctx.getBean(PolicyQueryService.class);
 
             // Each user owns its own policy with distinct status.
-            when(repo.findByIdAndCustomerId(42L, 1L)).thenReturn(Optional.of(ownedPolicy(42L, "ACTIVE")));
+            when(repo.findByIdAndCustomerId(42L, 1L)).thenReturn(Optional.of(ownedPolicy(42L, "Active")));
             when(repo.findByIdAndCustomerId(43L, 2L)).thenReturn(Optional.of(ownedPolicy(43L, "PENDING")));
 
             PolicyCoverageDto a = proxy.getPolicyCoverage(42L, 1L);
             PolicyCoverageDto b = proxy.getPolicyCoverage(43L, 2L);
 
-            assertThat(a.status()).isEqualTo("ACTIVE");
+            assertThat(a.status()).isEqualTo("Active");
             assertThat(b.status()).isEqualTo("PENDING");
             // Keys are "42-1" and "43-2" - fully disjoint.
             verify(repo).findByIdAndCustomerId(42L, 1L);

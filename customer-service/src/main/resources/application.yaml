@@ -18,7 +18,10 @@ spring:
       - com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration
 
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_customer_local
+    # Append explicit Postgres options to force the canonical timezone at connection time.
+    # This prevents the JDBC driver from propagating legacy TZ IDs (e.g., "Asia/Calcutta") to the server
+    # which some Postgres servers reject. The options value is URL-encoded.
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_customer_local?options=-c%20timezone%3DAsia%2FKolkata
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD:claimassist}
     hikari:

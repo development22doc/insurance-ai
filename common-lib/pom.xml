@@ -131,6 +131,12 @@
 			<artifactId>spring-webflux</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Reactor Core is required at compile-time for reactive-aware observability aspects
+		     that inspect Mono/Flux return types. Version is managed by Spring Boot BOM. -->
+		<dependency>
+			<groupId>io.projectreactor</groupId>
+			<artifactId>reactor-core</artifactId>
+		</dependency>
 	</dependencies>
 
 	<dependencyManagement>

@@ -41,8 +41,13 @@ public class RedisCacheConfig {
 
     @Bean
     public RedisCacheManagerBuilderCustomizer cacheManagerCustomizer() {
-        var serializer = new GenericJackson2JsonRedisSerializer(
-                JsonMapper.builder().addModule(new JavaTimeModule()).build());
+        var objectMapper = JsonMapper.builder()
+                .addModule(new JavaTimeModule())
+                .configure(com.fasterxml.jackson.databind.MapperFeature.USE_ANNOTATIONS, true)
+                .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .build();
+
+        var serializer = new GenericJackson2JsonRedisSerializer(objectMapper);
 
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofSeconds(30))

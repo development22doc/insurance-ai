@@ -3,6 +3,8 @@ package com.claimassist.platform.customer_service.security;
 import com.claimassist.platform.common_lib.observability.CorrelationIdFilter;
 import com.claimassist.platform.common_lib.security.KeycloakJwtAuthenticationConverter;
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.*;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -17,6 +19,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
+import java.io.IOException;
+
 @Configuration
 @RequiredArgsConstructor
 @EnableMethodSecurity
@@ -27,6 +31,54 @@ public class CustomerSecurityConfig {
     private final HandlerExceptionResolver handlerExceptionResolver;
     private final KeycloakJwtAuthenticationConverter keycloakJwtAuthenticationConverter;
     private final CorsConfigurationSource corsConfigurationSource;
+
+    @Bean
+    public Filter inboundAuthorizationDiagnosticFilter() {
+        return new Filter() {
+            @Override
+            public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+                HttpServletRequest httpRequest = (HttpServletRequest) request;
+                String path = httpRequest.getRequestURI();
+                String authHeader = httpRequest.getHeader("Authorization");
+                boolean authorizationHeaderReceived = authHeader != null && authHeader.startsWith("Bearer ");
+                log.info("=== CUSTOMER PRE-BEARER === path={} authorizationHeaderReceived={}", path, authorizationHeaderReceived);
+
+                chain.doFilter(request, response);
+
+                // Check authentication status AFTER the filter chain (after BearerTokenAuthenticationFilter)
+                // Log for all internal endpoints, not just /customers/me
+                if (path.startsWith("/internal/v1/")) {
+                    try {
+                        org.springframework.security.core.Authentication auth =
+                            org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+                        if (auth != null) {
+                            log.info("=== CUSTOMER POST-BEARER === path={} auth_class={} is_authenticated={}", path, auth.getClass().getSimpleName(), auth.isAuthenticated());
+                            if (auth.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
+                                log.info("=== CUSTOMER JWT CLAIMS === path={} sub_present={} preferred_username_present={} userId_present={} email_present={}",
+                                    path,
+                                    jwt.getClaimAsString("sub") != null,
+                                    jwt.getClaimAsString("preferred_username") != null,
+                                    jwt.getClaim("userId") != null,
+                                    jwt.getClaimAsString("email") != null);
+                            } else {
+                                log.info("=== CUSTOMER POST-BEARER === path={} Principal is not JWT: {}", path, auth.getPrincipal().getClass().getSimpleName());
+                            }
+                        } else {
+                            log.info("=== CUSTOMER POST-BEARER === path={} No authentication in SecurityContext", path);
+                        }
+                    } catch (Exception e) {
+                        log.info("=== CUSTOMER POST-BEARER === path={} Error reading SecurityContext: {}", path, e.getMessage());
+                    }
+                }
+            }
+
+            @Override
+            public void init(FilterConfig filterConfig) throws ServletException {}
+
+            @Override
+            public void destroy() {}
+        };
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain (HttpSecurity httpSecurity) throws Exception {
@@ -93,6 +145,12 @@ public class CustomerSecurityConfig {
                         correlationIdFilter,
                         UsernamePasswordAuthenticationFilter.class
                 )
+                .addFilterBefore (
+                        inboundAuthorizationDiagnosticFilter(),
+                        UsernamePasswordAuthenticationFilter.class
+                )
+                // CustomerCookieAuthenticationFilter removed - Gateway now sends Authorization header
+                // directly, so cookie-to-header conversion is not needed
 
                 .oauth2ResourceServer (oauth2 -> oauth2
                         .jwt (jwt ->
@@ -100,14 +158,23 @@ public class CustomerSecurityConfig {
                                         keycloakJwtAuthenticationConverter
                                 )
                         )
-                        .authenticationEntryPoint ((request, response, authException) ->
-                                handlerExceptionResolver.resolveException (
-                                        request,
-                                        response,
-                                        null,
-                                        authException
-                                )
-                        )
+                        // Use a terminal AuthenticationEntryPoint that writes a minimal
+                        // safe JSON 401 response and does NOT re-enter the MVC
+                        // HandlerExceptionResolver. This prevents the request from
+                        // continuing to controller code after bearer validation fails.
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            try {
+                                response.setStatus(org.springframework.http.HttpStatus.UNAUTHORIZED.value());
+                                response.setContentType("application/json;charset=UTF-8");
+                                // Minimal, non-sensitive payload
+                                String body = "{\"error\":\"Unauthorized\",\"message\":\"Authentication failed\"}";
+                                response.getWriter().write(body);
+                                response.getWriter().flush();
+                            } catch (java.io.IOException e) {
+                                // If writing fails, fall back to setting status only
+                                response.setStatus(org.springframework.http.HttpStatus.UNAUTHORIZED.value());
+                            }
+                        })
                 )
 
                 .exceptionHandling (exception ->
@@ -125,6 +192,7 @@ public class CustomerSecurityConfig {
 
         log.info ("Customer Security Filter Chain initialized successfully.");
         log.info ("InternalApiKeyFilter removed.");
+        log.info ("CustomerCookieAuthenticationFilter removed - Gateway sends Authorization header directly.");
         log.info ("JWT validation via JWKS enabled.");
         log.info ("OAuth2 Authorization Code + PKCE enabled.");
 

@@ -1,9 +1,0 @@
-spring:
-  cloud:
-    gateway:
-      routes:
-        - id: customer-service
-          uri: http://example
-          predicates:
-            - Path=/customer/**
-

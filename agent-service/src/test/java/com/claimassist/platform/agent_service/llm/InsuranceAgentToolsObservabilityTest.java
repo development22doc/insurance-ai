@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -31,10 +32,12 @@ class InsuranceAgentToolsObservabilityTest {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         // Fail-closed: permission check denies the user for get_claim_status.
         when(claims.checkPermission(eq(99L), any())).thenReturn(false);
+        when(claims.checkPermissionWithToken(eq(99L), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(false));
 
         InsuranceAgentTools tools = new InsuranceAgentTools(99L, 7L, 99L, claims,
                 mock(CustomerServiceGateway.class), new ToolRegistry(), 1000,
-                p -> { }, telemetry, "req-1", "corr-1");
+                p -> { }, telemetry, "req-1", "corr-1", null);
 
         String result = tools.getClaimStatus();
 
@@ -51,11 +54,13 @@ class InsuranceAgentToolsObservabilityTest {
     void allowedToolDoesNotEmitSecurityDenied() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(any(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(any(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimStatus(99L)).thenReturn(null); // NOT_FOUND path is fine; just check no denial
 
         InsuranceAgentTools tools = new InsuranceAgentTools(99L, 7L, 99L, claims,
                 mock(CustomerServiceGateway.class), new ToolRegistry(), 1000,
-                p -> { }, telemetry, "req-1", "corr-1");
+                p -> { }, telemetry, "req-1", "corr-1", null);
 
         tools.getClaimStatus();
         assertThat(telemetry.eventTypes()).doesNotContain("SECURITY_DENIED");
@@ -65,11 +70,13 @@ class InsuranceAgentToolsObservabilityTest {
     void acceptedProposalEmitsBusinessAudit() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(any(), eq(ClaimPermission.UPDATE_STATUS))).thenReturn(true);
+        when(claims.checkPermissionWithToken(any(), eq(ClaimPermission.UPDATE_STATUS), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         List<InsuranceAgentTools.ProposedUpdate> proposals = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         InsuranceAgentTools tools = new InsuranceAgentTools(99L, 7L, 99L, claims,
                 mock(CustomerServiceGateway.class), new ToolRegistry(), 1000,
-                proposals::add, telemetry, "req-1", "corr-1");
+                proposals::add, telemetry, "req-1", "corr-1", null);
 
         String result = tools.proposeClaimUpdate("DOCS_REQUESTED", "awaiting police report");
         assertThat(result).contains("DOCS_REQUESTED");

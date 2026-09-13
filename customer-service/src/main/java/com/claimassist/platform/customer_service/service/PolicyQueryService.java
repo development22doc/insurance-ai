@@ -39,7 +39,7 @@ public class PolicyQueryService {
     }
 
     // sync = true: this is the platform's hottest read path - it backs the
-    // claim-submission ACTIVE validation in claims-service, the agent
+    // claim-submission Active validation in claims-service, the agent
     // get_policy_coverage tool call, and the customer's own coverage view.
     // With a 10-minute TTL the load (policy + its coverage plan, one join) is
     // recomputed on expiry; single-flight collapses concurrent misses on the
@@ -82,8 +82,8 @@ public class PolicyQueryService {
      * bounded by POLICY_COVERAGE_CACHE's 10-minute TTL, plus the fact that the
      * eviction fires before the surrounding transaction commits. That 10-minute
      * bound is acceptable for chat/customer answers but is why the claims-side
-     * ACTIVE validation must keep failing closed (CustomerServiceGateway throws
-     * on any non-ACTIVE / unavailable response) rather than trusting a cached
+     * Active validation must keep failing closed (CustomerServiceGateway throws
+     * on any non-Active / unavailable response) rather than trusting a cached
      * status for correctness-critical authorization.
      */
     @CacheEvict(cacheNames = RedisCacheConfig.POLICY_COVERAGE_CACHE, key = "#policyId + '-' + #customerId")

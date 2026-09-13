@@ -33,17 +33,27 @@ public class ExecutionTimeAspect {
     @Around("within(@org.springframework.web.bind.annotation.RestController *)")
     public Object profile(ProceedingJoinPoint pjp) throws Throwable {
         long start = System.nanoTime();
-        try {
-            return pjp.proceed();
-        } finally {
-            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
-            MethodSignature sig = (MethodSignature) pjp.getSignature();
-            String method = sig.getDeclaringType().getSimpleName() + "." + sig.getName();
-            PerformanceLogger logger = resolvePerfLogger();
-            if (logger != null) {
-                logger.log("REQUEST", method, elapsedMs, null);
+        Object ret = pjp.proceed();
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+        MethodSignature sig = (MethodSignature) pjp.getSignature();
+        String method = sig.getDeclaringType().getSimpleName() + "." + sig.getName();
+        PerformanceLogger logger = resolvePerfLogger();
+        if (logger != null) {
+            try {
+                // If the controller returned a reactive type, attach a completion
+                // callback so the duration reflects the asynchronous execution.
+                if (ret instanceof reactor.core.publisher.Mono<?> mono) {
+                    return mono.doFinally(signal -> logger.log("REQUEST", method, elapsedMs, null));
+                }
+                if (ret instanceof reactor.core.publisher.Flux<?> flux) {
+                    return flux.doFinally(signal -> logger.log("REQUEST", method, elapsedMs, null));
+                }
+            } catch (NoClassDefFoundError ignore) {
+                // Reactor not on classpath for some modules - fall back
             }
+            logger.log("REQUEST", method, elapsedMs, null);
         }
+        return ret;
     }
 
     private PerformanceLogger resolvePerfLogger() {

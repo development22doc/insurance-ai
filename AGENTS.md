@@ -383,3 +383,54 @@ Remove temporary mocks before integration validation.
 Correctness and portability are more important than speed.
 
 The ClaimAssist frontend must work against the existing backend without modifying backend business logic and without depending on any individual developer's machine-specific filesystem paths or configuration.
+
+## 18. OAuth Configuration (Local Development)
+
+For local development, the Customer service requires a runtime configuration change to enable OAuth callback to the frontend:
+
+**Customer Service Runtime Configuration (IntelliJ Run Configuration):**
+- Environment Variable: `KEYCLOAK_REDIRECT_URI`
+- Value: `http://localhost:5173/callback`
+
+**Frontend Callback URL:**
+- Normal path: `http://localhost:5173/callback`
+- Uses query parameters (not hash fragment): `?code=...&state=...`
+
+**OAuth Flow:**
+1. Frontend calls: `GET http://localhost:8080/customer/auth/authorize?redirect_uri=http://localhost:5173/callback`
+2. Backend sends Keycloak authorization request with the redirect_uri
+3. Keycloak redirects to: `http://localhost:5173/callback?code=...&state=...`
+4. Frontend AuthCallbackPage reads code/state from URL search params
+5. Frontend calls: `GET http://localhost:8080/customer/auth/callback?code=...&state=...`
+6. Frontend receives AuthResponse and stores tokens
+7. Frontend navigates to: `http://localhost:5173/#/dashboard` (hash-based routing)
+
+**Important:**
+- Only restart the Customer service after changing the runtime configuration
+- Do not restart Gateway, Claims, or Agent services
+- Do not modify backend source code, Helm charts, or Kubernetes configs
+- The callback URL uses a normal path (not hash fragment) per OAuth specification
+
+## 19. Authentication Fix Status (2025-09-10)
+
+**CustomerCookieAuthenticationFilter:**
+- REMOVED @Component annotation to prevent automatic Spring bean registration
+- Filter is now commented as deprecated and should no longer execute
+- Gateway now sends Authorization header directly to downstream services
+
+**Keycloak JWT Claims:**
+- Added `userId-claim` scope to OAuth2 authorization requests (OAuth2AuthorizationService)
+- Added `userId-claim` scope to token exchange requests (OAuth2TokenService) 
+- Added scope to refresh token requests
+- Access token diagnostics added to verify claim presence in OAuth2TokenService
+
+**Security Logging:**
+- Changed JWT claims logging to only log claim presence/absence (not actual values)
+- Reduced DEBUG logging to INFO in local development configs
+- No sensitive token values (Authorization header, cookies, JWT contents) are logged
+
+**Current Status:**
+- Customer service compiled successfully
+- Gateway authentication path unchanged (as required)
+- Customer filter registration removed via @Component removal
+- Keycloak scope configuration updated to include userId-claim

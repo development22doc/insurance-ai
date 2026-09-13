@@ -118,13 +118,15 @@ class AgentSecurityScenarioTest {
 
     private InsuranceAgentTools tools(ClaimsServiceGateway claims, CustomerServiceGateway customer,
                                       List<InsuranceAgentTools.ProposedUpdate> proposals) {
-        return new InsuranceAgentTools(99L, 7L, 99L, claims, customer, new ToolRegistry(), 1000, proposals::add);
+        return new InsuranceAgentTools(99L, 7L, 99L, claims, customer, new ToolRegistry(), 1000, proposals::add, null, "", "", null);
     }
 
     @Test
     void scenario06_toolRejectsOversizedNote() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         CustomerServiceGateway customer = mock(CustomerServiceGateway.class);
         List<InsuranceAgentTools.ProposedUpdate> proposals = new java.util.ArrayList<>();
         String big = "x".repeat(1500);
@@ -138,6 +140,8 @@ class AgentSecurityScenarioTest {
     void scenario07_toolRejectsUnsupportedStatus() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         CustomerServiceGateway customer = mock(CustomerServiceGateway.class);
         List<InsuranceAgentTools.ProposedUpdate> proposals = new java.util.ArrayList<>();
         String result = tools(claims, customer, proposals).proposeClaimUpdate("MADE_UP", "note");
@@ -149,6 +153,8 @@ class AgentSecurityScenarioTest {
     void scenario08_unsupportedOperationReturnsStructuredFailure() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimDocuments(99L)).thenThrow(new RuntimeException("boom"));
         String result = tools(claims, mock(CustomerServiceGateway.class), new java.util.ArrayList<>())
                 .getClaimDocuments();
@@ -162,6 +168,8 @@ class AgentSecurityScenarioTest {
     void scenario09_deniedUserGetsStructuredUnauthorized() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenReturn(false);
+        when(claims.checkPermissionWithToken(anyLong(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(false));
         String result = tools(claims, mock(CustomerServiceGateway.class), new java.util.ArrayList<>())
                 .getClaimStatus();
         assertThat(result).contains("UNAUTHORIZED");
@@ -172,6 +180,8 @@ class AgentSecurityScenarioTest {
     void scenario10_unknownClaimReturnsNotFound() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimStatus(99L)).thenReturn(
                 new ClaimStatusDto(99L, 7L, "CLM-99", "NOT_FOUND", "FIRE", 1000L, null, List.of()));
         String result = tools(claims, mock(CustomerServiceGateway.class), new java.util.ArrayList<>())
@@ -183,6 +193,8 @@ class AgentSecurityScenarioTest {
     void scenario11_backendUnavailableReturnsStructuredFailure() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimStatus(99L)).thenThrow(new RuntimeException("connection refused to db"));
         String result = tools(claims, mock(CustomerServiceGateway.class), new java.util.ArrayList<>())
                 .getClaimStatus();
@@ -196,14 +208,18 @@ class AgentSecurityScenarioTest {
     void scenario12_concurrentRequestsDoNotShareProposals() {
         ClaimsServiceGateway claimsA = mock(ClaimsServiceGateway.class);
         when(claimsA.checkPermission(anyLong(), any())).thenReturn(true);
+        when(claimsA.checkPermissionWithToken(anyLong(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         ClaimsServiceGateway claimsB = mock(ClaimsServiceGateway.class);
         when(claimsB.checkPermission(anyLong(), any())).thenReturn(true);
+        when(claimsB.checkPermissionWithToken(anyLong(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         List<InsuranceAgentTools.ProposedUpdate> a = new java.util.ArrayList<>();
         List<InsuranceAgentTools.ProposedUpdate> b = new java.util.ArrayList<>();
         InsuranceAgentTools toolsA = new InsuranceAgentTools(1L, 1L, 1L, claimsA, mock(CustomerServiceGateway.class),
-                new ToolRegistry(), 1000, a::add);
+                new ToolRegistry(), 1000, a::add, null, "", "", null);
         InsuranceAgentTools toolsB = new InsuranceAgentTools(2L, 2L, 2L, claimsB, mock(CustomerServiceGateway.class),
-                new ToolRegistry(), 1000, b::add);
+                new ToolRegistry(), 1000, b::add, null, "", "", null);
         toolsA.proposeClaimUpdate("DOCS_REQUESTED", "note A");
         toolsB.proposeClaimUpdate("UNDER_REVIEW", "note B");
         assertThat(a).extracting(p -> p.proposedStatus()).containsExactly("DOCS_REQUESTED");
@@ -218,6 +234,8 @@ class AgentSecurityScenarioTest {
     void scenario13_failClosedWhenPermissionCheckErrors() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenThrow(new RuntimeException("authz service down"));
+        when(claims.checkPermissionWithToken(anyLong(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.error(new RuntimeException("authz service down")));
         String result = tools(claims, mock(CustomerServiceGateway.class), new java.util.ArrayList<>())
                 .getClaimStatus();
         // checkPermission failing must DENY, never reach the backend.
@@ -231,6 +249,8 @@ class AgentSecurityScenarioTest {
     void scenario15_toolResultNeverLeaksInternalDetails() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(anyLong(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimDocuments(99L)).thenThrow(new IllegalStateException("secret stack: java.lang.SecurityException"));
         String result = tools(claims, mock(CustomerServiceGateway.class), new java.util.ArrayList<>())
                 .getClaimDocuments();

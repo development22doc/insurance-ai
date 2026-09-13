@@ -54,7 +54,7 @@ class PolicyQueryServiceTest {
         policy = Policy.builder()
                 .id(42L)
                 .policyNumber("POL-1001")
-                .status("ACTIVE")
+                .status("Active")
                 .renewalDate(Instant.parse("2027-01-01T00:00:00Z"))
                 .build();
         policy.setCoveragePlan(plan);
@@ -68,7 +68,7 @@ class PolicyQueryServiceTest {
 
         assertThat(dto.policyId()).isEqualTo(42L);
         assertThat(dto.policyNumber()).isEqualTo("POL-1001");
-        assertThat(dto.status()).isEqualTo("ACTIVE");
+        assertThat(dto.status()).isEqualTo("Active");
         assertThat(dto.productType()).isEqualTo("HOME");
         assertThat(dto.coveragePlanName()).isEqualTo("Comprehensive");
         assertThat(dto.deductibleCents()).isEqualTo(500_00L);
@@ -95,9 +95,9 @@ class PolicyQueryServiceTest {
         second.setCoveragePlan(plan);
         when(policyRepository.findByCustomerId(7L)).thenReturn(List.of(policy, second));
         when(policyMapper.toPolicyResponse(eq(policy))).thenReturn(
-                new PolicyResponse(42L, "POL-1001", "ACTIVE", "Comprehensive", "HOME", null, policy.getRenewalDate()));
+                new PolicyResponse(42L, "POL-1001", "Active", "Comprehensive", "HOME", 140000L, 10000000L, 25000L, null, policy.getRenewalDate()));
         when(policyMapper.toPolicyResponse(eq(second))).thenReturn(
-                new PolicyResponse(43L, "POL-1002", "PENDING", "Comprehensive", "HOME", null, null));
+                new PolicyResponse(43L, "POL-1002", "PENDING", "Comprehensive", "HOME", 140000L, 10000000L, 25000L, null, null));
 
         List<PolicyResponse> result = service.getMyPolicies(7L);
 
@@ -114,5 +114,16 @@ class PolicyQueryServiceTest {
         PolicyCoverageDto dto = service.getPolicyCoverage(42L, 7L);
 
         assertThat(dto.renewalDate()).isNull();
+    }
+
+    @Test
+    void getPolicyCoverage_WithActiveStatus_ReturnsActiveStatus() {
+        // Test that canonical "Active" status is correctly returned
+        policy.setStatus("Active");
+        when(policyRepository.findByIdAndCustomerId(42L, 7L)).thenReturn(Optional.of(policy));
+
+        PolicyCoverageDto dto = service.getPolicyCoverage(42L, 7L);
+
+        assertThat(dto.status()).isEqualTo("Active");
     }
 }

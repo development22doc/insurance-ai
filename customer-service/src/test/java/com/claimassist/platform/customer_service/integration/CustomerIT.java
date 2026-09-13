@@ -121,7 +121,7 @@ class CustomerIT {
         policy.setCustomer(savedCustomer);
         policy.setCoveragePlan(savedCoveragePlan);
         policy.setPolicyNumber("POL-TEST-001");
-        policy.setStatus("ACTIVE");
+        policy.setStatus("Active");
         policy.setEffectiveDate(Instant.now());
         Policy savedPolicy = policyRepository.save(policy);
 
@@ -165,7 +165,7 @@ class CustomerIT {
         p1.setCustomer(savedCustomer);
         p1.setCoveragePlan(savedCoveragePlan);
         p1.setPolicyNumber("DUPLICATE-POL");
-        p1.setStatus("ACTIVE");
+        p1.setStatus("Active");
         p1.setEffectiveDate(Instant.now());
         policyRepository.save(p1);
 

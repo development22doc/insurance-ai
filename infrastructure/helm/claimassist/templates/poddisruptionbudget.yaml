@@ -1,5 +1,5 @@
 {{- range $name, $svc := .Values.services }}
-{{- if and $.Values.pdb.enabled (ge (int (default 1 $svc.replicas)) 2) }}
+{{- if and $.Values.pdb.enabled (ge (int (default 1 $svc.replicas)) 2) (default true $svc.enabled) }}
 ---
 # Task 6A-11: PodDisruptionBudget for {{ $name }}. Rendered ONLY when the service
 # runs >= 2 replicas, so a single-replica (free-tier) workload is NOT given a

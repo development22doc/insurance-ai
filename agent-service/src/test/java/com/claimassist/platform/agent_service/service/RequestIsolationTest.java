@@ -7,6 +7,7 @@ import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGat
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -67,6 +68,6 @@ class RequestIsolationTest {
                 new PolicyCoverageDto(policyId, "P", "ACTIVE", "HOME", "B", 100L, 1000L, null));
         AtomicLong id = new AtomicLong(claimId);
         return new InsuranceAgentTools(claimId, policyId, claimId, claims, customer, new ToolRegistry(), 1000,
-                p -> proposals.add(p.proposedStatus() + "/" + id.get()));
+                p -> proposals.add(p.proposedStatus() + "/" + id.get()), null, "", "", null);
     }
 }

@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
  * method is the single enforcement point for the state machine and the
  * optimistic-lock boundary: a stale concurrent writer (JPA @Version) surfaces
  * as an {@link OptimisticLockingFailureException} and is never silently
- * overwritten. Submit-claim refuses to open a claim against a non-ACTIVE
+ * overwritten. Submit-claim refuses to open a claim against a non-Active
  * policy and always records the submitting user as the POLICYHOLDER party.
  */
 class ClaimCommandServiceImplTest {
@@ -90,14 +90,14 @@ class ClaimCommandServiceImplTest {
 
         assertThatThrownBy(() -> service.submitClaim(command))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("not ACTIVE");
+                .hasMessageContaining("not Active");
     }
 
     @Test
     void submitClaimCreatesClaimAndRegistersSubmitterAsPolicyholder() {
         idempotencyRunsCommand();
         when(customerServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID))
-                .thenReturn(new PolicyCoverageDto(POLICY_ID, "P-1", "ACTIVE", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
+                .thenReturn(new PolicyCoverageDto(POLICY_ID, "P-1", "Active", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
         Claim saved = newClaim(1L, ClaimStatus.SUBMITTED);
         when(claimRepository.save(any(Claim.class))).thenReturn(saved);
         when(claimMapper.toClaimResponse(any(Claim.class)))
@@ -109,6 +109,25 @@ class ClaimCommandServiceImplTest {
 
         assertThat(response.id()).isEqualTo(1L);
         verify(claimPartyRepository).save(any(ClaimParty.class));
+    }
+
+    @Test
+    void submitClaimWithCanonicalActiveStatus_ShouldAcceptClaim() {
+        // Test that canonical "Active" status (title case) is accepted
+        idempotencyRunsCommand();
+        when(customerServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID))
+                .thenReturn(new PolicyCoverageDto(POLICY_ID, "P-1", "Active", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
+        Claim saved = newClaim(1L, ClaimStatus.SUBMITTED);
+        when(claimRepository.save(any(Claim.class))).thenReturn(saved);
+        when(claimMapper.toClaimResponse(any(Claim.class)))
+                .thenReturn(new ClaimResponse(1L, "CLM-1", "SUBMITTED", "FIRE"));
+
+        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", Instant.now(), 1000L, USER_ID, "k-1");
+
+        ClaimResponse response = service.submitClaim(command);
+
+        assertThat(response.id()).isEqualTo(1L);
+        verify(claimRepository).save(any(Claim.class));
     }
 
     @Test

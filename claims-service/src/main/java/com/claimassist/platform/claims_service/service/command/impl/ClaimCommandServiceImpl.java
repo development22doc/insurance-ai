@@ -78,13 +78,13 @@ public class ClaimCommandServiceImpl implements ClaimCommandService {
 
     private ClaimResponse doSubmitClaim(SubmitClaimCommand command) {
         // Never trust a client-supplied policyId at face value - confirm it's a
-        // real, ACTIVE policy before opening a claim against it. Also confirms
+        // real, Active policy before opening a claim against it. Also confirms
         // customer-service considers this policy valid, which is the closest this
         // system gets to "does this policy belong to this caller" without
         // duplicating customer-service's own ownership table here.
         PolicyCoverageDto policy = customerServiceGateway.getPolicyCoverage(command.policyId(), command.submittedByUserId());
-        if (!"ACTIVE".equals(policy.status())) {
-            throw new BadRequestException("Cannot file a claim against a policy that is not ACTIVE (current status: " + policy.status() + ")");
+        if (!"Active".equals(policy.status())) {
+            throw new BadRequestException("Cannot file a claim against a policy that is not Active (current status: " + policy.status() + ")");
         }
 
         Claim claim = Claim.builder()

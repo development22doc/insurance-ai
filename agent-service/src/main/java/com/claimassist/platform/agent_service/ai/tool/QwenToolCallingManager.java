@@ -14,6 +14,8 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
@@ -93,9 +95,16 @@ public class QwenToolCallingManager implements ToolCallingManager {
         String toolId = "qwen-" + UUID.randomUUID();
         ToolContext toolContext = new ToolContext(Map.of());
 
-        String result = callback.call(argumentsJson, toolContext);
+        // Execute tool callback on boundedElastic to avoid blocking reactor event-loop threads
+        String result = Mono.fromCallable(() -> callback.call(argumentsJson, toolContext))
+                .subscribeOn(Schedulers.boundedElastic())
+                .block();
 
-        AssistantMessage assistantMessage = new AssistantMessage(assistantText);
+        AssistantMessage assistantMessage = AssistantMessage.builder()
+                .content("")
+                .properties(Map.of())
+                .toolCalls(List.of(new AssistantMessage.ToolCall(toolId, "function", toolCall.name(), argumentsJson)))
+                .build();
         ToolResponseMessage toolResponseMessage = ToolResponseMessage.builder()
                 .responses(List.of(new ToolResponseMessage.ToolResponse(toolId, toolCall.name(), result)))
                 .build();
@@ -135,9 +144,16 @@ public class QwenToolCallingManager implements ToolCallingManager {
         String toolId = "qwen-planned-" + UUID.randomUUID();
         ToolContext toolContext = new ToolContext(Map.of());
 
-        String result = callback.call(argumentsJson, toolContext);
+        // Execute tool callback on boundedElastic to avoid blocking reactor event-loop threads
+        String result = Mono.fromCallable(() -> callback.call(argumentsJson, toolContext))
+                .subscribeOn(Schedulers.boundedElastic())
+                .block();
 
-        AssistantMessage assistantMessage = new AssistantMessage(renderToolCallJson(toolCall));
+        AssistantMessage assistantMessage = AssistantMessage.builder()
+                .content("")
+                .properties(Map.of())
+                .toolCalls(List.of(new AssistantMessage.ToolCall(toolId, "function", name, argumentsJson)))
+                .build();
         ToolResponseMessage toolResponseMessage = ToolResponseMessage.builder()
                 .responses(List.of(new ToolResponseMessage.ToolResponse(toolId, name, result)))
                 .build();

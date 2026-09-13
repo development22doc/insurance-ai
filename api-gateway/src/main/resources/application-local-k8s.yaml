@@ -35,37 +35,55 @@ spring:
     discovery:
       enabled: false
     gateway:
+      # Legacy property name (kept for backward compatibility)
+      httpclient:
+        response-timeout: 5m
+      # Newer Spring Cloud Gateway property path for recent framework versions
+      # Ensures Reactor Netty response-timeout is set for server.webflux HttpClient as well
       server:
         webflux:
-          routes:
-            - id: customer-service
-              uri: http://localhost:8081
-              predicates:
-                - Path=/customer/**
-              filters:
-                - StripPrefix=1
+          httpclient:
+            response-timeout: 5m
+      default-filters:
+        - name: Retry
+          args:
+            retries: 3
+            statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+            methods: GET,POST
+            backoff:
+              firstBackoff: 10ms
+              maxBackoff: 50ms
+              factor: 2
+              basedOnPreviousValue: false
+      routes:
+        - id: customer-service
+          uri: http://localhost:8081
+          predicates:
+            - Path=/customer/**
+          filters:
+            - StripPrefix=1
 
-            - id: claims-service
-              uri: http://localhost:8082
-              predicates:
-                - Path=/claims/**
-              filters:
-                - StripPrefix=1
+        - id: claims-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/claims/**
 
-            - id: agent-service
-              uri: http://localhost:8083
-              predicates:
-                - Path=/agent/**
-              filters:
-                - StripPrefix=1
+        - id: agent-service
+          uri: http://localhost:8083
+          predicates:
+            - Path=/agent/**
+          filters: []
 
-            - id: policy-service
-              uri: http://localhost:8081
-              predicates:
-                - Path=/policies/**
-              filters:
-                - StripPrefix=1
-
+        - id: policy-service
+          uri: http://localhost:8081
+          predicates:
+            - Path=/policies/**
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://100.114.133.69:30080/realms/claimassist-dev}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs}
   data:
     redis:
       host: ${REDIS_HOST:100.114.133.69}
@@ -76,16 +94,11 @@ spring:
           max-active: 20
           max-idle: 10
           min-idle: 2
-
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://100.114.133.69:30080/realms/claimassist-dev}
-          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs}
-
   lifecycle:
     timeout-per-shutdown-phase: 15s
+
+cors:
+  allowed-origins: http://localhost:5173
 eureka:
   client:
     enabled: ${EUREKA_CLIENT_ENABLED:false}

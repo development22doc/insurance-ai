@@ -237,7 +237,7 @@ logging:
     com.claimassist: DEBUG
     org.springframework.cloud.gateway: DEBUG
     org.springframework.security: INFO
-    reactor.netty.http.client: DEBUG
+    reactor.netty.http.client: INFO
 
   pattern:
     level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"

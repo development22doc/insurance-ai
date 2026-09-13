@@ -355,6 +355,65 @@ spec:
           protocol: TCP
 
 ---
+# 3c.4) agent-service EGRESS -> Ollama:11434
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-agent-service-ollama
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $app | quote }}
+      app.kubernetes.io/component: agent-service
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ns | quote }}
+          podSelector:
+            matchLabels:
+              app: ollama
+      ports:
+        - port: {{ .Values.ollama.port }}
+          protocol: TCP
+
+---
+# 3d) Ollama EGRESS -> external (for model downloads)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-egress-ollama-external
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app: ollama
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 127.0.0.1/32
+              - 169.254.169.254/32
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 80
+          protocol: TCP
+
+---
 # 3d) Keycloak EGRESS -> Keycloak-PostgreSQL:5432
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -579,7 +638,47 @@ spec:
 #    The default-deny blocks all ingress; these policies explicitly permit required connections.
 
 ---
-# 4a) PostgreSQL INGRESS <- customer-service, claims-service, agent-service, flyway
+# 4a) Ollama INGRESS <- agent-service + Tailscale VPN
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claimassist-allow-ingress-ollama
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "claimassist.labels" . | nindent 4 }}
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app: ollama
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ns | quote }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: agent-service
+              app.kubernetes.io/name: {{ $app | quote }}
+      ports:
+        - port: {{ .Values.ollama.port }}
+          protocol: TCP
+    - from:
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - port: {{ .Values.ollama.port }}
+          protocol: TCP
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: {{ .Values.ollama.port }}
+          protocol: TCP
+
+---
+# 4b) PostgreSQL INGRESS <- customer-service, claims-service, agent-service, flyway
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

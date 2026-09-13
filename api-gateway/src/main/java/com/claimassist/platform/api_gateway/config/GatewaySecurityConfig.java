@@ -1,5 +1,7 @@
 package com.claimassist.platform.api_gateway.config;
 
+import com.claimassist.platform.api_gateway.filter.BearerTokenPropagationFilter;
+import com.claimassist.platform.api_gateway.filter.CookieBearerTokenAuthenticationConverter;
 import com.claimassist.platform.api_gateway.properties.SecurityProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
+import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
@@ -42,8 +45,11 @@ public class GatewaySecurityConfig {
     private final SecurityProperties securityProperties;
     private final ObjectMapper objectMapper;
 
-    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}")
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs}")
     private String jwkSetUri;
+
+    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://100.114.133.69:30080/realms/claimassist-dev}")
+    private String issuerUri;
 
     /**
      * CORS allowed origins, comma-separated. Precedence:
@@ -75,9 +81,11 @@ public class GatewaySecurityConfig {
         configuration.setExposedHeaders(Arrays.asList(
                 "Authorization",
                 "Content-Type",
-                "Correlation-ID"
+                "Correlation-ID",
+                "Set-Cookie"
         ));
         // Credentials are only meaningful (and safe) with explicit origins, never with "*".
+        // HttpOnly cookies require credentials: true in CORS configuration.
         boolean wildcard = allowedOrigins.stream().anyMatch("*"::equals);
         configuration.setAllowCredentials(!wildcard);
         configuration.setMaxAge(3600L);  // 1 hour
@@ -104,14 +112,25 @@ public class GatewaySecurityConfig {
         return Arrays.asList(
                 "http://localhost:3000",   // React dev server
                 "http://localhost:4200",   // Angular dev server
+                "http://localhost:5173",   // Vite dev server
                 "http://localhost:8080"    // Local gateway
         );
     }
 
     @Bean
     public ReactiveJwtDecoder reactiveJwtDecoder() {
-        log.debug("Creating ReactiveJwtDecoder with JWK Set URI: {}", jwkSetUri);
-        return NimbusReactiveJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        log.debug("Creating ReactiveJwtDecoder with issuer: {}", issuerUri);
+        return NimbusReactiveJwtDecoder.withIssuerLocation(issuerUri).build();
+    }
+
+    @Bean
+    public ServerAuthenticationConverter cookieBearerTokenAuthenticationConverter() {
+        return new CookieBearerTokenAuthenticationConverter();
+    }
+
+    @Bean
+    public BearerTokenPropagationFilter bearerTokenPropagationFilter() {
+        return new BearerTokenPropagationFilter();
     }
 
     @Bean
@@ -156,6 +175,7 @@ public class GatewaySecurityConfig {
                 )
 
                 .oauth2ResourceServer (oauth2 -> oauth2
+                        .bearerTokenConverter (cookieBearerTokenAuthenticationConverter ())
                         .jwt (jwt -> jwt.jwtAuthenticationConverter (gatewayJwtAuthenticationConverter ()))
                         .authenticationEntryPoint ((exchange, ex) ->
                                 writeError (exchange.getResponse (),
@@ -165,9 +185,15 @@ public class GatewaySecurityConfig {
                                 writeError (exchange.getResponse (),
                                         HttpStatus.FORBIDDEN,
                                         "Access denied"))
+                )
+                .exceptionHandling (exceptions -> exceptions
+                        .authenticationEntryPoint ((exchange, ex) ->
+                                writeError (exchange.getResponse (),
+                                        HttpStatus.UNAUTHORIZED,
+                                        "Missing or invalid bearer token"))
                 );
 
-        log.debug("API Gateway security configuration: OAuth2 Resource Server + JWT validation via JWKS + comprehensive security headers");
+        log.debug("API Gateway security configuration: OAuth2 Resource Server + JWT validation via JWKS + cookie bearer converter + downstream token propagation");
 
         return http.build ();
     }

@@ -188,6 +188,13 @@ class GatewaySecurityConfigTest {
     }
 
     @Test
+    void validCookieAllowsProtectedRoute() throws Exception {
+        SecurityWebFilterChain chain = buildChain("/auth/signup");
+        client(chain).get().uri("/claims/1").cookie("CLAIMASSIST_ACCESS_TOKEN", validToken())
+                .exchange().expectStatus().isOk();
+    }
+
+    @Test
     void gatewayDoesNotOverAuthorizeByRole() throws Exception {
         // The gateway authenticates at the edge but deliberately does NOT authorize by
         // role (downstream services enforce their own authorization). An authenticated

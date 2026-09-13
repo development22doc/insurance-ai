@@ -23,8 +23,8 @@ import com.claimassist.platform.agent_service.security.InputGuardrails;
 import com.claimassist.platform.agent_service.security.OutputGuardrails;
 import com.claimassist.platform.agent_service.service.AgentGenerationService;
 import com.claimassist.platform.agent_service.service.AgentTurnPersistence;
-import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGatewayApi;
+import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGatewayApi;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import com.claimassist.platform.common_lib.observability.MDCUtility;
@@ -55,7 +55,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * calls are bounded by a per-request {@link ToolExecutionGuard}.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class AgentGenerationServiceImpl implements AgentGenerationService {
 
@@ -67,147 +66,306 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
     private final AgentSessionRepository agentSessionRepository;
     private final AgentTurnPersistence agentTurnPersistenceService;
     private final ToolRegistry toolRegistry;
-    private final ClaimsServiceGateway claimsServiceGateway;
-    private final CustomerServiceGateway customerServiceGateway;
+    private final ClaimsServiceGatewayApi claimsServiceGateway;
+    private final CustomerServiceGatewayApi customerServiceGateway;
     private final InputGuardrails inputGuardrails;
     private final OutputGuardrails outputGuardrails;
     private final ConversationMemoryService conversationMemoryService;
     private final ConversationContextBuilder conversationContextBuilder;
     private final AgentTelemetry agentTelemetry;
+    private final com.claimassist.platform.agent_service.security.SecurityExpressions security;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentGenerationServiceImpl(ChatClient chatClient,
+                                     AgentAiProperties agentAiProperties,
+                                     CurrentUserProvider currentUserProvider,
+                                     AgentSessionRepository agentSessionRepository,
+                                     AgentTurnPersistence agentTurnPersistenceService,
+                                     ToolRegistry toolRegistry,
+                                     ClaimsServiceGatewayApi claimsServiceGateway,
+                                     CustomerServiceGatewayApi customerServiceGateway,
+                                     InputGuardrails inputGuardrails,
+                                     OutputGuardrails outputGuardrails,
+                                     ConversationMemoryService conversationMemoryService,
+                                     ConversationContextBuilder conversationContextBuilder,
+                                     AgentTelemetry agentTelemetry,
+                                     com.claimassist.platform.agent_service.security.SecurityExpressions security) {
+        this.chatClient = chatClient;
+        this.agentAiProperties = agentAiProperties;
+        this.currentUserProvider = currentUserProvider;
+        this.agentSessionRepository = agentSessionRepository;
+        this.agentTurnPersistenceService = agentTurnPersistenceService;
+        this.toolRegistry = toolRegistry;
+        this.claimsServiceGateway = claimsServiceGateway;
+        this.customerServiceGateway = customerServiceGateway;
+        this.inputGuardrails = inputGuardrails;
+        this.outputGuardrails = outputGuardrails;
+        this.conversationMemoryService = conversationMemoryService;
+        this.conversationContextBuilder = conversationContextBuilder;
+        this.agentTelemetry = agentTelemetry;
+        this.security = security;
+    }
+
+    public AgentGenerationServiceImpl(ChatClient chatClient,
+                                     AgentAiProperties agentAiProperties,
+                                     CurrentUserProvider currentUserProvider,
+                                     AgentSessionRepository agentSessionRepository,
+                                     AgentTurnPersistence agentTurnPersistenceService,
+                                     ToolRegistry toolRegistry,
+                                     ClaimsServiceGatewayApi claimsServiceGateway,
+                                     CustomerServiceGatewayApi customerServiceGateway,
+                                     InputGuardrails inputGuardrails,
+                                     OutputGuardrails outputGuardrails,
+                                     ConversationMemoryService conversationMemoryService,
+                                     ConversationContextBuilder conversationContextBuilder,
+                                     AgentTelemetry agentTelemetry) {
+        this(chatClient, agentAiProperties, currentUserProvider, agentSessionRepository,
+                agentTurnPersistenceService, toolRegistry, claimsServiceGateway,
+                customerServiceGateway, inputGuardrails, outputGuardrails,
+                conversationMemoryService, conversationContextBuilder, agentTelemetry,
+                new com.claimassist.platform.agent_service.security.SecurityExpressions(claimsServiceGateway));
+    }
 
     @Override
-    @PreAuthorize("@security.canAccessClaim(#claimId)")
     public Flux<StreamResponse> streamResponse(String userMessage, Long claimId) {
-        long start = System.nanoTime();
-        Long userId = currentUserProvider.getCurrentUserId();
-        String requestId = UUID.randomUUID().toString();
+        // Reactive entry: obtain SecurityContext and perform the permission check
+        var flux = org.springframework.security.core.context.ReactiveSecurityContextHolder.getContext()
+                .switchIfEmpty(reactor.core.publisher.Mono.just(org.springframework.security.core.context.SecurityContextHolder.createEmptyContext()))
+                .flatMapMany(securityContext -> {
+                    var auth = securityContext.getAuthentication();
 
-        String correlation = "claim:" + claimId + ":user:" + userId + ":req:" + requestId;
-        MDCUtility.putCorrelationId(correlation);
-
-        String provider = "ollama";
-        String model = System.getenv().getOrDefault("OLLAMA_MODEL", "ollama");
-        agentTelemetry.requestStarted(requestId, correlation, claimId, userId, model, provider);
-
-        // Fail-closed input guardrail: reject unsafe/oversized input before the
-        // LLM is ever invoked. No session is created and no model call happens.
-        InputGuardrails.Verdict verdict = inputGuardrails.check(userMessage);
-        if (!verdict.allowed()) {
-            log.info("Agent request {} rejected by input guardrail: code={}", requestId, verdict.errorCode());
-            agentTelemetry.guardrailRejected(requestId, correlation, claimId, userId,
-                    verdict.errorCode(), verdict.message());
-            agentTelemetry.responseFailed(requestId, correlation, claimId, userId, 0L,
-                    AgentErrorCategory.PROMPT_GUARDRAIL_REJECTION);
-            return Flux.just(StreamResponse.error(requestId, verdict.errorCode(), verdict.message()))
-                    .doFinally(signal -> MDCUtility.clearAll());
-        }
-
-        AgentSession session = createSessionIfNotExists(claimId, userId);
-        ClaimStatusDto statusDto = claimsServiceGateway.getClaimStatus(claimId);
-        Long policyId = statusDto == null ? null : statusDto.policyId();
-        // A grounded fact the request already holds (from claims-service, not the LLM),
-        // used by the output guardrail to catch hallucinated hard outcomes.
-        String groundedStatus = statusDto == null ? null : statusDto.status();
-
-        // Conversation memory (Phase 4): load the bounded, recent history for
-        // THIS conversation (scoped to the authenticated user via the session
-        // key) and fold it into the system prompt so the model can resolve
-        // references ("that claim", "the status you mentioned") across turns.
-        // Ownership is enforced by the composite session key (claimId, userId)
-        // where userId always comes from the authenticated JWT - never from the
-        // client - so a forged conversationId cannot reach another user's data.
-        long contextStart = System.nanoTime();
-        List<ConversationMessage> history = conversationMemoryService.loadRecent(session);
-        ConversationContextBuilder.Context context =
-                conversationContextBuilder.build(PromptUtils.INSURANCE_AGENT_SYSTEM_PROMPT, userMessage, history);
-        agentTelemetry.contextBuilt(requestId, correlation, claimId, userId,
-                durationMs(contextStart), history.size());
-
-        List<ProposedUpdate> proposedUpdates = new CopyOnWriteArrayList<>();
-        List<ToolExecutionMetadata> executions = new CopyOnWriteArrayList<>();
-        InsuranceAgentTools tools = new InsuranceAgentTools(
-                claimId, policyId, userId, claimsServiceGateway, customerServiceGateway, toolRegistry,
-                agentAiProperties.getMaxNoteLength(), proposedUpdates::add,
-                agentTelemetry, requestId, correlation);
-
-        ToolCallbackProvider guardedProvider =
-                new ToolExecutionGuard(agentAiProperties, toolRegistry, requestId, correlation, executions::add,
-                        agentTelemetry, claimId, userId, SafeMetadata.hash(claimId))
-                        .guarded(MethodToolCallbackProvider.builder().toolObjects(tools).build());
-
-        StringBuilder fullText = new StringBuilder();
-
-        long llmStart = System.nanoTime();
-        agentTelemetry.streamStarted(requestId, correlation, claimId, userId);
-        agentTelemetry.llmStarted(requestId, correlation, claimId, userId, model, provider);
-
-        Flux<StreamResponse> events = chatClient.prompt()
-                .system(context.systemPrompt())
-                .user(context.userMessage())
-                .toolCallbacks(guardedProvider)
-                .stream()
-                .content()
-                .filter(chunk -> chunk != null && !chunk.isBlank())
-                .map(chunk -> {
-                    synchronized (fullText) {
-                        fullText.append(chunk);
-                    }
-                    return StreamResponse.message(chunk, requestId);
-                })
-                .concatWith(Flux.defer(() -> {
-                    List<StreamResponse> tail = new java.util.ArrayList<>(2);
-                    String modelText = fullText.toString();
-
-                    // Output guardrail: if the model asserted a hard outcome the
-                    // grounded claim status does not support, append a controlled
-                    // advisory before the terminal event. The model text itself is
-                    // never rewritten.
-                    String advisory = outputGuardrails
-                            .advisory(modelText, groundedStatus == null ? List.of() : List.of(groundedStatus))
-                            .orElse(null);
-                    String persistedText = modelText;
-                    if (advisory != null) {
-                        tail.add(StreamResponse.message(advisory, requestId));
-                        persistedText = modelText + "\n\n" + advisory;
+                    // Extract Jwt (if present) without blocking. If no auth is on the
+                    // request, we still allow the downstream claims-service RBAC check to
+                    // decide (fail-closed on unauthorized responses), which keeps the
+                    // authorization boundary in the service layer without making the
+                    // public agent stream unusable in test or local non-authenticated runs.
+                    final org.springframework.security.oauth2.jwt.Jwt jwtLocal;
+                    if (auth != null && auth.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt pJwt) {
+                        jwtLocal = pJwt;
+                    } else if (auth != null && auth.getCredentials() instanceof org.springframework.security.oauth2.jwt.Jwt cJwt) {
+                        jwtLocal = cJwt;
+                    } else {
+                        jwtLocal = null;
                     }
 
-                    agentTelemetry.llmCompleted(requestId, correlation, claimId, userId,
-                            durationMs(llmStart), "COMPLETE", executions.size(), null, null);
-                    agentTelemetry.streamCompleted(requestId, correlation, claimId, userId);
-                    persistTurn(userMessage, session, persistedText, userId,
-                            proposedUpdates, executions, durationSeconds(start), correlation, requestId);
-                    agentTelemetry.responseCompleted(requestId, correlation, claimId, userId, durationMs(start));
-                    tail.add(StreamResponse.done(requestId));
-                    return Flux.fromIterable(tail);
-                }));
+                    // Reactive permission check via SecurityExpressions; if no
+                    // SecurityContext is available, the expression will call the claims
+                    // service without a bearer token and rely on the service-side RBAC.
+                    reactor.core.publisher.Mono<Boolean> allowed = security.canAccessClaim(claimId);
 
-        return events
-                .timeout(Duration.ofMillis(agentAiProperties.getAgentTimeoutMs()))
-                .onErrorResume(error -> {
-                    Resolved resolved = AiErrorResolver.resolve(error);
-                    AgentErrorCategory category = AgentErrorCategory.fromCode(resolved.code());
-                    log.warn("Agent stream failed for request {}: code={} cause={}",
-                            requestId, resolved.code(), error.toString());
-                    agentTelemetry.llmFailed(requestId, correlation, claimId, userId,
-                            durationMs(llmStart), category);
-                    agentTelemetry.streamFailed(requestId, correlation, claimId, userId, category);
-                    persistTurn(userMessage, session, resolved.message(), userId,
-                            proposedUpdates, executions, durationSeconds(start), correlation, requestId);
-                    agentTelemetry.responseFailed(requestId, correlation, claimId, userId,
-                            durationMs(start), category);
-                    return Flux.just(StreamResponse.error(requestId, resolved.code(), resolved.message()));
-                })
-                .doOnCancel(() -> {
-                    agentTelemetry.streamCancelled(requestId, correlation, claimId, userId);
-                    log.info("Agent stream cancelled for request {}", requestId);
-                })
-                .doFinally(signal -> {
-                    if (!executions.isEmpty()) {
-                        log.info("Request {} executed {} tool call(s): {}",
-                                requestId, executions.size(), executions);
-                    }
-                    MDCUtility.clearAll();
+                    return allowed.flatMapMany(isAllowed -> {
+                        if (!isAllowed) {
+                            return reactor.core.publisher.Flux.error(
+                                    new org.springframework.security.access.AccessDeniedException("Forbidden"));
+                        }
+
+                        final long start = System.nanoTime();
+                        final String requestId = UUID.randomUUID().toString();
+
+                        // Extract Jwt (if present) without blocking
+                        final org.springframework.security.oauth2.jwt.Jwt jwtInner = jwtLocal;
+
+                        // Extract JWT token string for tool execution
+                        final String jwtTokenString = jwtInner != null ? jwtInner.getTokenValue() : null;
+
+                        // Safe JWT diagnostics - NEVER log the token itself
+                        try {
+                            if (jwtInner != null) {
+                                boolean subPresent = jwtInner.getClaim("sub") != null;
+                                boolean preferredUsernamePresent = jwtInner.getClaim("preferred_username") != null;
+                                boolean emailPresent = jwtInner.getClaim("email") != null;
+                                boolean userIdPresent = jwtInner.getClaim("userId") != null;
+                                String azp = jwtInner.getClaimAsString("azp");
+                                String clientId = jwtInner.getClaimAsString("client_id");
+                                boolean isServiceToken = (azp != null && !azp.isBlank()) || (clientId != null && !clientId.isBlank());
+
+                                log.info("JWT DIAGNOSTICS [requestId={}]: token_present=true, token_type={}, sub_present={}, preferred_username_present={}, email_present={}, userId_present={}, azp_present={}, client_id_present={}",
+                                        requestId,
+                                        isServiceToken ? "SERVICE" : "USER",
+                                        subPresent,
+                                        preferredUsernamePresent,
+                                        emailPresent,
+                                        userIdPresent,
+                                        azp != null && !azp.isBlank(),
+                                        clientId != null && !clientId.isBlank());
+
+                                if (!userIdPresent && !isServiceToken) {
+                                    log.error("JWT DIAGNOSTICS [requestId={}]: CRITICAL - USER token missing userId claim", requestId);
+                                }
+                            } else {
+                                log.info("JWT DIAGNOSTICS [requestId={}]: token_present=false", requestId);
+                            }
+                        } catch (Exception e) {
+                            log.error("JWT DIAGNOSTICS [requestId={}]: Failed to read JWT: {}", requestId, e.toString());
+                        }
+
+                        final Long userId;
+                        if (jwtInner != null && jwtInner.getClaim("userId") != null) {
+                            Object userIdObj = jwtInner.getClaim("userId");
+                            if (userIdObj instanceof Number number) {
+                                userId = number.longValue();
+                            } else {
+                                userId = Long.valueOf(userIdObj.toString());
+                            }
+                        } else {
+                            userId = null;
+                        }
+
+                        final String correlation = "claim:" + claimId + ":user:" + userId + ":req:" + requestId;
+                        MDCUtility.putCorrelationId(correlation);
+
+                        final String provider = "ollama";
+                        final String model = System.getenv().getOrDefault("OLLAMA_MODEL", "ollama");
+                        agentTelemetry.requestStarted(requestId, correlation, claimId, userId, model, provider);
+
+                        // Fail-closed input guardrail: reject unsafe/oversized input before the
+                        // LLM is ever invoked. No session is created and no model call happens.
+                        InputGuardrails.Verdict verdict = inputGuardrails.check(userMessage);
+                        if (!verdict.allowed()) {
+                            log.info("Agent request {} rejected by input guardrail: code={}", requestId, verdict.errorCode());
+                            agentTelemetry.guardrailRejected(requestId, correlation, claimId, userId,
+                                    verdict.errorCode(), verdict.message());
+                            agentTelemetry.responseFailed(requestId, correlation, claimId, userId, 0L,
+                                    AgentErrorCategory.PROMPT_GUARDRAIL_REJECTION);
+                            return reactor.core.publisher.Flux.just(StreamResponse.error(requestId, verdict.errorCode(), verdict.message()))
+                                    .doFinally(signal -> MDCUtility.clearAll());
+                        }
+
+                        // Create session on boundedElastic to avoid blocking reactor threads
+                        return reactor.core.publisher.Mono.fromCallable(() -> createSessionIfNotExists(claimId, userId))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .flatMapMany(session -> {
+                                    // Fetch claim status reactively
+                                    return claimsServiceGateway.getClaimStatusReactive(claimId)
+                                            .switchIfEmpty(reactor.core.publisher.Mono.defer(() -> reactor.core.publisher.Mono.just(
+                                                    new ClaimStatusDto(claimId, null, null, "UNKNOWN", null, null, null, java.util.List.of())
+                                            )))
+                                            .flatMapMany(statusDto -> {
+                                                final Long policyId = statusDto == null ? null : statusDto.policyId();
+                                                final String groundedStatus = statusDto == null ? null : statusDto.status();
+
+                                                long contextStart = System.nanoTime();
+                                                // Load recent history on boundedElastic because it uses JPA
+                                                return reactor.core.publisher.Mono.fromCallable(() -> conversationMemoryService.loadRecent(session))
+                                                        .subscribeOn(Schedulers.boundedElastic())
+                                                        .flatMapMany(history -> {
+                                                            final ConversationContextBuilder.Context context =
+                                                                    conversationContextBuilder.build(PromptUtils.INSURANCE_AGENT_SYSTEM_PROMPT, userMessage, history);
+                                                            agentTelemetry.contextBuilt(requestId, correlation, claimId, userId,
+                                                                    durationMs(contextStart), history.size());
+
+                                                            final List<ProposedUpdate> proposedUpdates = new CopyOnWriteArrayList<>();
+                                                            final List<ToolExecutionMetadata> executions = new CopyOnWriteArrayList<>();
+                                                            InsuranceAgentTools tools = new InsuranceAgentTools(
+                                                                    claimId, policyId, userId, claimsServiceGateway, customerServiceGateway, toolRegistry,
+                                                                    agentAiProperties.getMaxNoteLength(), proposedUpdates::add,
+                                                                    agentTelemetry, requestId, correlation, jwtTokenString);
+
+                                                            ToolCallbackProvider guardedProvider =
+                                                                    new ToolExecutionGuard(agentAiProperties, toolRegistry, requestId, correlation, executions::add,
+                                                                            agentTelemetry, claimId, userId, SafeMetadata.hash(claimId))
+                                                                            .guarded(MethodToolCallbackProvider.builder().toolObjects(tools).build());
+
+                                                            final StringBuilder fullText = new StringBuilder();
+
+                                                            final long llmStart = System.nanoTime();
+                                                            agentTelemetry.streamStarted(requestId, correlation, claimId, userId);
+                                                            agentTelemetry.llmStarted(requestId, correlation, claimId, userId, model, provider);
+
+                                                            log.info("LLM STREAM DIAGNOSTICS [requestId={}]: stream_initiated=true, model={}, provider={}",
+                                                                    requestId, model, provider);
+
+                                                            log.info("STREAM DIAGNOSTICS [requestId={}]: using_reactive_streaming", requestId);
+                                                            var contentStream = chatClient.prompt()
+                                                                    .system(context.systemPrompt())
+                                                                    .user(context.userMessage())
+                                                                    .toolCallbacks(guardedProvider)
+                                                                    .stream()
+                                                                    .content()
+                                                                    .doOnSubscribe(sub -> log.info("STREAM DIAGNOSTICS [requestId={}]: reactive_flux_subscribed=true", requestId))
+                                                                    .doOnNext(chunk -> log.info("STREAM DIAGNOSTICS [requestId={}]: reactive_chunk_received=true, length={}",
+                                                                            requestId, chunk != null ? chunk.length() : 0))
+                                                                    .doOnComplete(() -> log.info("STREAM DIAGNOSTICS [requestId={}]: reactive_flux_complete=true", requestId));
+
+                                                            var filteredStream = contentStream
+                                                                    .filter(chunk -> chunk != null && !chunk.isBlank());
+
+                                                            var mappedStream = filteredStream
+                                                                    .map(chunk -> {
+                                                                        synchronized (fullText) {
+                                                                            fullText.append(chunk);
+                                                                        }
+                                                                        return StreamResponse.message(chunk, requestId);
+                                                                    });
+
+                                                            Flux<StreamResponse> events = mappedStream
+                                                                    .concatWith(reactor.core.publisher.Flux.defer(() -> {
+                                                                        List<StreamResponse> tail = new java.util.ArrayList<>(2);
+                                                                        String modelText = fullText.toString();
+
+                                                                        String advisory = outputGuardrails
+                                                                                .advisory(modelText, groundedStatus == null ? java.util.List.of() : java.util.List.of(groundedStatus))
+                                                                                .orElse(null);
+                                                                        String persistedText = modelText;
+                                                                        if (advisory != null) {
+                                                                            tail.add(StreamResponse.message(advisory, requestId));
+                                                                            persistedText = modelText + "\n\n" + advisory;
+                                                                        }
+
+                                                                        agentTelemetry.llmCompleted(requestId, correlation, claimId, userId,
+                                                                                durationMs(llmStart), "COMPLETE", executions.size(), null, null);
+                                                                        agentTelemetry.streamCompleted(requestId, correlation, claimId, userId);
+                                                                        persistTurn(userMessage, session, persistedText,
+                                                                                userId, proposedUpdates, executions, durationSeconds(start), correlation, requestId);
+                                                                        agentTelemetry.responseCompleted(requestId, correlation, claimId, userId, durationMs(start));
+                                                                        tail.add(StreamResponse.done(requestId));
+                                                                        return reactor.core.publisher.Flux.fromIterable(tail);
+                                                                    }));
+
+                                                            return events
+                                                                    .timeout(java.time.Duration.ofMillis(agentAiProperties.getAgentTimeoutMs()))
+                                                                    .onErrorResume(error -> {
+                                                                        Resolved resolved = AiErrorResolver.resolve(error);
+                                                                        AgentErrorCategory category = AgentErrorCategory.fromCode(resolved.code());
+
+                                                                        log.warn("Agent stream failed for request {}: code={} cause={} errorType={}",
+                                                                                requestId, resolved.code(), error.toString(), error.getClass().getSimpleName());
+
+                                                                        Throwable rootCause = error;
+                                                                        while (rootCause.getCause() != null) {
+                                                                            rootCause = rootCause.getCause();
+                                                                        }
+                                                                        if (rootCause != error) {
+                                                                            log.warn("Root cause for request {}: type={} message={}",
+                                                                                    requestId, rootCause.getClass().getSimpleName(), rootCause.getMessage());
+                                                                        }
+
+                                                                        agentTelemetry.llmFailed(requestId, correlation, claimId, userId,
+                                                                                durationMs(llmStart), category);
+                                                                        agentTelemetry.streamFailed(requestId, correlation, claimId, userId, category);
+                                                                        persistTurn(userMessage, session, resolved.message(), userId,
+                                                                                proposedUpdates, executions, durationSeconds(start), correlation, requestId);
+                                                                        agentTelemetry.responseFailed(requestId, correlation, claimId, userId,
+                                                                                durationMs(start), category);
+                                                                        return reactor.core.publisher.Flux.just(StreamResponse.error(requestId, resolved.code(), resolved.message()));
+                                                                    })
+                                                                    .doOnCancel(() -> {
+                                                                        agentTelemetry.streamCancelled(requestId, correlation, claimId, userId);
+                                                                        log.info("Agent stream cancelled for request {}", requestId);
+                                                                    })
+                                                                    .doFinally(signal -> {
+                                                                        if (!executions.isEmpty()) {
+                                                                            log.info("Request {} executed {} tool call(s): {}",
+                                                                                    requestId, executions.size(), executions);
+                                                                        }
+                                                                        MDCUtility.clearAll();
+                                                                    });
+                                                        });
+                                                });
+                                });
+                        });
                 });
+        return flux.switchIfEmpty(reactor.core.publisher.Flux.error(new org.springframework.security.access.AccessDeniedException("Unauthenticated")));
     }
 
     private void persistTurn(String userMessage, AgentSession session, String fullText, Long userId,

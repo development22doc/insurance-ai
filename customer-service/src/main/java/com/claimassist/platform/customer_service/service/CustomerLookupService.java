@@ -1,8 +1,10 @@
 package com.claimassist.platform.customer_service.service;
 
 import com.claimassist.platform.customer_service.config.RedisCacheConfig;
+import com.claimassist.platform.customer_service.dto.customer.CustomerResponse;
 import com.claimassist.platform.customer_service.entity.Customer;
 import com.claimassist.platform.customer_service.repository.CustomerRepository;
+import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
 import com.claimassist.platform.common_lib.observability.LoggingConstants;
 import com.claimassist.platform.common_lib.observability.event.EventLogger;
 import com.claimassist.platform.common_lib.observability.PerformanceLogger;
@@ -111,6 +113,41 @@ public class CustomerLookupService {
             perfDetails.put("cacheName", RedisCacheConfig.CUSTOMER_LOOKUP_CACHE);
             performanceLogger.log("CACHE", "cache.evict", duration, perfDetails);
         }
+    }
+
+    public CustomerResponse findById(Long customerId) {
+        long start = System.currentTimeMillis();
+        Optional<Customer> customerOpt = customerRepository.findById(customerId);
+        long duration = System.currentTimeMillis() - start;
+
+        if (customerOpt.isEmpty()) {
+            Map<String,Object> notFoundDetails = new java.util.HashMap<>();
+            notFoundDetails.put("customerId", customerId);
+            notFoundDetails.put("event", "CUSTOMER_NOT_FOUND");
+            notFoundDetails.put("executionTimeMs", duration);
+            eventLogger.logBusinessEvent("customer-service", "customer-service", notFoundDetails);
+            throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
+        }
+
+        Customer customer = customerOpt.get();
+        Map<String,Object> foundDetails = new java.util.HashMap<>();
+        foundDetails.put("customerId", customerId);
+        foundDetails.put("event", "CUSTOMER_FOUND");
+        foundDetails.put("executionTimeMs", duration);
+        eventLogger.logBusinessEvent("customer-service", "customer-service", foundDetails);
+        performanceLogger.log("REPOSITORY", "repository.customer.findById", duration,
+                Map.of("customerId", customerId));
+
+        return toResponse(customer);
+    }
+
+    private CustomerResponse toResponse(Customer customer) {
+        return new CustomerResponse(
+                customer.getId(),
+                customer.getUsername(),
+                customer.getFullName(),
+                customer.getKycStatus()
+        );
     }
 }
 

@@ -10,5 +10,8 @@ public interface PolicyMapper {
 
     @Mapping(target = "coveragePlanName", source = "coveragePlan.name")
     @Mapping(target = "productType", source = "coveragePlan.productType")
+    @Mapping(target = "annualPremiumCents", source = "coveragePlan.annualPremiumCents")
+    @Mapping(target = "coverageLimitCents", source = "coveragePlan.coverageLimitCents")
+    @Mapping(target = "deductibleCents", source = "coveragePlan.deductibleCents")
     PolicyResponse toPolicyResponse(Policy policy);
 }

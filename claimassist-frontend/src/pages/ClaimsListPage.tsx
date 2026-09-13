@@ -1,97 +1,124 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { apiClient } from '../services/api-client';
-import { API_ENDPOINTS } from '../config/api';
-import type { ClaimSummaryResponse } from '../types';
-import { EmptyState, ErrorState, LoadingState } from '../components/ui';
+import { useEffect, useState } from 'react';
+import { FileText, Plus, ArrowRight, Filter } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Badge, statusTone } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Spinner } from '@/components/ui/Spinner';
+import * as api from '@/lib/api';
+import type { Claim } from '@/lib/api';
+import { navigate } from '@/lib/router';
+import { CLAIM_STATUSES } from '@/lib/types';
 
-const STATUS_STYLES: Record<string, string> = {
-  SUBMITTED: 'border border-sky-200 bg-sky-50 text-sky-800',
-  UNDER_REVIEW: 'border border-amber-200 bg-amber-50 text-amber-800',
-  DOCS_REQUESTED: 'border border-violet-200 bg-violet-50 text-violet-800',
-  APPROVED: 'border border-emerald-200 bg-emerald-50 text-emerald-800',
-  DENIED: 'border border-red-200 bg-red-50 text-red-800',
-  PAID: 'border border-indigo-200 bg-indigo-50 text-indigo-800',
-  CLOSED: 'border border-slate-200 bg-slate-100 text-slate-700',
-};
-
-const formatDate = (value?: string | number | null) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString();
-};
-
-export const ClaimsListPage: React.FC = () => {
-  const [claims, setClaims] = useState<ClaimSummaryResponse[] | null>(null);
+export function ClaimsListPage() {
+  const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>('All');
 
   useEffect(() => {
-    let mounted = true;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
+    const loadClaims = async () => {
       try {
-        const response = await apiClient.get<ClaimSummaryResponse[]>(API_ENDPOINTS.CLAIMS);
-        if (mounted) setClaims(response || []);
+        const data = await api.getAllClaims();
+        setClaims(data);
       } catch (err) {
-        if (mounted) setError(err instanceof Error ? err.message : String(err));
+        setError(err instanceof Error ? err.message : 'Failed to load claims');
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
-    }
+    };
 
-    void load();
-    return () => { mounted = false; };
+    loadClaims();
   }, []);
 
-  if (loading) return <LoadingState message="Loading claims..." />;
-  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+  if (loading) {
+    return <div className="min-h-[60vh] flex items-center justify-center"><Spinner size="lg" /></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <Card className="p-8 text-center max-w-md">
+          <p className="text-sm text-slate-500 mb-4">{error}</p>
+          <Button onClick={() => window.location.reload()}>Retry</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const filtered = filter === 'All' ? claims : claims.filter(c => c.status === filter);
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Claims</h1>
-        <Link to="/claims/new" className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white">
-          File a Claim
-        </Link>
-      </header>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+      <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Your Claims</h1>
+          <p className="text-slate-500 mt-1">Track and manage all your insurance claims.</p>
+        </div>
+        <Button onClick={() => navigate('/file-claim')}>
+          <Plus className="w-4 h-4" /> File New Claim
+        </Button>
+      </div>
 
-      {claims && claims.length > 0 ? (
+      {/* Filters */}
+      <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-1">
+        <Filter className="w-4 h-4 text-slate-400 flex-shrink-0" />
+        {['All', ...CLAIM_STATUSES].map((status) => (
+          <button
+            key={status}
+            onClick={() => setFilter(status)}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors ${
+              filter === status
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300 hover:text-blue-600'
+            }`}
+          >
+            {status}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <Card className="p-12 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100 mb-4">
+            <FileText className="w-8 h-8 text-blue-500" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 mb-2">
+            {filter === 'All' ? 'No claims yet' : `No ${filter} claims`}
+          </h3>
+          <p className="text-sm text-slate-500 mb-6">
+            {filter === 'All' ? 'File your first claim to get started.' : 'Try a different filter or file a new claim.'}
+          </p>
+          <Button onClick={() => navigate('/file-claim')}>
+            <Plus className="w-4 h-4" /> File a Claim
+          </Button>
+        </Card>
+      ) : (
         <div className="space-y-3">
-          {claims.map((claim) => (
-            <div key={claim.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-semibold">{claim.claimNumber}</div>
-                  <div className="text-sm text-[var(--color-text-secondary)]">
-                    {claim.incidentType} • {formatDate(claim.incidentDate)}
+          {filtered.map((claim) => (
+            <Card key={claim.id} hover onClick={() => navigate(`/claim/${claim.id}`)} className="p-5">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-6 h-6 text-blue-600" />
                   </div>
-                  <div className="mt-1 text-xs text-[var(--color-text-secondary)]">Policy: {claim.policyId ?? '—'}</div>
+                  <div>
+                    <p className="font-semibold text-slate-900">{claim.incidentType}</p>
+                    <p className="text-xs text-slate-500 font-mono">{claim.claimNumber}</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[claim.status] ?? 'border border-slate-200 bg-slate-100 text-slate-700'}`}>
-                    {claim.status}
-                  </span>
-                  <Link to={`/claims/${encodeURIComponent(String(claim.id))}`} className="text-sm font-medium text-[var(--color-primary)]">
-                    View Claim
-                  </Link>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="text-right">
+                    <p className="text-xs text-slate-400">Amount</p>
+                    <p className="text-sm font-bold text-slate-900">{claim.estimatedAmountCents ? `$${(claim.estimatedAmountCents / 100).toLocaleString()}` : 'N/A'}</p>
+                  </div>
+                  <Badge tone={statusTone(claim.status)} dot>{claim.status}</Badge>
+                  <ArrowRight className="w-4 h-4 text-slate-300" />
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
-      ) : (
-        <EmptyState
-          title="No claims"
-          description="You have no claims at this time."
-          action={<Link to="/claims/new" className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white">File a Claim</Link>}
-        />
       )}
     </div>
   );
-};
-
-export default ClaimsListPage;
+}

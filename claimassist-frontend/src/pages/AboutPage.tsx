@@ -1,178 +1,141 @@
-import React from 'react';
+import { Shield, Target, Eye, Heart, Users, TrendingUp, Award, Globe } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { navigate } from '@/lib/router';
 
-export const AboutPage: React.FC = () => {
+export function AboutPage() {
+  const values = [
+    { icon: Shield, title: 'Trust', desc: 'We protect what matters to you with honesty and integrity at every step.' },
+    { icon: Eye, title: 'Transparency', desc: 'No hidden fees, no fine print. We make insurance clear and understandable.' },
+    { icon: Heart, title: 'Customer-First', desc: 'Every decision starts with what is best for our customers.' },
+    { icon: TrendingUp, title: 'Innovation', desc: 'We use technology to make insurance faster, simpler, and smarter.' },
+  ];
+
+  const milestones = [
+    { year: '2021', title: 'ClaimAssist Founded', desc: 'Started with a mission to simplify insurance claims.' },
+    { year: '2022', title: '50K Customers', desc: 'Rapid growth driven by our customer-first approach.' },
+    { year: '2023', title: 'AI Assistant Launch', desc: 'Introduced our AI-powered claim assistant for 24/7 support.' },
+    { year: '2024', title: '500K Claims Processed', desc: 'Reached half a million claims with 98% satisfaction.' },
+    { year: '2026', title: 'Nationwide Coverage', desc: 'Now licensed in all 50 states with full digital experience.' },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
-      {/* Hero Section */}
-      <section className="px-4 py-16 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-block mb-4 px-4 py-2 bg-blue-50 rounded-full border border-blue-200">
-            <p className="text-sm font-medium text-blue-900">About ClaimAssist</p>
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mt-4">
-            Insurance Claims, Simplified
-          </h1>
-          <p className="text-xl text-gray-600 mt-6 max-w-2xl mx-auto">
-            ClaimAssist builds focused tools to simplify insurance claims for customers and operations teams alike.
-          </p>
-        </div>
-      </section>
-
-      {/* Mission Section */}
-      <section className="px-4 py-12 sm:px-6 lg:px-8">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-lg transition-shadow duration-300">
-              <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center mb-4">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-3">Our Mission</h2>
-              <p className="text-gray-600 leading-relaxed">
-                Make claims fair, transparent, and fast through better workflows and applied machine learning where it helps reviewers.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-lg transition-shadow duration-300">
-              <div className="w-12 h-12 rounded-lg bg-emerald-100 flex items-center justify-center mb-4">
-                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-3">What We Build</h2>
-              <p className="text-gray-600 leading-relaxed">
-                A claims-first platform: filing, secure document management, AI-assisted extraction, role-based operations, and clear tracking.
-              </p>
-            </div>
+    <div className="animate-fade-in">
+      {/* Hero */}
+      <section className="relative bg-gradient-to-b from-blue-50/50 to-white py-16 lg:py-24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
+            <Badge tone="blue" className="mb-4">About ClaimAssist</Badge>
+            <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight mb-5">
+              We're reimagining insurance for the digital age
+            </h1>
+            <p className="text-lg text-slate-600 leading-relaxed">
+              ClaimAssist was born from a simple idea: insurance should be easy to understand, simple to manage, and fast when you need it most. We combine modern technology with genuine care to deliver an experience that puts customers first.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* AI Section */}
-      <section className="px-4 py-12 sm:px-6 lg:px-8 bg-gradient-to-r from-blue-50 to-indigo-50">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-2xl border border-gray-200 p-8 sm:p-12">
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 rounded-lg bg-yellow-100 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                  </svg>
+      {/* Mission & Vision */}
+      <section className="py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card className="p-8 bg-gradient-to-br from-blue-50 to-white border-blue-100">
+              <Target className="w-10 h-10 text-blue-600 mb-4" />
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Our Mission</h2>
+              <p className="text-slate-600 leading-relaxed">
+                To make insurance accessible, transparent, and stress-free for everyone. We remove the complexity from claims and give customers the tools they need to navigate insurance with confidence.
+              </p>
+            </Card>
+            <Card className="p-8 bg-gradient-to-br from-navy-50 to-white border-navy-100">
+              <Globe className="w-10 h-10 text-navy-700 mb-4" />
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Our Vision</h2>
+              <p className="text-slate-600 leading-relaxed">
+                A world where filing an insurance claim is as easy as ordering food online. Where AI assists you instantly, and where trust is built through transparency, not fine print.
+              </p>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Values */}
+      <section className="py-16 bg-slate-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <Badge tone="blue" className="mb-3">Our Values</Badge>
+            <h2 className="text-3xl font-bold text-slate-900 tracking-tight">What we stand for</h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {values.map((value) => (
+              <Card key={value.title} className="p-6 text-center">
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 mb-4">
+                  <value.icon className="w-7 h-7 text-blue-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-1.5">{value.title}</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">{value.desc}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Timeline */}
+      <section className="py-16 lg:py-20 bg-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <Badge tone="blue" className="mb-3">Our Journey</Badge>
+            <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Milestones we're proud of</h2>
+          </div>
+          <div className="space-y-0">
+            {milestones.map((m, idx) => (
+              <div key={m.year} className="flex gap-6 pb-8 last:pb-0">
+                <div className="flex flex-col items-center">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-navy-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                    {m.year}
+                  </div>
+                  {idx < milestones.length - 1 && <div className="w-0.5 flex-1 bg-slate-200 mt-2" />}
+                </div>
+                <div className="pt-1.5 pb-4">
+                  <h3 className="text-lg font-semibold text-slate-900">{m.title}</h3>
+                  <p className="text-sm text-slate-500 mt-1">{m.desc}</p>
                 </div>
               </div>
-              <div className="flex-1">
-                <h2 className="text-2xl font-bold text-gray-900 mb-3">AI in ClaimAssist</h2>
-                <p className="text-gray-600 leading-relaxed">
-                  We use AI to assist with information extraction and prioritization — not to replace human adjusters. Final decisions and reviews remain with trained staff. Our machine learning helps us understand patterns and support faster, fairer claim handling.
-                </p>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Values Section */}
-      <section className="px-4 py-12 sm:px-6 lg:px-8">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-gray-900 text-center mb-12">Our Values</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      {/* Stats */}
+      <section className="py-16 bg-navy-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
             {[
-              {
-                icon: '🛡️',
-                title: 'Transparency',
-                description: 'Clear communication about your claim status and decisions at every step.',
-              },
-              {
-                icon: '⚡',
-                title: 'Speed',
-                description: 'Fast processing without sacrificing accuracy or fairness.',
-              },
-              {
-                icon: '✓',
-                title: 'Fairness',
-                description: 'Consistent, equitable treatment for all customers and claims.',
-              },
-            ].map((value, idx) => (
-              <div key={idx} className="text-center bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-lg transition-shadow duration-300">
-                <div className="text-4xl mb-4">{value.icon}</div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">{value.title}</h3>
-                <p className="text-gray-600">{value.description}</p>
+              { value: '500K+', label: 'Customers', icon: Users },
+              { value: '500K+', label: 'Claims Processed', icon: Shield },
+              { value: '98%', label: 'Satisfaction', icon: Award },
+              { value: '50', label: 'States Licensed', icon: Globe },
+            ].map((stat) => (
+              <div key={stat.label}>
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-white/10 mb-3">
+                  <stat.icon className="w-6 h-6 text-blue-300" />
+                </div>
+                <p className="text-3xl font-bold text-white">{stat.value}</p>
+                <p className="text-sm text-slate-400 mt-1">{stat.label}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="px-4 py-12 sm:px-6 lg:px-8 bg-gray-50">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-gray-900 text-center mb-4">Platform Features</h2>
-          <p className="text-gray-600 text-center mb-12 max-w-2xl mx-auto">
-            ClaimAssist provides all the tools you need to manage your insurance experience
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {[
-              {
-                title: 'Fast Claim Filing',
-                description: 'Simple, guided forms to file claims quickly and accurately.',
-              },
-              {
-                title: 'Document Management',
-                description: 'Secure upload and storage of supporting documentation.',
-              },
-              {
-                title: 'Real-Time Tracking',
-                description: 'Monitor claim status and updates as they happen.',
-              },
-              {
-                title: 'AI-Assisted Review',
-                description: 'Machine learning helps extract key information from documents.',
-              },
-              {
-                title: 'Role-Based Access',
-                description: 'Different views for customers, adjusters, and administrators.',
-              },
-              {
-                title: 'Secure Communication',
-                description: 'Encrypted messaging and secure data transmission with OAuth2.',
-              },
-            ].map((feature, idx) => (
-              <div key={idx} className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">{feature.title}</h3>
-                <p className="text-gray-600">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="px-4 py-16 sm:px-6 lg:px-8">
-        <div className="max-w-3xl mx-auto text-center bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 sm:p-12">
-          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-            Ready to Experience Better Claims Management?
-          </h2>
-          <p className="text-blue-100 mb-8 text-lg">
-            Sign in or create an account to get started with ClaimAssist today.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <a
-              href="/login"
-              className="px-8 py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold rounded-lg transition-colors duration-300 inline-block"
-            >
-              Sign In
-            </a>
-            <a
-              href="/register"
-              className="px-8 py-3 border-2 border-white text-white hover:bg-white hover:text-blue-700 font-semibold rounded-lg transition-colors duration-300 inline-block"
-            >
-              Create Account
-            </a>
-          </div>
+      {/* CTA */}
+      <section className="py-16 bg-slate-50">
+        <div className="max-w-3xl mx-auto px-4 text-center">
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">Join the ClaimAssist family</h2>
+          <p className="text-slate-600 mb-6">Experience insurance the way it should be — simple, transparent, and built for you.</p>
+          <Button size="lg" onClick={() => navigate('/register')}>Get Started Today</Button>
         </div>
       </section>
     </div>
   );
-};
+}

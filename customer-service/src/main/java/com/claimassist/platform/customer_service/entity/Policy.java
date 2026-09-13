@@ -33,7 +33,7 @@ public class Policy {
 
     @Column(nullable = false)
     @Builder.Default
-    String status = "PENDING"; // ACTIVE / LAPSED / CANCELLED / PENDING_RENEWAL
+    String status = "PENDING"; // Active / Lapsed / Cancelled / PendingRenewal
 
     @Column(nullable = false)
     Instant effectiveDate;

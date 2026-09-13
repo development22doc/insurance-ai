@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
  * "what do we do when customer-service is down" in one place.
  * <p>
  * FAILS CLOSED: verifying policy ownership/validity gates whether a claim can
- * even be opened - if we can't confirm the policy is real and ACTIVE, we
+ * even be opened - if we can't confirm the policy is real and Active, we
  * refuse to create the claim rather than trusting an unverified policyId.
  */
 @Component

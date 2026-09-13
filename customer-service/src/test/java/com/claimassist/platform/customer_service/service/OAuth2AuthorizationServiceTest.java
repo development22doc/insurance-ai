@@ -38,7 +38,8 @@ class OAuth2AuthorizationServiceTest {
         redis = mock(StringRedisTemplate.class);
         valueOps = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(valueOps);
-        service = new OAuth2AuthorizationService(pkceService, props, redis);
+        // Constructor parameter order: KeycloakProperties, PkceService, StringRedisTemplate
+        service = new OAuth2AuthorizationService(props, pkceService, redis);
         setField(service, "stateTtlSeconds", 600L);
     }
 

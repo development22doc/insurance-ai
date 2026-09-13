@@ -70,7 +70,7 @@ class QwenOllamaChatModelIntegrationTest {
     }
 
     private String ask(String question) {
-        InsuranceAgentTools tools = new InsuranceAgentTools(99L, 7L, 99L, claims, customer, new ToolRegistry(), 1000, proposed::add);
+        InsuranceAgentTools tools = new InsuranceAgentTools(99L, 7L, 99L, claims, customer, new ToolRegistry(), 1000, proposed::add, null, "", "", null);
         AgentAiProperties props = new AgentAiProperties();
         props.setAgentTimeoutMs(120_000);
         ToolCallbackProvider provider =

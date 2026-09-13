@@ -1,5 +1,6 @@
 {{- range $name, $svc := .Values.services }}
   {{- $root := $ }}
+  {{- if (default true $svc.enabled) }}
 ---
 # Deployment for {{ $name }}
 apiVersion: apps/v1
@@ -69,6 +70,10 @@ spec:
       {{ else }}
       securityContext:
         runAsNonRoot: true
+      {{ end }}
+      {{ if $svc.containerSecurityContext }}
+      securityContext:
+        {{ toYaml $svc.containerSecurityContext | nindent 8 }}
       {{ end }}
       terminationGracePeriodSeconds: {{ $root.Values.terminationGracePeriodSeconds | default 60 }}
       {{ if $root.Values.global.ha.scheduling.enabled }}
@@ -318,13 +323,23 @@ spec:
             # Numeric UID/GID matching the runtime image user (`USER 1000:1000` in
             # the Dockerfiles). runAsNonRoot then verifies a non-root identity
             # without having to resolve a non-numeric image USER name.
+            {{ if eq $name "frontend" }}
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            {{ else }}
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
+            {{ end }}
             allowPrivilegeEscalation: false
             capabilities:
               drop:
                 - ALL
+              add:
+                - CHOWN
+                - SETGID
+                - SETUID
           startupProbe:
             httpGet:
               path: {{ $root.Values.probes.startup.path }}
@@ -359,4 +374,5 @@ spec:
           configMap:
             name: claimassist-{{ $name }}-config
       {{- end }}
-        {{ end }}
+        {{- end }}
+  {{- end }}

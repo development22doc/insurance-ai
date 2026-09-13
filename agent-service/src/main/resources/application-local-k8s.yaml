@@ -9,6 +9,7 @@
 #   Redis:      100.114.133.69:30379
 #   Kafka:      100.114.133.69:30092
 #   Keycloak:   100.114.133.69:30080
+#   Ollama:     100.114.133.69:30134
 #   Zipkin:     100.114.133.69:30941
 #   Loki:       100.114.133.69:30310
 #   Prometheus: 100.114.133.69:30900
@@ -22,7 +23,7 @@ claimassist:
 
 spring:
   config:
-    import: optional:file:../application-local-k8s.properties
+    import: optional:file:../../application-local-k8s.properties, optional:classpath:application-local-k8s.properties
   cloud:
     config:
       enabled: false
@@ -36,13 +37,25 @@ spring:
           claims-service:
             url: ${CLAIMS_SERVICE_URI:http://localhost:8082}
             connect-timeout: 2000
-            read-timeout: 5000
+            read-timeout: 10000
           customer-service:
             url: ${CUSTOMER_SERVICE_URI:http://localhost:8081}
             connect-timeout: 2000
             read-timeout: 5000
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://100.114.133.69:30134}
+      chat:
+        options:
+          model: ${OLLAMA_MODEL:qwen2.5-0.5b-instruct:latest}
+          temperature: 0.0
+          num-ctx: 2048
+          num-predict: 128
+      initialization:
+        timeout: 60s
+        max-retries: 1
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_agent
+    url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_agent?sslmode=disable&options=-c timezone=Asia/Kolkata
     username: ${POSTGRES_USER:claimassist}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -157,3 +170,11 @@ logging:
     org.hibernate.SQL: WARN
     org.springframework.kafka: WARN
     org.springframework.ai: WARN
+
+agent:
+  ai:
+    max-tool-calls: 2
+    agent-timeout-ms: 120000
+    max-context-messages: 3
+    max-context-chars: 2000
+    ollama-read-timeout-ms: 120000

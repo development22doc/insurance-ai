@@ -59,8 +59,15 @@ public class KeycloakUserProvisioningService {
     @PostConstruct
     void logEffectiveKeycloakConfiguration() {
         // Safe to log server URL, realm and admin client id. Never log secrets.
-        log.info("Effective Keycloak configuration: serverUrl={}, realm={}, adminClientId={}",
-                keycloakProperties.serverUrl(), keycloakProperties.realm(), keycloakProperties.adminClientId());
+        boolean secretInjectedMarker = "kubectl".equals(System.getProperty("claimassist.keycloak.secret.injection"));
+        boolean envHasKeycloakSecret = System.getenv("KEYCLOAK_ADMIN_CLIENT_SECRET") != null && !System.getenv("KEYCLOAK_ADMIN_CLIENT_SECRET").isBlank();
+        boolean envHasServiceClientSecret = System.getenv("SERVICE_CLIENT_SECRET") != null && !System.getenv("SERVICE_CLIENT_SECRET").isBlank();
+
+        String secretSource = secretInjectedMarker ? "kubectl" : (envHasKeycloakSecret ? "env(KEYCLOAK_ADMIN_CLIENT_SECRET)" : (envHasServiceClientSecret ? "env(SERVICE_CLIENT_SECRET)" : "none"));
+
+        log.info("Effective Keycloak configuration: serverUrl={}, realm={}, adminClientId={}, adminClientSecretConfigured={}, adminClientSecretSource={}",
+                keycloakProperties.serverUrl(), keycloakProperties.realm(), keycloakProperties.adminClientId(),
+                (keycloakProperties.adminClientSecret() != null && !keycloakProperties.adminClientSecret().isBlank()), secretSource);
     }
 
     /**

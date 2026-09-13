@@ -42,3 +42,8 @@ services:
       runAsNonRoot: false
       runAsUser: 0
       runAsGroup: 0
+    # Frontend-specific container securityContext - nginx runs as root
+    containerSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0

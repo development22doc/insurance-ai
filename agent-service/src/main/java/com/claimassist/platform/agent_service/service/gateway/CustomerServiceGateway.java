@@ -9,25 +9,38 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClient;
 
 /**
  * Coverage lookups degrade gracefully (a placeholder DTO, not a thrown
  * exception) - same reasoning as ClaimsServiceGateway's read-only calls: a
  * transient customer-service hiccup shouldn't abort the whole agent turn.
  */
-@Component
-@RequiredArgsConstructor
 @Slf4j
-public class CustomerServiceGateway {
+public class CustomerServiceGateway implements CustomerServiceGatewayApi {
 
     private static final String INSTANCE = "customerService";
 
     private final CustomerClient customerClient;
     private final CacheService cacheService;
     private final CacheProperties cacheProperties;
+    private final WebClient customerServiceWebClient;
+
+    public CustomerServiceGateway(CustomerClient customerClient,
+                                 CacheService cacheService,
+                                 CacheProperties cacheProperties,
+                                 WebClient customerServiceWebClient) {
+        this.customerClient = customerClient;
+        this.cacheService = cacheService;
+        this.cacheProperties = cacheProperties;
+        this.customerServiceWebClient = customerServiceWebClient;
+    }
+
+    // Backwards-compatible constructor for tests and legacy callers
+    public CustomerServiceGateway(CustomerClient customerClient, CacheService cacheService, CacheProperties cacheProperties) {
+        this(customerClient, cacheService, cacheProperties, WebClient.create());
+    }
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "policyFallback")
     @Retry(name = INSTANCE)
@@ -39,6 +52,33 @@ public class CustomerServiceGateway {
                 key, new TypeReference<PolicyCoverageDto>() {}, cacheProperties.getPolicyCoverageTtl(),
                 () -> customerClient.getPolicyCoverage(policyId, targetUserId),
                 this::isCacheableCoverage);
+    }
+
+    /**
+     * Reactive variant that propagates JWT via WebClient for use in AI tool execution
+     * which runs on a non-reactive executor where Feign's interceptor cannot access
+     * the reactive SecurityContext.
+     */
+    @Override
+    public reactor.core.publisher.Mono<PolicyCoverageDto> getPolicyCoverageReactive(Long policyId, Long targetUserId, String jwtToken) {
+        String path = "/internal/v1/policies/" + policyId + "/coverage";
+
+        return customerServiceWebClient.get()
+                .uri(path)
+                .headers(h -> {
+                    if (jwtToken != null && !jwtToken.isBlank()) {
+                        h.setBearerAuth(jwtToken);
+                    }
+                    // For USER tokens, X-User-Id is ignored by InternalRequestIdentity
+                    // For SERVICE tokens, X-User-Id is required
+                    // We send it in both cases to support both authentication paths
+                    h.set("X-User-Id", String.valueOf(targetUserId));
+                })
+                .retrieve()
+                .onStatus(status -> status.value() == 401, resp -> reactor.core.publisher.Mono.empty())
+                .onStatus(status -> status.value() == 404, resp -> reactor.core.publisher.Mono.empty())
+                .bodyToMono(PolicyCoverageDto.class)
+                .onErrorResume(ex -> reactor.core.publisher.Mono.empty());
     }
 
     /** Never cache placeholders - only real, current coverage. */

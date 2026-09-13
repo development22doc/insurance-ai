@@ -1,9 +1,12 @@
 package com.claimassist.platform.customer_service.config;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.constraints.NotBlank;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+@Slf4j
 @Validated
 @ConfigurationProperties (prefix = "keycloak")
 public record KeycloakProperties(
@@ -33,6 +36,11 @@ public record KeycloakProperties(
         String adminClientSecret
 
 ) {
+
+    @PostConstruct
+    public void logConfiguration() {
+        log.info("Effective OAuth redirect URI = {}", redirectUri);
+    }
 
     public String issuerUri () {
         return serverUrl + "/realms/" + realm;

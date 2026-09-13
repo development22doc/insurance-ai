@@ -90,6 +90,10 @@ class QwenToolCallingManagerTest {
                 textResponse("{\"name\":\"get_claim_status\",\"arguments\":{}}"));
 
         assertThat(result.conversationHistory()).hasSize(3);
+        assertThat(result.conversationHistory().get(1)).isInstanceOf(AssistantMessage.class);
+        AssistantMessage assistant = (AssistantMessage) result.conversationHistory().get(1);
+        assertThat(assistant.getToolCalls()).hasSize(1);
+        assertThat(assistant.getToolCalls().get(0).name()).isEqualTo("get_claim_status");
         assertThat(result.conversationHistory().get(2)).isInstanceOf(ToolResponseMessage.class);
         ToolResponseMessage trm = (ToolResponseMessage) result.conversationHistory().get(2);
         assertThat(trm.getResponses().get(0).name()).isEqualTo("get_claim_status");

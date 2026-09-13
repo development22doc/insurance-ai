@@ -15,7 +15,7 @@ spring:
       max-lifetime: 1200000
 
   flyway:
-    enabled: true
+    enabled: false
 
   jpa:
     properties:
@@ -32,7 +32,8 @@ spring:
       host: ${REDIS_HOST:100.114.133.69}
       port: ${REDIS_PORT:30379}
       password: ${REDIS_PASSWORD:}
-      timeout: 2s
+      # Increase Redis command timeout to account for variable latency in Tailscale/OCI
+      timeout: 10s
       lettuce:
         pool:
           max-active: 32
@@ -137,7 +138,7 @@ zipkin:
 
 logging:
   level:
-    com.claimassist: DEBUG
+    com.claimassist: INFO
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN

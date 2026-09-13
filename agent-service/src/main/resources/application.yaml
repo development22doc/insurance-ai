@@ -1,10 +1,19 @@
 logging:
   pattern:
     level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"
+  level:
+    com.claimassist: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.http: DEBUG
+    org.springframework.ai: DEBUG
+    reactor.core: DEBUG
+    org.springframework.web.reactive: DEBUG
 
 spring:
   application:
     name: agent-service
+  main:
+    allow-bean-definition-overriding: true
   cloud:
     config:
       enabled: false
@@ -30,16 +39,15 @@ spring:
           max-active: 32
           max-idle: 16
           min-idle: 4
-  main:
-    allow-bean-definition-overriding: true
   ai:
     ollama:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
         options:
-          model: ${OLLAMA_MODEL:qwen2.5-coder:3b}
-          temperature: 0.2
-          num-ctx: 8192
+          model: ${OLLAMA_MODEL:qwen2.5-0.5b-instruct:latest}
+          temperature: 0.0
+          num-ctx: 2048
+          num-predict: 128
   datasource:
     # Default to an in-memory H2 datasource for local developer startup when no profile is active
     url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:agentdb;DB_CLOSE_DELAY=-1}
@@ -52,21 +60,23 @@ spring:
     enabled: false
   lifecycle:
     timeout-per-shutdown-phase: 25s
-  # spring.ai runtime + guard limits for the agent's LLM/tool loop
-agent:
-  ai:
-    max-tool-calls: ${AGENT_AI_MAX_TOOL_CALLS:10}
-    tool-timeout-ms: ${AGENT_AI_TOOL_TIMEOUT_MS:15000}
-    agent-timeout-ms: ${AGENT_AI_AGENT_TIMEOUT_MS:60000}
-    ollama-connect-timeout-ms: ${AGENT_AI_OLLAMA_CONNECT_TIMEOUT_MS:5000}
-    ollama-read-timeout-ms: ${AGENT_AI_OLLAMA_READ_TIMEOUT_MS:60000}
-    max-tool-result-chars: ${AGENT_AI_MAX_TOOL_RESULT_CHARS:10000}
-  cache:
+cache:
     enabled: ${AGENT_CACHE_ENABLED:true}
     version: ${AGENT_CACHE_VERSION:v1}
     claim-status-ttl: ${AGENT_CACHE_CLAIM_STATUS_TTL:30s}
     policy-coverage-ttl: ${AGENT_CACHE_POLICY_COVERAGE_TTL:5m}
     claim-documents-ttl: ${AGENT_CACHE_CLAIM_DOCUMENTS_TTL:2m}
+
+agent:
+  ai:
+    max-tool-calls: ${AGENT_AI_MAX_TOOL_CALLS:2}
+    tool-timeout-ms: ${AGENT_AI_TOOL_TIMEOUT_MS:15000}
+    agent-timeout-ms: ${AGENT_AI_AGENT_TIMEOUT_MS:120000}
+    max-context-messages: ${AGENT_AI_MAX_CONTEXT_MESSAGES:3}
+    max-context-chars: ${AGENT_AI_MAX_CONTEXT_CHARS:2000}
+    ollama-connect-timeout-ms: ${AGENT_AI_OLLAMA_CONNECT_TIMEOUT_MS:5000}
+    ollama-read-timeout-ms: ${AGENT_AI_OLLAMA_READ_TIMEOUT_MS:60000}
+    max-tool-result-chars: ${AGENT_AI_MAX_TOOL_RESULT_CHARS:4000}
 
 server:
   port: 8083

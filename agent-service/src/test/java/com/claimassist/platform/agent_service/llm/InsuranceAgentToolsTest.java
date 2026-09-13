@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -29,8 +30,10 @@ class InsuranceAgentToolsTest {
 
     @BeforeEach
     void setUp() {
-        tools = new InsuranceAgentTools(42L, 7L, 42L, claims, customer, registry, 1000, proposed::add);
+        tools = new InsuranceAgentTools(42L, 7L, 42L, claims, customer, registry, 1000, proposed::add, null, "", "", null);
         when(claims.checkPermission(any(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(any(), any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
     }
 
     @Test
@@ -187,7 +190,7 @@ class InsuranceAgentToolsTest {
 
     @Test
     void invalidClaimIdRejectedWithoutBackendCall() {
-        InsuranceAgentTools bad = new InsuranceAgentTools(null, 7L, 42L, claims, customer, registry, 1000, proposed::add);
+        InsuranceAgentTools bad = new InsuranceAgentTools(null, 7L, 42L, claims, customer, registry, 1000, proposed::add, null, "", "", null);
         String out = bad.getClaimStatus();
         assertThat(out).contains("\"success\":false").contains("\"errorCode\":\"INVALID_TOOL_ARGUMENTS\"");
         verify(claims, never()).getClaimStatus(any());
@@ -195,7 +198,7 @@ class InsuranceAgentToolsTest {
 
     @Test
     void invalidPolicyIdRejectedWithoutBackendCall() {
-        InsuranceAgentTools bad = new InsuranceAgentTools(42L, 0L, 42L, claims, customer, registry, 1000, proposed::add);
+        InsuranceAgentTools bad = new InsuranceAgentTools(42L, 0L, 42L, claims, customer, registry, 1000, proposed::add, null, "", "", null);
         String out = bad.getPolicyCoverage();
         assertThat(out).contains("\"success\":false").contains("\"errorCode\":\"INVALID_TOOL_ARGUMENTS\"");
         verify(customer, never()).getPolicyCoverage(any(), any());

@@ -11,7 +11,7 @@ public interface CustomerClient {
 
     /**
      * Used when a claim is submitted, to confirm the policy exists, belongs to
-     * the caller, and is ACTIVE before a claim can be opened against it -
+     * the caller, and is Active before a claim can be opened against it -
      * claims-service never trusts a client-supplied policyId at face value.
      * <p>
      * F-2: the caller is a trusted service, so it must supply an explicit

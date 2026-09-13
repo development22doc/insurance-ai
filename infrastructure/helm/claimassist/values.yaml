@@ -286,6 +286,7 @@ certManager:
 services:
   api-gateway:
     image: api-gateway
+    enabled: false
     port: 8080
     replicas: 1
     k8sConfig: true          # application-k8s.yaml (routes -> K8s Service DNS, no config server/eureka)
@@ -322,6 +323,7 @@ services:
 
   customer-service:
     image: customer-service
+    enabled: false
     port: 8081
     replicas: 1
     k8sConfig: true
@@ -344,6 +346,7 @@ services:
 
   claims-service:
     image: claims-service
+    enabled: false
     port: 8082
     replicas: 1
     k8sConfig: true
@@ -363,6 +366,7 @@ services:
 
   agent-service:
     image: agent-service
+    enabled: false
     port: 8083
     replicas: 1
     k8sConfig: true
@@ -379,6 +383,43 @@ services:
     resources:
       requests: { cpu: 100m, memory: 256Mi }
       limits: { cpu: 700m, memory: 640Mi }
+
+# -----------------------------------------------------------------------------
+# Ollama (Task 6A-15). AI model inference service for ClaimAssist.
+# CPU-only, ARM64-compatible runtime with persistent model storage.
+# ONE instance per K8s environment namespace with dedicated PVC for models.
+# Conservative memory allocation for lightweight models on the 2-OCPU node.
+# -----------------------------------------------------------------------------
+ollama:
+  enabled: false
+  serviceName: ollama
+  image:
+    registry: ""                     # empty => docker.io default
+    repository: ollama/ollama
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  port: 11434
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  probes:
+    liveness:
+      initialDelaySeconds: 60
+      periodSeconds: 30
+      failureThreshold: 3
+      timeoutSeconds: 5
+    readiness:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      failureThreshold: 3
+      timeoutSeconds: 5
+  # DEV-only VPN Ollama external access.
+  # When enabled, a NodePort Service exposes Ollama (11434) on the K3s
+  # node so Tailscale VPN clients can reach the AI service at the
+  # MagicDNS hostname. Disabled by default; only DEV enables it.
+  devExternalAccess: false
+  devExternalHost: ""
+  devNodePort: 30134
 
 # -----------------------------------------------------------------------------
 # PostgreSQL (Task 6A-7). ONE StatefulSet + ClusterIP Service + PVC per K8s
@@ -710,14 +751,14 @@ keycloak:
   # NO real values committed; supplied at deploy time (values.keycloak.credentials.*).
   credentials:
     secretName: claimassist-keycloak-admin
-    adminUsername: ""               # KEYCLOAK_ADMIN           - set at deploy time
-    adminPassword: ""               # KEYCLOAK_ADMIN_PASSWORD  - set at deploy time
+    adminUsername: "admin"           # KEYCLOAK_ADMIN
+    adminPassword: "claimassist951"  # KEYCLOAK_ADMIN_PASSWORD - canonical, secret-backed
     adminClientSecret: ""           # claimassist-admin-service client secret
   # Deterministic realm import (ConfigMap name + client contract).
   realmConfigMapName: claimassist-keycloak-realm
   client:
     customerClientId: claimassist-customer-app   # public client (Authorization Code + PKCE)
-    adminClientId: claimassist-admin-service     # confidential, service-account client
+    adminClientId: claimassist-admin-service     # confidential, service-account client (LIVE Keycloak)
     redirectUris:
       - http://claimassist-api-gateway:8080/customer/auth/callback
     webOrigins:

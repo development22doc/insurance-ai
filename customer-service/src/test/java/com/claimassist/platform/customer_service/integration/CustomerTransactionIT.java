@@ -52,7 +52,7 @@ class CustomerTransactionIT {
         policy1.setCustomer(savedCustomer);
         policy1.setCoveragePlan(savedCoveragePlan);
         policy1.setPolicyNumber("POL-ROLLBACK-1");
-        policy1.setStatus("ACTIVE");
+        policy1.setStatus("Active");
         policy1.setEffectiveDate(Instant.now());
         policyRepository.save(policy1);
 
@@ -98,7 +98,7 @@ class CustomerTransactionIT {
         policy.setCustomer(savedCustomer);
         policy.setCoveragePlan(savedCoveragePlan);
         policy.setPolicyNumber("POL-NULL-TEST");
-        policy.setStatus("ACTIVE");
+        policy.setStatus("Active");
         // effectiveDate is null - should fail
 
         assertThatThrownBy(() -> policyRepository.save(policy))
@@ -125,7 +125,7 @@ class CustomerTransactionIT {
         policy1.setCustomer(savedCustomer);
         policy1.setCoveragePlan(savedCoveragePlan);
         policy1.setPolicyNumber("POL-NOTRANS-1");
-        policy1.setStatus("ACTIVE");
+        policy1.setStatus("Active");
         policy1.setEffectiveDate(Instant.now());
         Policy savedPolicy1 = policyRepository.save(policy1);
 
@@ -166,7 +166,7 @@ class CustomerTransactionIT {
         policy1.setCustomer(savedCustomer);
         policy1.setCoveragePlan(savedCoveragePlan);
         policy1.setPolicyNumber("POL-MULTI-1");
-        policy1.setStatus("ACTIVE");
+        policy1.setStatus("Active");
         policy1.setEffectiveDate(Instant.now());
         Policy savedPolicy1 = policyRepository.save(policy1);
 
