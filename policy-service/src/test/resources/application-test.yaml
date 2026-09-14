@@ -1,0 +1,51 @@
+spring:
+  autoconfigure:
+    exclude:
+      - com.claimassist.platform.common_lib.security.SharedSecurityAutoConfiguration
+      - com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration
+  cache:
+    type: simple
+  datasource:
+    url: jdbc:h2:mem:policy_service_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+  sql:
+    init:
+      mode: never
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/claimassist
+          jwk-set-uri: http://localhost:8180/realms/claimassist/protocol/openid-connect/certs
+
+claimassist:
+  stripe:
+    enabled: false
+    api-key: sk_test_dummy_key
+    webhook-secret: whsec_dummy_key
+    test-mode: true
+    success-url: http://localhost:5173/#/checkout/success?session_id={CHECKOUT_SESSION_ID}
+    cancel-url: http://localhost:5173/#/checkout/cancel?session_id={CHECKOUT_SESSION_ID}
+
+server:
+  port: 0
+
+logging:
+  level:
+    org.hibernate.SQL: WARN
+    org.springframework.security: INFO

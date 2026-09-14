@@ -1,0 +1,71 @@
+claimassist:
+  dev:
+    id: ${CLAIMASSIST_DEV_ID:local}
+    name: ${CLAIMASSIST_DEVELOPER_NAME:unknown}
+  stripe:
+    enabled: ${STRIPE_ENABLED:false}
+    api-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    test-mode: ${STRIPE_TEST_MODE:true}
+    success-url: ${STRIPE_SUCCESS_URL:http://localhost:5173/#/checkout/success?session_id={CHECKOUT_SESSION_ID}}
+    cancel-url: ${STRIPE_CANCEL_URL:http://localhost:5173/#/checkout/cancel?session_id={CHECKOUT_SESSION_ID}}
+
+spring:
+  autoconfigure:
+    exclude:
+      - com.claimassist.platform.common_lib.security.SharedSecurityAutoConfiguration
+      - com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration
+  config:
+    import: optional:file:../../application-local-k8s.properties
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:100.114.133.69}:${POSTGRES_PORT:30432}/claimassist_policy?sslmode=disable&options=-c timezone=Asia/Kolkata
+    username: ${POSTGRES_USER:claimassist}
+    password: ${POSTGRES_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+  data:
+    redis:
+      host: ${REDIS_HOST:100.114.133.69}
+      port: ${REDIS_PORT:30379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://100.114.133.69:30080/realms/claimassist-dev}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://100.114.133.69:30080/realms/claimassist-dev/protocol/openid-connect/certs}
+  jpa:
+    hibernate:
+      ddl-auto: none
+  flyway:
+    enabled: false
+
+server:
+  port: 8084
+  shutdown: graceful
+
+security:
+  internal:
+    trusted-service-client-ids: internal-service-client
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://100.114.133.69:30941/api/v2/spans}

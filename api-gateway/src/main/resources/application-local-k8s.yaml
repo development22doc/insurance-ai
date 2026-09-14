@@ -74,7 +74,12 @@ spring:
             - Path=/agent/**
           filters: []
 
-        - id: policy-service
+        - id: policy-service-api
+          uri: http://localhost:8084
+          predicates:
+            - Path=/api/v1/**
+
+        - id: customer-service-legacy-policies
           uri: http://localhost:8081
           predicates:
             - Path=/policies/**

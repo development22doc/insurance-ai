@@ -43,6 +43,7 @@ public final class OllamaTestSupport {
                     .uri(java.net.URI.create(BASE_URL + "/api/tags"))
                     .timeout(Duration.ofSeconds(2)).GET().build();
             var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.discarding());
+            // Treat 403 Forbidden as unavailable (same as connection failure)
             return response.statusCode() == 200;
         } catch (Exception e) {
             return false;

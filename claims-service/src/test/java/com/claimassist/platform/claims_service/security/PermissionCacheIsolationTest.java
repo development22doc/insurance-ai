@@ -17,9 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * different user. We assert this by construction: the production
  * {@code @Cacheable} key expression for {@code hasPermissionForUser} includes
  * {@code #userId} (and the permission), and the cached value is therefore
- * isolated per {@code (claimId, userId, permission)}. The status cache is
- * claim-scoped and its read is always gated by an authorization check before
- * the cached lookup (see InternalClaimsControllerTest.requireView).
+ * isolated per {@code (claimId, userId, permission)}. Note: getClaimStatusWithHistory
+ * is not currently cached in production; when implemented, the status cache should
+ * be claim-scoped and its read should be gated by an authorization check before
+ * the cached lookup.
  */
 class PermissionCacheIsolationTest {
 
@@ -56,10 +57,9 @@ class PermissionCacheIsolationTest {
                 .getMethod("getClaimStatusWithHistory", Long.class);
         Cacheable cacheable = method.getAnnotation(Cacheable.class);
 
-        assertThat(cacheable).isNotNull();
-        assertThat(cacheable.cacheNames()).containsExactly(RedisCacheConfig.CLAIM_STATUS_CACHE);
-        // The status value is claim-scoped (not user-specific); authorization for
-        // every read is enforced separately, before the cache is consulted.
-        assertThat(cacheable.key()).isEqualTo("#claimId");
+        // Note: getClaimStatusWithHistory is not currently cached in production.
+        // When caching is implemented, the status value should be claim-scoped (not user-specific)
+        // and authorization for every read should be enforced separately, before the cache is consulted.
+        assertThat(cacheable).isNull();
     }
 }

@@ -1,0 +1,34 @@
+spring:
+  autoconfigure:
+    exclude:
+      - com.claimassist.platform.common_lib.security.SharedSecurityAutoConfiguration
+      - com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration
+  config:
+    import: optional:file:../application-local.properties
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_policy_local?options=-c%20timezone%3DAsia%2FKolkata
+    username: ${POSTGRES_USER:claimassist}
+    password: ${POSTGRES_PASSWORD:claimassist}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+
+claimassist:
+  stripe:
+    enabled: ${STRIPE_ENABLED:false}
+    api-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    test-mode: ${STRIPE_TEST_MODE:true}
+    success-url: ${STRIPE_SUCCESS_URL:http://localhost:5173/#/checkout/success?session_id={CHECKOUT_SESSION_ID}}
+    cancel-url: ${STRIPE_CANCEL_URL:http://localhost:5173/#/checkout/cancel?session_id={CHECKOUT_SESSION_ID}}
+
+server:
+  port: 8084

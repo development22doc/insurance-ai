@@ -1,5 +1,6 @@
 package com.claimassist.platform.common_lib.security;
 
+import com.claimassist.platform.common_lib.observability.DeveloperIdentityConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -26,7 +27,9 @@ class SharedSecurityAutoConfigurationTest {
 
     private final WebApplicationContextRunner runner =
             new WebApplicationContextRunner()
-                    .withConfiguration(AutoConfigurations.of(SharedSecurityAutoConfiguration.class));
+                    .withConfiguration(AutoConfigurations.of(
+                            SharedSecurityAutoConfiguration.class,
+                            DeveloperIdentityConfiguration.class));
 
     @Configuration
     static class WithClientRegistration {

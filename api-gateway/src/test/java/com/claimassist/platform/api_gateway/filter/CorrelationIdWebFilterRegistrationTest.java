@@ -1,5 +1,6 @@
 package com.claimassist.platform.api_gateway.filter;
 
+import com.claimassist.platform.common_lib.observability.DeveloperIdentityConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code BeanDefinitionOverrideException} and this test would fail.</p>
  */
 @ExtendWith(SpringExtension.class)
-@ContextConfiguration(classes = CorrelationIdWebFilter.class)
+@ContextConfiguration(classes = {
+        CorrelationIdWebFilter.class,
+        DeveloperIdentityConfiguration.class
+})
 class CorrelationIdWebFilterRegistrationTest {
 
     @Autowired

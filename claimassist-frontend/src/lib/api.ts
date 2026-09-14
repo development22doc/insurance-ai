@@ -60,9 +60,9 @@ export interface Policy {
   policyNumber: string;
   status: string;
   productType: string;
-  planName: string; // coveragePlanName from backend
-  coverageAmount: number; // coverageLimitCents / 100 from backend (TODO: backend PolicyResponse doesn't include this)
-  premium: number; // annualPremiumCents / 100 from backend (TODO: backend PolicyResponse doesn't include this)
+  planName: string; // planName from Policy Service
+  coverageAmount: number; // coverageLimitCents / 100 from Policy Service
+  premium: number; // annualPremiumCents / 100 from Policy Service
   effectiveDate: string; // ISO date string
   renewalDate: string; // ISO date string
 }
@@ -163,7 +163,7 @@ export function getFullName(): string | null {
 
 export async function getAllPolicies(): Promise<Policy[]> {
   console.log('[API] getAllPolicies called');
-  const response = await fetch(`${API_BASE}/policies/all`, {
+  const response = await fetch(`${API_BASE}/api/v1/customers/me/policies`, {
     method: 'GET',
     credentials: 'include',
   });
@@ -172,18 +172,15 @@ export async function getAllPolicies(): Promise<Policy[]> {
   const data = await parseApiResponse<any[]>(response);
   console.log('[API] getAllPolicies parsed, count:', data.length);
 
-  // Transform backend PolicyResponse to frontend Policy type
-  // Backend returns: { id, policyNumber, status, coveragePlanName, productType, effectiveDate, renewalDate }
-  // Frontend needs: coverageAmount, premium derived from CoveragePlan
-  // Since the backend doesn't include coverage details in PolicyResponse, we need to get them separately
-  // For now, we'll use placeholder values - this may need backend enhancement
+  // Transform Policy Service CustomerPolicySummaryDto to frontend Policy type
+  // Backend returns: { id, policyNumber, status, effectiveDate, renewalDate, productType, planName, annualPremiumCents, coverageLimitCents, currency }
   return data.map((item: any) => ({
     id: item.id,
     policyNumber: item.policyNumber,
     status: item.status,
     productType: item.productType,
-    planName: item.coveragePlanName,
-    // Backend now provides cents fields; convert to currency units (divide by 100)
+    planName: item.planName,
+    // Policy Service provides cents fields; convert to currency units (divide by 100)
     coverageAmount: typeof item.coverageLimitCents === 'number' ? Math.round(item.coverageLimitCents / 100) : 0,
     premium: typeof item.annualPremiumCents === 'number' ? Math.round(item.annualPremiumCents / 100) : 0,
     effectiveDate: item.effectiveDate,
@@ -192,20 +189,20 @@ export async function getAllPolicies(): Promise<Policy[]> {
 }
 
 export async function getPolicy(policyId: string): Promise<Policy> {
-  const response = await fetch(`${API_BASE}/policies/${policyId}`, {
+  const response = await fetch(`${API_BASE}/api/v1/customers/me/policies/${policyId}`, {
     method: 'GET',
     credentials: 'include',
   });
 
   const data = await parseApiResponse<any>(response);
 
-  // Transform backend PolicyResponse to frontend Policy type
+  // Transform Policy Service CustomerPolicyDetailDto to frontend Policy type
   return {
     id: data.id,
     policyNumber: data.policyNumber,
     status: data.status,
     productType: data.productType,
-    planName: data.coveragePlanName,
+    planName: data.planName,
     coverageAmount: typeof data.coverageLimitCents === 'number' ? Math.round(data.coverageLimitCents / 100) : 0,
     premium: typeof data.annualPremiumCents === 'number' ? Math.round(data.annualPremiumCents / 100) : 0,
     effectiveDate: data.effectiveDate,

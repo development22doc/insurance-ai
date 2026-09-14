@@ -14,7 +14,13 @@ import java.sql.Statement;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Testcontainers
+/**
+ * Validates Flyway migrations against a real PostgreSQL instance (Testcontainers).
+ * Gated by {@code @Testcontainers(disabledWithoutDocker = true)}: when a Docker
+ * environment is unavailable this reports as SKIPPED (never a false pass) and
+ * runs for real in any Docker-enabled CI.
+ */
+@Testcontainers(disabledWithoutDocker = true)
 class FlywayMigrationTest {
 
     @Container

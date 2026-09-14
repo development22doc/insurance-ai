@@ -5,7 +5,13 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-@Testcontainers
+/**
+ * Base class for PostgreSQL integration tests using Testcontainers.
+ * Gated by {@code @Testcontainers(disabledWithoutDocker = true)}: when a Docker
+ * environment is unavailable this reports as SKIPPED (never a false pass) and
+ * runs for real in any Docker-enabled CI.
+ */
+@Testcontainers(disabledWithoutDocker = true)
 public abstract class AbstractPostgreSQLTest {
 
     @Container

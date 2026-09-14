@@ -34,12 +34,20 @@ class InsuranceAgentToolsTest {
         when(claims.checkPermission(any(), any())).thenReturn(true);
         when(claims.checkPermissionWithToken(any(), any(), anyString()))
                 .thenReturn(reactor.core.publisher.Mono.just(true));
+        when(claims.checkPermissionReactive(any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        when(claims.getClaimStatusReactive(any(), anyString()))
+                .thenReturn(reactor.core.publisher.Mono.just(
+                        new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of())));
+        when(claims.getClaimStatus(any())).thenReturn(
+                new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of()));
     }
 
     @Test
     void getClaimStatusReturnsStructuredJson() {
-        when(claims.getClaimStatus(42L)).thenReturn(
-                new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of()));
+        when(claims.getClaimStatusReactive(42L, ""))
+                .thenReturn(reactor.core.publisher.Mono.just(
+                        new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of())));
         String out = tools.getClaimStatus();
         assertThat(out).contains("\"success\":true").contains("\"claimNumber\":\"CLM-1\"");
     }
@@ -71,7 +79,8 @@ class InsuranceAgentToolsTest {
 
     @Test
     void getClaimStatusFailureReturnsStructuredFailure() {
-        when(claims.getClaimStatus(42L)).thenThrow(new IllegalStateException("down"));
+        when(claims.getClaimStatusReactive(42L, ""))
+                .thenReturn(reactor.core.publisher.Mono.error(new IllegalStateException("down")));
         String out = tools.getClaimStatus();
         assertThat(out).contains("\"success\":false")
                 .contains("\"errorCode\":\"CLAIMS_SERVICE_UNAVAILABLE\"")
@@ -123,14 +132,18 @@ class InsuranceAgentToolsTest {
     @Test
     void unauthorizedReadToolRejectedWithoutBackendCall() {
         when(claims.checkPermission(any(), any())).thenReturn(false);
+        when(claims.checkPermissionReactive(any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(false));
         String out = tools.getClaimStatus();
         assertThat(out).contains("\"success\":false").contains("\"errorCode\":\"UNAUTHORIZED\"");
-        verify(claims, never()).getClaimStatus(42L);
+        verify(claims, never()).getClaimStatusReactive(any(), anyString());
     }
 
     @Test
     void unauthorizedWriteToolRejectedWithoutProposal() {
         when(claims.checkPermission(any(), any())).thenReturn(false);
+        when(claims.checkPermissionReactive(any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(false));
         String out = tools.proposeClaimUpdate("DOCS_REQUESTED", "note");
         assertThat(out).contains("\"success\":false").contains("\"errorCode\":\"UNAUTHORIZED\"");
         assertThat(proposed).isEmpty();
@@ -140,6 +153,8 @@ class InsuranceAgentToolsTest {
     void writeToolRequiresUpdateStatusPermission() {
         when(claims.checkPermission(42L, com.claimassist.platform.common_lib.enums.ClaimPermission.UPDATE_STATUS))
                 .thenReturn(true);
+        when(claims.checkPermissionReactive(42L, com.claimassist.platform.common_lib.enums.ClaimPermission.UPDATE_STATUS))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         String out = tools.proposeClaimUpdate("DOCS_REQUESTED", "note");
         assertThat(out).contains("\"success\":true");
         assertThat(proposed).hasSize(1);
@@ -168,8 +183,9 @@ class InsuranceAgentToolsTest {
 
     @Test
     void getClaimStatusNotFoundReturnsStructuredNonRetryableFailure() {
-        when(claims.getClaimStatus(42L)).thenReturn(
-                new ClaimStatusDto(42L, 7L, null, "NOT_FOUND", "UNKNOWN", null, null, List.of()));
+        when(claims.getClaimStatusReactive(42L, ""))
+                .thenReturn(reactor.core.publisher.Mono.just(
+                        new ClaimStatusDto(42L, 7L, null, "NOT_FOUND", "UNKNOWN", null, null, List.of())));
         String out = tools.getClaimStatus();
         assertThat(out).contains("\"success\":false")
                 .contains("\"errorCode\":\"CLAIM_NOT_FOUND\"")
@@ -193,7 +209,7 @@ class InsuranceAgentToolsTest {
         InsuranceAgentTools bad = new InsuranceAgentTools(null, 7L, 42L, claims, customer, registry, 1000, proposed::add, null, "", "", null);
         String out = bad.getClaimStatus();
         assertThat(out).contains("\"success\":false").contains("\"errorCode\":\"INVALID_TOOL_ARGUMENTS\"");
-        verify(claims, never()).getClaimStatus(any());
+        verify(claims, never()).getClaimStatusReactive(any(), anyString());
     }
 
     @Test
@@ -222,8 +238,9 @@ class InsuranceAgentToolsTest {
 
     @Test
     void structuredResultsCarrySourceProvenance() {
-        when(claims.getClaimStatus(42L)).thenReturn(
-                new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of()));
+        when(claims.getClaimStatusReactive(42L, ""))
+                .thenReturn(reactor.core.publisher.Mono.just(
+                        new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of())));
         assertThat(tools.getClaimStatus()).contains("\"source\":\"claims-service\"");
         when(customer.getPolicyCoverage(7L, 42L)).thenReturn(
                 new PolicyCoverageDto(7L, "P-1", "ACTIVE", "HOME", "Basic", 500L, 100000L, null));
@@ -232,7 +249,8 @@ class InsuranceAgentToolsTest {
 
     @Test
     void errorMessagesNeverExposeInternals() {
-        when(claims.getClaimStatus(42L)).thenThrow(new RuntimeException("java.sql.SQLException: connection to db:3306 failed"));
+        when(claims.getClaimStatusReactive(42L, ""))
+                .thenReturn(reactor.core.publisher.Mono.error(new RuntimeException("java.sql.SQLException: connection to db:3306 failed")));
         String out = tools.getClaimStatus();
         assertThat(out).doesNotContain("SQLException").doesNotContain("3306")
                 .doesNotContain("db").doesNotContain("at com.claimassist");

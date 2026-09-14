@@ -1,0 +1,96 @@
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}]"
+  level:
+    org.springframework.security: INFO
+
+spring:
+  application:
+    name: policy-service
+  autoconfigure:
+    exclude:
+      - com.claimassist.platform.common_lib.security.SharedSecurityAutoConfiguration
+      - com.claimassist.platform.common_lib.error.SharedExceptionAutoConfiguration
+  cloud:
+    config:
+      enabled: false
+      import-check:
+        enabled: false
+    discovery:
+      enabled: false
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/claimassist_policy_local?options=-c%20timezone%3DAsia%2FKolkata
+    username: ${POSTGRES_USER:claimassist}
+    password: ${POSTGRES_PASSWORD:claimassist}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/claimassist}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/claimassist/protocol/openid-connect/certs}
+  flyway:
+    enabled: false
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+claimassist:
+  stripe:
+    enabled: ${STRIPE_ENABLED:false}
+    api-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    test-mode: ${STRIPE_TEST_MODE:true}
+    success-url: ${STRIPE_SUCCESS_URL:http://localhost:5173/#/checkout/success?session_id={CHECKOUT_SESSION_ID}}
+    cancel-url: ${STRIPE_CANCEL_URL:http://localhost:5173/#/checkout/cancel?session_id={CHECKOUT_SESSION_ID}}
+
+server:
+  port: 8084
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
