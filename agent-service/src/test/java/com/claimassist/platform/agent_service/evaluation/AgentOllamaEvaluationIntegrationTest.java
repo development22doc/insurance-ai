@@ -6,7 +6,7 @@ import com.claimassist.platform.agent_service.config.AgentAiProperties;
 import com.claimassist.platform.agent_service.llm.InsuranceAgentTools;
 import com.claimassist.platform.agent_service.llm.PromptUtils;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.support.OllamaTestSupport;
 import com.claimassist.platform.agent_service.support.RecordingAgentTelemetry;
 import com.claimassist.platform.common_lib.dto.ClaimDocumentSummaryDto;
@@ -46,7 +46,7 @@ class AgentOllamaEvaluationIntegrationTest {
     private final RecordingAgentTelemetry telemetry = new RecordingAgentTelemetry();
 
     private ClaimsServiceGateway claims;
-    private CustomerServiceGateway customer;
+    private PolicyServiceGateway customer;
     private final List<InsuranceAgentTools.ProposedUpdate> proposed = new CopyOnWriteArrayList<>();
 
     @BeforeAll
@@ -58,7 +58,7 @@ class AgentOllamaEvaluationIntegrationTest {
     @BeforeEach
     void setUp() {
         claims = mock(ClaimsServiceGateway.class);
-        customer = mock(CustomerServiceGateway.class);
+        customer = mock(PolicyServiceGateway.class);
         proposed.clear();
         telemetry.clear();
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
@@ -104,3 +104,4 @@ class AgentOllamaEvaluationIntegrationTest {
         assertThat(telemetry.eventTypes()).contains("TOOL_COMPLETED");
     }
 }
+

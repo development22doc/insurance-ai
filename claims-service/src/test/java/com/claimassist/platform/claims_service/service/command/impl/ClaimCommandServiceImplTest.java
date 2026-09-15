@@ -9,7 +9,7 @@ import com.claimassist.platform.claims_service.repository.ClaimRepository;
 import com.claimassist.platform.claims_service.repository.ClaimStatusHistoryRepository;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.SubmitClaimCommand;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.UpdateClaimStatusCommand;
-import com.claimassist.platform.claims_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.claims_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.claims_service.support.IdempotencyService;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import com.claimassist.platform.common_lib.enums.ClaimRole;
@@ -48,7 +48,7 @@ class ClaimCommandServiceImplTest {
     private ClaimPartyRepository claimPartyRepository;
     private ClaimStatusHistoryRepository claimStatusHistoryRepository;
     private ClaimMapper claimMapper;
-    private CustomerServiceGateway customerServiceGateway;
+    private PolicyServiceGateway policyServiceGateway;
     private IdempotencyService idempotencyService;
     private ClaimCommandServiceImpl service;
 
@@ -61,13 +61,13 @@ class ClaimCommandServiceImplTest {
         claimPartyRepository = mock(ClaimPartyRepository.class);
         claimStatusHistoryRepository = mock(ClaimStatusHistoryRepository.class);
         claimMapper = mock(ClaimMapper.class);
-        customerServiceGateway = mock(CustomerServiceGateway.class);
+        policyServiceGateway = mock(PolicyServiceGateway.class);
         idempotencyService = mock(IdempotencyService.class);
         EventLogger eventLogger = mock(EventLogger.class);
         PerformanceLogger performanceLogger = mock(PerformanceLogger.class);
         service = new ClaimCommandServiceImpl(
                 claimRepository, claimPartyRepository, claimStatusHistoryRepository,
-                claimMapper, customerServiceGateway, idempotencyService,
+                claimMapper, policyServiceGateway, idempotencyService,
                 eventLogger, performanceLogger);
     }
 
@@ -83,10 +83,13 @@ class ClaimCommandServiceImplTest {
     @Test
     void submitClaimRefusesNonActivePolicy() {
         idempotencyRunsCommand();
-        when(customerServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID))
-                .thenReturn(new PolicyCoverageDto(POLICY_ID, "P-1", "CANCELLED", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
+        Instant incidentDate = Instant.now();
+        // Phase 22B: Claims policyId is a legacy Customer Service ID.
+        // PolicyCoverageDto now contains the resolved PolicyContract.id.
+        when(policyServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID, incidentDate))
+                .thenReturn(new PolicyCoverageDto(999L, "P-1", "CANCELLED", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
 
-        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", Instant.now(), 1000L, USER_ID, "k-1");
+        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", incidentDate, 1000L, USER_ID, "k-1");
 
         assertThatThrownBy(() -> service.submitClaim(command))
                 .isInstanceOf(BadRequestException.class)
@@ -96,14 +99,17 @@ class ClaimCommandServiceImplTest {
     @Test
     void submitClaimCreatesClaimAndRegistersSubmitterAsPolicyholder() {
         idempotencyRunsCommand();
-        when(customerServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID))
-                .thenReturn(new PolicyCoverageDto(POLICY_ID, "P-1", "Active", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
+        Instant incidentDate = Instant.now();
+        // Phase 22B: Claims policyId is a legacy Customer Service ID.
+        // PolicyCoverageDto now contains the resolved PolicyContract.id.
+        when(policyServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID, incidentDate))
+                .thenReturn(new PolicyCoverageDto(999L, "P-1", "Active", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
         Claim saved = newClaim(1L, ClaimStatus.SUBMITTED);
         when(claimRepository.save(any(Claim.class))).thenReturn(saved);
         when(claimMapper.toClaimResponse(any(Claim.class)))
                 .thenReturn(new ClaimResponse(1L, "CLM-1", "SUBMITTED", "FIRE"));
 
-        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", Instant.now(), 1000L, USER_ID, "k-1");
+        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", incidentDate, 1000L, USER_ID, "k-1");
 
         ClaimResponse response = service.submitClaim(command);
 
@@ -115,19 +121,76 @@ class ClaimCommandServiceImplTest {
     void submitClaimWithCanonicalActiveStatus_ShouldAcceptClaim() {
         // Test that canonical "Active" status (title case) is accepted
         idempotencyRunsCommand();
-        when(customerServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID))
-                .thenReturn(new PolicyCoverageDto(POLICY_ID, "P-1", "Active", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
+        Instant incidentDate = Instant.now();
+        // Phase 22B: Claims policyId is a legacy Customer Service ID.
+        // PolicyCoverageDto now contains the resolved PolicyContract.id.
+        when(policyServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID, incidentDate))
+                .thenReturn(new PolicyCoverageDto(999L, "P-1", "Active", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
         Claim saved = newClaim(1L, ClaimStatus.SUBMITTED);
         when(claimRepository.save(any(Claim.class))).thenReturn(saved);
         when(claimMapper.toClaimResponse(any(Claim.class)))
                 .thenReturn(new ClaimResponse(1L, "CLM-1", "SUBMITTED", "FIRE"));
 
-        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", Instant.now(), 1000L, USER_ID, "k-1");
+        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", incidentDate, 1000L, USER_ID, "k-1");
 
         ClaimResponse response = service.submitClaim(command);
 
         assertThat(response.id()).isEqualTo(1L);
         verify(claimRepository).save(any(Claim.class));
+    }
+
+    @Test
+    void submitClaim_failsClosed_whenPolicyServiceUnavailable() {
+        // Phase 22B: Claims must fail closed when Policy Service is unavailable
+        idempotencyRunsCommand();
+        Instant incidentDate = Instant.now();
+        when(policyServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID, incidentDate))
+                .thenThrow(new com.claimassist.platform.common_lib.error.ServiceUnavailableException("Policy Service unavailable"));
+
+        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", incidentDate, 1000L, USER_ID, "k-1");
+
+        assertThatThrownBy(() -> service.submitClaim(command))
+                .isInstanceOf(com.claimassist.platform.common_lib.error.ServiceUnavailableException.class);
+    }
+
+    @Test
+    void submitClaim_usesIncidentDate_forCoverageAsOf() {
+        // Phase 22B: Verify that incidentDate is used for coverage validation
+        idempotencyRunsCommand();
+        Instant incidentDate = Instant.parse("2025-06-15T00:00:00Z");
+        when(policyServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID, incidentDate))
+                .thenReturn(new PolicyCoverageDto(999L, "P-1", "Active", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
+        Claim saved = newClaim(1L, ClaimStatus.SUBMITTED);
+        when(claimRepository.save(any(Claim.class))).thenReturn(saved);
+        when(claimMapper.toClaimResponse(any(Claim.class)))
+                .thenReturn(new ClaimResponse(1L, "CLM-1", "SUBMITTED", "FIRE"));
+
+        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", incidentDate, 1000L, USER_ID, "k-1");
+
+        service.submitClaim(command);
+
+        verify(policyServiceGateway).getPolicyCoverage(POLICY_ID, USER_ID, incidentDate);
+    }
+
+    @Test
+    void submitClaim_resolvesLegacyId_beforeCoverage() {
+        // Phase 22B: Verify the full flow: legacy ID → resolution → coverage
+        idempotencyRunsCommand();
+        Instant incidentDate = Instant.now();
+        // The gateway resolves legacy ID to PolicyContract.id (999L)
+        when(policyServiceGateway.getPolicyCoverage(POLICY_ID, USER_ID, incidentDate))
+                .thenReturn(new PolicyCoverageDto(999L, "P-1", "Active", "HOME", "Basic", 1000L, 100000L, "2027-01-01"));
+        Claim saved = newClaim(1L, ClaimStatus.SUBMITTED);
+        when(claimRepository.save(any(Claim.class))).thenReturn(saved);
+        when(claimMapper.toClaimResponse(any(Claim.class)))
+                .thenReturn(new ClaimResponse(1L, "CLM-1", "SUBMITTED", "FIRE"));
+
+        SubmitClaimCommand command = new SubmitClaimCommand(POLICY_ID, "FIRE", incidentDate, 1000L, USER_ID, "k-1");
+
+        ClaimResponse response = service.submitClaim(command);
+
+        assertThat(response.id()).isEqualTo(1L);
+        verify(policyServiceGateway).getPolicyCoverage(POLICY_ID, USER_ID, incidentDate);
     }
 
     @Test

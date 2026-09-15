@@ -33,8 +33,8 @@ spring:
     openfeign:
       client:
         config:
-          customer-service:
-            url: ${CUSTOMER_SERVICE_URI:http://localhost:8081}
+          policy-service:
+            url: ${POLICY_SERVICE_URI:http://localhost:8084}
             connect-timeout: 2000
             read-timeout: 5000
   datasource:

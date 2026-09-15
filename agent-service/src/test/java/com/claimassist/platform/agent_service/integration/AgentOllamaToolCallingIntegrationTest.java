@@ -6,7 +6,7 @@ import com.claimassist.platform.agent_service.config.AgentAiProperties;
 import com.claimassist.platform.agent_service.llm.InsuranceAgentTools;
 import com.claimassist.platform.agent_service.llm.PromptUtils;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.support.OllamaTestSupport;
 import com.claimassist.platform.common_lib.dto.ClaimDocumentSummaryDto;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
@@ -46,7 +46,7 @@ class AgentOllamaToolCallingIntegrationTest {
     private static ChatClient chatClient;
 
     private ClaimsServiceGateway claims;
-    private CustomerServiceGateway customer;
+    private PolicyServiceGateway customer;
     private final List<InsuranceAgentTools.ProposedUpdate> proposed = new CopyOnWriteArrayList<>();
 
     @BeforeAll
@@ -58,7 +58,7 @@ class AgentOllamaToolCallingIntegrationTest {
     @BeforeEach
     void setUp() {
         claims = mock(ClaimsServiceGateway.class);
-        customer = mock(CustomerServiceGateway.class);
+        customer = mock(PolicyServiceGateway.class);
         proposed.clear();
 
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
@@ -140,3 +140,4 @@ class AgentOllamaToolCallingIntegrationTest {
         assertThat(answer.trim().length()).isGreaterThan(20);
     }
 }
+

@@ -25,6 +25,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -91,7 +92,7 @@ class PolicyContractReadServiceTest {
         currentPeriod.setPolicyContract(contract);
 
         when(policyContractRepository.findByCustomerIdOrderByCreatedAtDesc(42L)).thenReturn(List.of(contract));
-        when(planRepository.findById(20L)).thenReturn(Optional.of(plan));
+        when(planRepository.findAllById(List.of(20L))).thenReturn(List.of(plan));
 
         List<PolicyContractSummaryDto> policies = policyContractReadService.getMyPolicies();
 
@@ -99,6 +100,93 @@ class PolicyContractReadServiceTest {
         assertThat(policies.getFirst().currentPolicyPeriodId()).isEqualTo(111L);
         assertThat(policies.getFirst().productName()).isEqualTo("Auto Insurance");
         assertThat(policies.getFirst().planName()).isEqualTo("Basic Auto");
+    }
+
+    @Test
+    void getPoliciesForCustomer_batchesPlanLookupAcrossContracts() {
+        Product product = Product.builder()
+                .id(55L)
+                .code("TRAVEL")
+                .name("Travel Insurance")
+                .type(ProductType.TRAVEL)
+                .status("ACTIVE")
+                .build();
+
+        Plan firstPlan = Plan.builder()
+                .id(20L)
+                .product(product)
+                .code("TRAVEL_PLUS")
+                .name("Travel Plus")
+                .status("ACTIVE")
+                .annualPremiumCents(12000L)
+                .deductibleCents(2000L)
+                .coverageLimitCents(300000L)
+                .currency("INR")
+                .build();
+
+        Plan secondPlan = Plan.builder()
+                .id(30L)
+                .product(product)
+                .code("TRAVEL_PREMIUM")
+                .name("Travel Premium")
+                .status("ACTIVE")
+                .annualPremiumCents(20000L)
+                .deductibleCents(3000L)
+                .coverageLimitCents(500000L)
+                .currency("INR")
+                .build();
+
+        PolicyPeriod firstPeriod = PolicyPeriod.builder()
+                .id(222L)
+                .planId(20L)
+                .renewalSequence(1)
+                .status("ACTIVE")
+                .effectiveDate(Instant.parse("2025-02-01T00:00:00Z"))
+                .expirationDate(Instant.parse("2026-02-01T00:00:00Z"))
+                .renewalDate(Instant.parse("2026-02-01T00:00:00Z"))
+                .activatedAt(Instant.parse("2025-02-01T00:00:00Z"))
+                .build();
+
+        PolicyPeriod secondPeriod = PolicyPeriod.builder()
+                .id(333L)
+                .planId(30L)
+                .renewalSequence(1)
+                .status("ACTIVE")
+                .effectiveDate(Instant.parse("2025-03-01T00:00:00Z"))
+                .expirationDate(Instant.parse("2026-03-01T00:00:00Z"))
+                .renewalDate(Instant.parse("2026-03-01T00:00:00Z"))
+                .activatedAt(Instant.parse("2025-03-01T00:00:00Z"))
+                .build();
+
+        PolicyContract firstContract = PolicyContract.builder()
+                .id(9L)
+                .customerId(42L)
+                .productId(55L)
+                .policyNumber("POL-9")
+                .status("ACTIVE")
+                .currentPolicyPeriod(firstPeriod)
+                .build();
+        firstPeriod.setPolicyContract(firstContract);
+
+        PolicyContract secondContract = PolicyContract.builder()
+                .id(10L)
+                .customerId(42L)
+                .productId(55L)
+                .policyNumber("POL-10")
+                .status("ACTIVE")
+                .currentPolicyPeriod(secondPeriod)
+                .build();
+        secondPeriod.setPolicyContract(secondContract);
+
+        when(policyContractRepository.findByCustomerIdOrderByCreatedAtDesc(42L)).thenReturn(List.of(firstContract, secondContract));
+        when(planRepository.findAllById(List.of(20L, 30L))).thenReturn(List.of(firstPlan, secondPlan));
+
+        List<PolicyContractSummaryDto> policies = policyContractReadService.getPoliciesForCustomer(42L);
+
+        assertThat(policies).hasSize(2);
+        assertThat(policies.getFirst().planName()).isEqualTo("Travel Plus");
+        assertThat(policies.get(1).planName()).isEqualTo("Travel Premium");
+        verify(planRepository).findAllById(List.of(20L, 30L));
     }
 
     @Test
@@ -145,7 +233,7 @@ class PolicyContractReadServiceTest {
         currentPeriod.setPolicyContract(contract);
 
         when(policyContractRepository.findByIdAndCustomerId(9L, 42L)).thenReturn(Optional.of(contract));
-        when(planRepository.findById(77L)).thenReturn(Optional.of(plan));
+        when(planRepository.findAllById(List.of(77L))).thenReturn(List.of(plan));
 
         PolicyContractDetailDto detail = policyContractReadService.getPolicyForCustomer(42L, 9L);
 
@@ -192,7 +280,7 @@ class PolicyContractReadServiceTest {
 
         when(policyContractRepository.findByIdAndCustomerId(7L, 42L)).thenReturn(Optional.of(contract));
         when(policyPeriodRepository.findByPolicyContractIdOrderByRenewalSequenceAsc(7L)).thenReturn(List.of(first, second));
-        when(planRepository.findById(20L)).thenReturn(Optional.of(Plan.builder().id(20L).name("Basic Auto").build()));
+        when(planRepository.findAllById(List.of(20L))).thenReturn(List.of(Plan.builder().id(20L).name("Basic Auto").build()));
 
         List<PolicyPeriodDto> periods = policyContractReadService.getPeriodsForPolicy(7L);
 

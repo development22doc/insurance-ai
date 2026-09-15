@@ -2,9 +2,9 @@ package com.claimassist.platform.agent_service.config;
 
 import com.claimassist.platform.agent_service.cache.CacheService;
 import com.claimassist.platform.agent_service.client.ClaimsClient;
-import com.claimassist.platform.agent_service.client.CustomerClient;
+import com.claimassist.platform.agent_service.client.PolicyClient;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -21,10 +21,11 @@ public class GatewayBeansConfig {
     }
 
     @Bean
-    public CustomerServiceGateway customerServiceGateway(CustomerClient customerClient,
+    public PolicyServiceGateway policyServiceGateway(PolicyClient policyClient,
                                                         CacheService cacheService,
                                                         CacheProperties cacheProperties,
-                                                        WebClient customerServiceWebClient) {
-        return new CustomerServiceGateway(customerClient, cacheService, cacheProperties, customerServiceWebClient);
+                                                        WebClient policyServiceWebClient) {
+        return new PolicyServiceGateway(policyClient, cacheService, cacheProperties, policyServiceWebClient);
     }
 }
+

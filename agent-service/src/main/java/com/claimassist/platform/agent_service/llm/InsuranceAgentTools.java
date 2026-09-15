@@ -5,7 +5,7 @@ import com.claimassist.platform.agent_service.ai.tool.ToolRegistry;
 import com.claimassist.platform.agent_service.observability.AgentTelemetry;
 import com.claimassist.platform.agent_service.observability.AuditEvent;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGatewayApi;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGatewayApi;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGatewayApi;
 import com.claimassist.platform.common_lib.dto.ClaimDocumentSummaryDto;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
@@ -64,7 +64,7 @@ public class InsuranceAgentTools {
     private final Long policyId;
     private final Long userId;
     private final ClaimsServiceGatewayApi claimsServiceGateway;
-    private final CustomerServiceGatewayApi customerServiceGateway;
+    private final PolicyServiceGatewayApi policyServiceGateway;
     private final ToolRegistry registry;
     private final String jwtToken; // Explicit JWT token for permission checks
 
@@ -92,15 +92,15 @@ public class InsuranceAgentTools {
 
     /** Convenience constructor without telemetry (kept for backward compatibility). */
     public InsuranceAgentTools(Long claimId, Long policyId, Long userId, ClaimsServiceGatewayApi claimsServiceGateway,
-                               CustomerServiceGatewayApi customerServiceGateway, ToolRegistry registry,
+                               PolicyServiceGatewayApi policyServiceGateway, ToolRegistry registry,
                                int maxNoteLength, Consumer<ProposedUpdate> onProposedUpdate) {
-        this(claimId, policyId, userId, claimsServiceGateway, customerServiceGateway, registry,
+        this(claimId, policyId, userId, claimsServiceGateway, policyServiceGateway, registry,
                 maxNoteLength, onProposedUpdate, null, "", "", null);
     }
 
     /** Constructor with an optional telemetry sink for security/audit observability. */
     public InsuranceAgentTools(Long claimId, Long policyId, Long userId, ClaimsServiceGatewayApi claimsServiceGateway,
-                               CustomerServiceGatewayApi customerServiceGateway, ToolRegistry registry,
+                               PolicyServiceGatewayApi policyServiceGateway, ToolRegistry registry,
                                int maxNoteLength, Consumer<ProposedUpdate> onProposedUpdate,
                                @Nullable AgentTelemetry agentTelemetry,
                                String requestId, String correlationId, String jwtToken) {
@@ -108,7 +108,7 @@ public class InsuranceAgentTools {
         this.policyId = policyId;
         this.userId = userId;
         this.claimsServiceGateway = claimsServiceGateway;
-        this.customerServiceGateway = customerServiceGateway;
+        this.policyServiceGateway = policyServiceGateway;
         this.registry = registry;
         this.maxNoteLength = maxNoteLength;
         this.onProposedUpdate = onProposedUpdate;
@@ -160,7 +160,7 @@ public class InsuranceAgentTools {
         try {
             // Use reactive variant with explicit JWT token to avoid blocking on reactive threads.
             // Blocking is safe here because tool callbacks are already executed on boundedElastic.
-            PolicyCoverageDto coverage = customerServiceGateway.getPolicyCoverageReactive(policyId, userId, jwtToken).block();
+            PolicyCoverageDto coverage = policyServiceGateway.getPolicyCoverageReactive(policyId, userId, jwtToken).block();
             log.info("Tool call: get_policy_coverage(policyId={}, userId={})", policyId, userId);
             if (coverage == null || NOT_FOUND.equals(coverage.status())) {
                 return ToolResult.failure("POLICY_NOT_FOUND", false,
@@ -169,7 +169,7 @@ public class InsuranceAgentTools {
             return ToolResult.success(coverage, meta.source()).toJson();
         } catch (Exception e) {
             log.warn("get_policy_coverage failed for policy {}: {}", policyId, e.toString());
-            return ToolResult.failure("CUSTOMER_SERVICE_UNAVAILABLE", true,
+            return ToolResult.failure("POLICY_SERVICE_UNAVAILABLE", true,
                     "Unable to retrieve the policy coverage right now.").toJson();
         }
     }
@@ -295,3 +295,4 @@ public class InsuranceAgentTools {
                 "A valid " + field + " is required to run this tool.").toJson();
     }
 }
+

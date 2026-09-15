@@ -14,7 +14,7 @@ import com.claimassist.platform.agent_service.security.InputGuardrails;
 import com.claimassist.platform.agent_service.security.OutputGuardrails;
 import com.claimassist.platform.agent_service.service.AgentTurnPersistence;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.service.impl.AgentGenerationServiceImpl;
 import com.claimassist.platform.agent_service.support.AgentTelemetryTestSupport;
 import com.claimassist.platform.agent_service.support.OllamaTestSupport;
@@ -52,7 +52,7 @@ class AgentOllamaMemoryIntegrationTest {
                                            AgentTurnPersistence persistence, CurrentUserProvider user,
                                            AgentAiProperties props) {
         return new AgentGenerationServiceImpl(client, props, user, sessionRepo, persistence,
-                new ToolRegistry(), claims, mock(CustomerServiceGateway.class),
+                new ToolRegistry(), claims, mock(PolicyServiceGateway.class),
                 new InputGuardrails(props), new OutputGuardrails(props),
                 new ConversationMemoryService(repo, props), new ConversationContextBuilder(props),
                 AgentTelemetryTestSupport.telemetry());
@@ -125,3 +125,4 @@ class AgentOllamaMemoryIntegrationTest {
                 .contains("[ASSISTANT] Thanks, I will look that up.");
     }
 }
+

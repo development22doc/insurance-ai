@@ -3,7 +3,7 @@ package com.claimassist.platform.agent_service.service.gateway;
 import com.claimassist.platform.agent_service.cache.CacheBackend;
 import com.claimassist.platform.agent_service.cache.CacheMetrics;
 import com.claimassist.platform.agent_service.cache.CacheService;
-import com.claimassist.platform.agent_service.client.CustomerClient;
+import com.claimassist.platform.agent_service.client.PolicyClient;
 import com.claimassist.platform.agent_service.config.CacheProperties;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,11 +28,11 @@ class CustomerServiceGatewayCacheTest {
         @Override public void delete(String k) { store.remove(k); }
     }
 
-    private CustomerServiceGateway gateway(CustomerClient client, MemBackend backend) {
+    private PolicyServiceGateway gateway(PolicyClient client, MemBackend backend) {
         CacheProperties props = new CacheProperties();
         CacheService cache = new CacheService(backend, new ObjectMapper(), props, new CacheMetrics());
-        WebClient webClient = WebClient.builder().baseUrl("http://localhost:8081").build();
-        return new CustomerServiceGateway(client, cache, props, webClient);
+        WebClient webClient = WebClient.builder().baseUrl("http://localhost:8084").build();
+        return new PolicyServiceGateway(client, cache, props, webClient);
     }
 
     private final PolicyCoverageDto coverage =
@@ -42,43 +42,43 @@ class CustomerServiceGatewayCacheTest {
 
     @Test
     void missCallsBackendAndPopulatesCache() {
-        CustomerClient client = mock(CustomerClient.class);
-        when(client.getPolicyCoverage(7L, userId)).thenReturn(coverage);
+        PolicyClient client = mock(PolicyClient.class);
+        when(client.getPolicyCoverage(7L, null, userId)).thenReturn(coverage);
         MemBackend backend = new MemBackend();
-        CustomerServiceGateway g = gateway(client, backend);
+        PolicyServiceGateway g = gateway(client, backend);
 
         PolicyCoverageDto result = g.getPolicyCoverage(7L, userId);
 
         assertThat(result.status()).isEqualTo("ACTIVE");
-        verify(client).getPolicyCoverage(7L, userId);
+        verify(client).getPolicyCoverage(7L, null, userId);
         assertThat(backend.store.keySet()).anyMatch(k -> k.equals("agent:v1:get_policy_coverage:policy:7"));
     }
 
     @Test
     void hitDoesNotCallBackendAgain() {
-        CustomerClient client = mock(CustomerClient.class);
-        when(client.getPolicyCoverage(7L, userId)).thenReturn(coverage);
+        PolicyClient client = mock(PolicyClient.class);
+        when(client.getPolicyCoverage(7L, null, userId)).thenReturn(coverage);
         MemBackend backend = new MemBackend();
-        CustomerServiceGateway g = gateway(client, backend);
+        PolicyServiceGateway g = gateway(client, backend);
         g.getPolicyCoverage(7L, userId);
         g.getPolicyCoverage(7L, userId);
-        verify(client).getPolicyCoverage(7L, userId); // once total
+        verify(client).getPolicyCoverage(7L, null, userId); // once total
     }
 
     @Test
     void doesNotCacheUnavailablePlaceholder() {
-        CustomerClient client = mock(CustomerClient.class);
-        when(client.getPolicyCoverage(7L, userId)).thenReturn(
+        PolicyClient client = mock(PolicyClient.class);
+        when(client.getPolicyCoverage(7L, null, userId)).thenReturn(
                 new PolicyCoverageDto(7L, "UNKNOWN", "UNAVAILABLE", "UNKNOWN", "UNKNOWN", null, null, null));
         MemBackend backend = new MemBackend();
-        CustomerServiceGateway g = gateway(client, backend);
+        PolicyServiceGateway g = gateway(client, backend);
         g.getPolicyCoverage(7L, userId);
         assertThat(backend.store).doesNotContainKey("agent:v1:get_policy_coverage:policy:7");
     }
 
     @Test
     void fallbackReturnsNotFoundPlaceholderForFeign404() throws Exception {
-        CustomerServiceGateway g = gateway(mock(CustomerClient.class), new MemBackend());
+        PolicyServiceGateway g = gateway(mock(PolicyClient.class), new MemBackend());
         feign.FeignException ex = feign.FeignException.errorStatus("GET",
                 feign.Response.builder().status(404).reason("Not Found")
                         .request(feign.Request.create(feign.Request.HttpMethod.GET,
@@ -90,7 +90,7 @@ class CustomerServiceGatewayCacheTest {
 
     @Test
     void fallbackReturnsUnavailablePlaceholderForGenericError() throws Exception {
-        CustomerServiceGateway g = gateway(mock(CustomerClient.class), new MemBackend());
+        PolicyServiceGateway g = gateway(mock(PolicyClient.class), new MemBackend());
         Object result = invokeFallback(g, "policyFallback", 7L, userId, new RuntimeException("down"));
         assertThat(((PolicyCoverageDto) result).status()).isEqualTo("UNAVAILABLE");
     }
@@ -102,3 +102,4 @@ class CustomerServiceGatewayCacheTest {
         return m.invoke(target, args);
     }
 }
+

@@ -8,6 +8,7 @@ import com.stripe.Stripe;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
 import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.checkout.SessionCreateParams;
 import lombok.RequiredArgsConstructor;
@@ -66,7 +67,11 @@ public class StripePaymentGatewayImpl implements StripePaymentGateway {
                             .build())
                     .build();
 
-            Session created = Session.create(params);
+            // Use a server-generated idempotency key to prevent duplicate checkout sessions on retries.
+            RequestOptions requestOptions = RequestOptions.builder()
+                    .setIdempotencyKey("purchase-" + purchase.getId())
+                    .build();
+            Session created = Session.create(params, requestOptions);
             return Optional.of(new StripeCheckoutSession(created.getId(), created.getUrl(), stripeProperties.testMode()));
         } catch (Exception ex) {
             throw new ServiceUnavailableException("Stripe checkout preparation is temporarily unavailable");

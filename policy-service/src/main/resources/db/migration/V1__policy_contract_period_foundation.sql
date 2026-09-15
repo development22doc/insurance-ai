@@ -63,26 +63,6 @@ ALTER TABLE policy_periods
         tstzrange(effective_date, expiration_date, '[)') WITH &&
     );
 
-CREATE TABLE IF NOT EXISTS policy_legacy_id_map (
-    id BIGSERIAL PRIMARY KEY,
-    version BIGINT NOT NULL DEFAULT 0,
-    legacy_source VARCHAR(64) NOT NULL,
-    legacy_policy_id BIGINT NOT NULL,
-    policy_contract_id BIGINT NOT NULL,
-    legacy_record_type VARCHAR(64) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_policy_legacy_id_map_source_policy_id UNIQUE (legacy_source, legacy_policy_id)
-);
-
-ALTER TABLE policy_legacy_id_map
-    ADD CONSTRAINT fk_policy_legacy_id_map_policy_contract
-    FOREIGN KEY (policy_contract_id)
-    REFERENCES policy_contracts(id)
-    ON DELETE RESTRICT;
-
-CREATE INDEX IF NOT EXISTS idx_policy_legacy_id_map_policy_contract_id ON policy_legacy_id_map(policy_contract_id);
-
 CREATE TABLE IF NOT EXISTS purchases (
     id BIGSERIAL PRIMARY KEY,
     version BIGINT NOT NULL DEFAULT 0,

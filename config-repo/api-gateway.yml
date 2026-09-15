@@ -81,7 +81,7 @@ spring:
             # ===========================
 
             - id: policy-service
-              uri: lb://CUSTOMER-SERVICE
+              uri: lb://POLICY-SERVICE
               predicates:
                 - Path=/policies/**
               metadata:
@@ -91,21 +91,53 @@ spring:
             # Versioned Public API (V1)
             # ===========================
             # URI versioning foundation (Task 8.1). Strategy: Gateway-only
-            # versioning (Option C). The gateway strips the /api/v1 prefix
-            # (StripPrefix=2) and forwards the unversioned downstream path so
-            # the existing service controllers, DTOs, and business logic are
-            # reused unchanged - no business logic is duplicated and the old
-            # unversioned routes above remain for backward compatibility.
+            # versioning (Option C).
             #
-            # Compatibility: the /api/v1 routes reuse the exact same downstream
-            # controllers as the unversioned routes (verified path mapping),
-            # so V1 semantics, auth, authz, SSE, and status codes are identical.
-            # Future /api/v2 routes can be added here without redesign.
+            # Policy Service routes preserve /api/v1 prefix - the service controllers
+            # declare @RequestMapping("/api/v1") and expect the full versioned path.
             #
             # /internal/v1/** is NOT gateway-routed and is intentionally excluded
             # from the public /api/v1 namespace - internal Feign contracts stay
             # internal.
 
+            # Policy Service - specific routes must precede generic customer route
+            - id: api-v1-policy-products
+              uri: lb://POLICY-SERVICE
+              predicates:
+                - Path=/api/v1/products/**
+              metadata:
+                response-timeout: 15000
+
+            - id: api-v1-policy-plans
+              uri: lb://POLICY-SERVICE
+              predicates:
+                - Path=/api/v1/plans/**
+              metadata:
+                response-timeout: 15000
+
+            - id: api-v1-policy-purchase
+              uri: lb://POLICY-SERVICE
+              predicates:
+                - Path=/api/v1/policies/**
+              metadata:
+                response-timeout: 15000
+
+            - id: api-v1-policy-webhooks
+              uri: lb://POLICY-SERVICE
+              predicates:
+                - Path=/api/v1/webhooks/**
+              metadata:
+                response-timeout: 15000
+
+            # Customer policy endpoints - must precede generic customer route
+            - id: api-v1-customer-policies
+              uri: lb://POLICY-SERVICE
+              predicates:
+                - Path=/api/v1/customers/me/policies/**
+              metadata:
+                response-timeout: 15000
+
+            # Other versioned routes
             - id: api-v1-claims-service
               uri: lb://CLAIMS-SERVICE
               predicates:
@@ -131,19 +163,11 @@ spring:
               filters:
                 - StripPrefix=2
 
+            # Generic customer route - handles non-policy customer APIs
             - id: api-v1-customer-service
               uri: lb://CUSTOMER-SERVICE
               predicates:
                 - Path=/api/v1/customers/**
-              filters:
-                - StripPrefix=2
-              metadata:
-                response-timeout: 15000
-
-            - id: api-v1-policy-service
-              uri: lb://CUSTOMER-SERVICE
-              predicates:
-                - Path=/api/v1/policies/**
               filters:
                 - StripPrefix=2
               metadata:

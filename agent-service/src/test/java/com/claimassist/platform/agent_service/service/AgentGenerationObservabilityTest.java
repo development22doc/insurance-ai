@@ -9,7 +9,7 @@ import com.claimassist.platform.agent_service.repository.AgentSessionRepository;
 import com.claimassist.platform.agent_service.security.InputGuardrails;
 import com.claimassist.platform.agent_service.security.OutputGuardrails;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.service.impl.AgentGenerationServiceImpl;
 import com.claimassist.platform.agent_service.support.RecordingAgentTelemetry;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
@@ -53,7 +53,7 @@ class AgentGenerationObservabilityTest {
         AgentSessionRepository sessionRepo = mock(AgentSessionRepository.class);
         when(sessionRepo.findById(any())).thenReturn(Optional.of(
                 AgentSession.builder().id(new AgentSessionId(99L, 42L)).build()));
-        CustomerServiceGateway customer = mock(CustomerServiceGateway.class);
+        PolicyServiceGateway customer = mock(PolicyServiceGateway.class);
         com.claimassist.platform.agent_service.repository.AgentMessageRepository msgRepo =
                 mock(com.claimassist.platform.agent_service.repository.AgentMessageRepository.class);
         when(msgRepo.findRecentByAgentSession(any(), any())).thenReturn(java.util.List.of());
@@ -145,7 +145,7 @@ class AgentGenerationObservabilityTest {
         com.claimassist.platform.agent_service.service.AgentTurnPersistence failing =
                 mock(com.claimassist.platform.agent_service.service.AgentTurnPersistence.class);
         org.mockito.Mockito.doThrow(new RuntimeException("db down"))
-                .when(failing).finalizeTurn(anyString(), any(), anyString(), anyLong(), any(), any(), any(), any());
+                .when(failing).finalizeTurn(anyString(), any(), any(), anyLong(), any(), any(), any(), any());
 
         List<StreamResponse> out = svc(chatClientReturning(Flux.just("Your claim is under review.")),
                 claimsUnderReview(), failing, 60000).streamResponse("How is my claim?", 99L).collectList().block();
@@ -185,3 +185,4 @@ class AgentGenerationObservabilityTest {
         }
     }
 }
+

@@ -82,7 +82,7 @@ class OutboxEventProducerTest {
 
     @Test
     void enqueueIfAbsentCreatesWhenAbsent() {
-        when(repository.findFirstByAggregateIdAndEventType(anyString(), anyString()))
+        when(repository.findFirstByAggregateIdAndEventType(anyString(), any()))
                 .thenReturn(Optional.empty());
         when(repository.save(any(OutboxEvent.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -106,3 +106,4 @@ class OutboxEventProducerTest {
         assertThat(producer().exists("100", "AgentTurnCompleted")).isFalse();
     }
 }
+

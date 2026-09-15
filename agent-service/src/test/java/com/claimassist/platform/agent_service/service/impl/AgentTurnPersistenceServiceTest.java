@@ -111,7 +111,7 @@ class AgentTurnPersistenceServiceTest {
 
     @Test
     void queuesSagaAndOutboxEventForProposedUpdate() {
-        when(outboxRepo.findFirstByAggregateIdAndEventType(anyString(), anyString()))
+        when(outboxRepo.findFirstByAggregateIdAndEventType(anyString(), any()))
                 .thenReturn(Optional.empty());
 
 service.finalizeTurn("u", session, "answer", 5L, null, 1L,
@@ -138,7 +138,7 @@ service.finalizeTurn("u", session, "answer", 5L, null, 1L,
 
     @Test
     void doesNotEnqueueDuplicateOutboxForAlreadyQueuedSaga() {
-        when(outboxRepo.findFirstByAggregateIdAndEventType(anyString(), anyString()))
+        when(outboxRepo.findFirstByAggregateIdAndEventType(anyString(), any()))
                 .thenReturn(Optional.of(OutboxEvent.builder().build()));
 
 service.finalizeTurn("u", session, "answer", 5L, null, 1L,
@@ -170,7 +170,7 @@ service.finalizeTurn("u", session, "answer", 5L, null, 1L,
 
     @Test
     void serializationFailureThrowsControlledIllegalStateException() throws Exception {
-        when(outboxRepo.findFirstByAggregateIdAndEventType(anyString(), anyString()))
+        when(outboxRepo.findFirstByAggregateIdAndEventType(anyString(), any()))
                 .thenReturn(Optional.empty());
         ObjectMapper brokenMapper = mock(ObjectMapper.class);
         when(brokenMapper.writeValueAsString(any())).thenThrow(new RuntimeException("boom"));
@@ -184,3 +184,4 @@ assertThatThrownBy(() -> failing.finalizeTurn("u", session, "answer", 5L, null, 
                 .hasMessageContaining("Failed to serialize");
     }
 }
+

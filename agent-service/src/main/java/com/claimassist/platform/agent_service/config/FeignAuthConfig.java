@@ -10,7 +10,7 @@ import org.springframework.util.StringUtils;
 /**
  * Feign configuration that propagates the current authenticated user's
  * Authorization bearer token to outgoing Feign requests so downstream
- * services (claims-service, customer-service) perform authorization checks
+ * services (claims-service, policy-service) perform authorization checks
  * against the same principal.
  */
 @Configuration

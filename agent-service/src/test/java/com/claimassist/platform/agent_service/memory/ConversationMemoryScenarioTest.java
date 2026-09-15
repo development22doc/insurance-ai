@@ -12,7 +12,7 @@ import com.claimassist.platform.agent_service.security.InputGuardrails;
 import com.claimassist.platform.agent_service.security.OutputGuardrails;
 import com.claimassist.platform.agent_service.service.AgentTurnPersistence;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.service.impl.AgentGenerationServiceImpl;
 import com.claimassist.platform.agent_service.support.AgentTelemetryTestSupport;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
@@ -62,7 +62,7 @@ class ConversationMemoryScenarioTest {
         when(spec.stream()).thenReturn(stream);
         when(stream.content()).thenReturn(Flux.just("answer"));
         return new AgentGenerationServiceImpl(client, props, user, sessionRepo, persistence,
-                new ToolRegistry(), claims, mock(CustomerServiceGateway.class),
+                new ToolRegistry(), claims, mock(PolicyServiceGateway.class),
                 new InputGuardrails(props), new OutputGuardrails(props), memory, builder,
                 AgentTelemetryTestSupport.telemetry());
     }
@@ -217,13 +217,13 @@ class ConversationMemoryScenarioTest {
         ConversationContextBuilder builder = new ConversationContextBuilder(props);
         AgentGenerationServiceImpl svc = new AgentGenerationServiceImpl(failing, props, user(42L),
                 sessionRepo(99L, 42L), persistence, new ToolRegistry(), claims(),
-                mock(CustomerServiceGateway.class), new InputGuardrails(props), new OutputGuardrails(props),
+                mock(PolicyServiceGateway.class), new InputGuardrails(props), new OutputGuardrails(props),
                 memory, builder, AgentTelemetryTestSupport.telemetry());
 
         List<StreamResponse> events = svc.streamResponse("hi", 99L).collectList().block();
         assertThat(events.get(0).eventType()).isEqualTo("error");
         verify(persistence, org.mockito.Mockito.timeout(5000)).finalizeTurn(
-                anyString(), any(), anyString(), anyLong(), any(), anyLong(), any(), any());
+                anyString(), any(), any(), anyLong(), any(), anyLong(), any(), any());
     }
 
     // ---- Scenario 10: concurrent requests do not share memory ----
@@ -248,3 +248,4 @@ class ConversationMemoryScenarioTest {
         assertThat(capturedB.get()).contains("claim B").doesNotContain("claim A");
     }
 }
+

@@ -3,13 +3,22 @@ package com.claimassist.platform.policy_service.repository;
 import com.claimassist.platform.policy_service.entity.PolicyPeriod;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
+import java.util.Optional;
 
 import java.time.Instant;
 import java.util.List;
 
 public interface PolicyPeriodRepository extends JpaRepository<PolicyPeriod, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select pp from PolicyPeriod pp where pp.id = :id")
+    Optional<PolicyPeriod> findByIdForUpdate(@Param("id") Long id);
+
 
     @EntityGraph(attributePaths = {"policyContract", "previousPolicyPeriod"})
     List<PolicyPeriod> findByPolicyContractIdOrderByRenewalSequenceAsc(Long policyContractId);

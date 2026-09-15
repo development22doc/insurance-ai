@@ -25,11 +25,11 @@ public class Claim {
     String claimNumber;
 
     /**
-     * policyId lives in customer-service's own database - this is deliberately
+     * policyId refers to PolicyContract.id in the policy-service database - this is deliberately
      * NOT a JPA @ManyToOne/@JoinColumn, since a foreign key can't span two
      * separate microservice databases. Ownership/validity of the policy is
-     * checked via CustomerClient (Feign) at claim-creation time, not enforced
-     * by the database.
+     * checked via PolicyClient (Feign) calling Policy Service at claim-creation time, not enforced
+     * by the database. Policy Service is the authoritative source for policy-domain data.
      */
     @Column(nullable = false)
     Long policyId;

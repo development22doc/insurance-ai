@@ -6,7 +6,7 @@ import com.claimassist.platform.agent_service.config.AgentAiProperties;
 import com.claimassist.platform.agent_service.llm.InsuranceAgentTools;
 import com.claimassist.platform.agent_service.llm.PromptUtils;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.support.OllamaTestSupport;
 import com.claimassist.platform.common_lib.dto.ClaimDocumentSummaryDto;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
@@ -45,7 +45,7 @@ class QwenOllamaChatModelIntegrationTest {
     private static ChatClient chatClient;
 
     private ClaimsServiceGateway claims;
-    private CustomerServiceGateway customer;
+    private PolicyServiceGateway customer;
     private final List<InsuranceAgentTools.ProposedUpdate> proposed = new CopyOnWriteArrayList<>();
 
     @BeforeAll
@@ -57,7 +57,7 @@ class QwenOllamaChatModelIntegrationTest {
     @BeforeEach
     void setUp() {
         claims = mock(ClaimsServiceGateway.class);
-        customer = mock(CustomerServiceGateway.class);
+        customer = mock(PolicyServiceGateway.class);
         proposed.clear();
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
         when(claims.getClaimStatus(99L)).thenReturn(new ClaimStatusDto(
@@ -133,3 +133,4 @@ class QwenOllamaChatModelIntegrationTest {
         assertThat(answer).doesNotContain("\"name\"", "\"arguments\"");
     }
 }
+

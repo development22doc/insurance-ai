@@ -1,9 +1,7 @@
 package com.claimassist.platform.policy_service.controller;
 
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
-import com.claimassist.platform.common_lib.error.BadRequestException;
-import com.claimassist.platform.common_lib.security.CallerType;
-import com.claimassist.platform.common_lib.security.CurrentUserProvider;
+import com.claimassist.platform.policy_service.security.InternalRequestIdentity;
 import com.claimassist.platform.policy_service.service.PolicyCoverageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,32 +16,22 @@ import java.time.Instant;
 @RestController
 @RequestMapping("/internal/v1/policies")
 @RequiredArgsConstructor
+@org.springframework.validation.annotation.Validated
 public class PolicyInternalController {
 
     private final PolicyCoverageService policyCoverageService;
-    private final CurrentUserProvider currentUserProvider;
+    private final InternalRequestIdentity internalRequestIdentity;
 
     @GetMapping("/{policyId}/coverage")
     public PolicyCoverageDto getPolicyCoverage(
-            @PathVariable Long policyId,
+            @PathVariable @jakarta.validation.constraints.Positive(message = "policyId must be positive") Long policyId,
             @RequestParam(value = "asOf", required = false) Instant asOf,
             @RequestHeader(value = "X-User-Id", required = false) String xUserIdHeader) {
 
-        Long customerId = resolveCustomerId(xUserIdHeader);
+        if (policyId == null || policyId <= 0) {
+            throw new com.claimassist.platform.common_lib.error.BadRequestException("policyId must be a positive integer");
+        }
+        Long customerId = internalRequestIdentity.resolveCallingUserId(xUserIdHeader);
         return policyCoverageService.getCoverageForCustomer(policyId, customerId, asOf != null ? asOf : Instant.now());
-    }
-
-    private Long resolveCustomerId(String xUserIdHeader) {
-        if (CurrentUserProvider.classify(currentUserProvider.getCurrentJwt()) == CallerType.USER) {
-            return currentUserProvider.getCurrentUserId();
-        }
-        if (xUserIdHeader == null || xUserIdHeader.isBlank()) {
-            throw new BadRequestException("Missing X-User-Id header for service caller");
-        }
-        try {
-            return Long.valueOf(xUserIdHeader.trim());
-        } catch (NumberFormatException ex) {
-            throw new BadRequestException("Invalid X-User-Id header");
-        }
     }
 }

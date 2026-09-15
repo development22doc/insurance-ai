@@ -6,14 +6,12 @@ import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import com.claimassist.platform.policy_service.dto.PurchaseInitiationRequest;
 import com.claimassist.platform.policy_service.dto.PurchaseResponse;
 import com.claimassist.platform.policy_service.dto.PurchaseStatusResponse;
-import com.claimassist.platform.policy_service.entity.CustomerPolicy;
 import com.claimassist.platform.policy_service.entity.Plan;
 import com.claimassist.platform.policy_service.entity.PolicyContract;
 import com.claimassist.platform.policy_service.entity.PolicyPeriod;
 import com.claimassist.platform.policy_service.entity.Product;
 import com.claimassist.platform.policy_service.entity.Purchase;
 import com.claimassist.platform.policy_service.entity.PurchaseStatus;
-import com.claimassist.platform.policy_service.repository.CustomerPolicyRepository;
 import com.claimassist.platform.policy_service.repository.PlanRepository;
 import com.claimassist.platform.policy_service.repository.PurchaseRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,9 +37,6 @@ class PurchaseServiceTest {
 
     @Mock
     private PlanRepository planRepository;
-
-    @Mock
-    private CustomerPolicyRepository customerPolicyRepository;
 
     @Mock
     private CurrentUserProvider currentUserProvider;

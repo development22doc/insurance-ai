@@ -58,7 +58,7 @@ class ToolRegistryTest {
         assertThat(registry.metadata(ToolRegistry.CLAIM_STATUS)).map(ToolMetadata::source)
                 .contains("claims-service");
         assertThat(registry.metadata(ToolRegistry.POLICY_COVERAGE)).map(ToolMetadata::source)
-                .contains("customer-service");
+                .contains("policy-service");
         assertThat(registry.metadata(ToolRegistry.PROPOSE_CLAIM_UPDATE)).map(ToolMetadata::source)
                 .contains("agent-service");
     }

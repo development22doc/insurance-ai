@@ -11,7 +11,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * WebClient configuration for reactive service-to-service calls.
- * Provides WebClients for calling ClaimsService and CustomerService endpoints reactively.
+ * Provides WebClients for calling ClaimsService and PolicyService endpoints reactively.
  */
 @Configuration
 public class ServiceWebClientConfig {
@@ -23,6 +23,9 @@ public class ServiceWebClientConfig {
 
     @Value("${CUSTOMER_SERVICE_URI:http://localhost:8081}")
     private String customerServiceUri;
+
+    @Value("${POLICY_SERVICE_URI:http://localhost:8084}")
+    private String policyServiceUri;
 
     @Bean
     public WebClient claimsServiceWebClient(WebClient.Builder builder) {
@@ -52,6 +55,21 @@ public class ServiceWebClientConfig {
             normalized = "http://" + normalized;
         }
         log.info("CustomerService WebClient baseUrl={}", normalized);
+        return builder
+                .baseUrl(normalized)
+                .filter(logRequest())
+                .build();
+    }
+
+    @Bean
+    public WebClient policyServiceWebClient(WebClient.Builder builder) {
+        String normalized = policyServiceUri == null || policyServiceUri.isBlank()
+                ? "http://localhost:8084"
+                : policyServiceUri.trim();
+        if (!normalized.matches("^https?://.*")) {
+            normalized = "http://" + normalized;
+        }
+        log.info("PolicyService WebClient baseUrl={}", normalized);
         return builder
                 .baseUrl(normalized)
                 .filter(logRequest())

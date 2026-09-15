@@ -2,7 +2,7 @@ package com.claimassist.platform.agent_service.llm;
 
 import com.claimassist.platform.agent_service.ai.tool.ToolRegistry;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.support.RecordingAgentTelemetry;
 import com.claimassist.platform.common_lib.enums.ClaimPermission;
 import org.junit.jupiter.api.Test;
@@ -32,11 +32,11 @@ class InsuranceAgentToolsObservabilityTest {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         // Fail-closed: permission check denies the user for get_claim_status.
         when(claims.checkPermission(eq(99L), any())).thenReturn(false);
-        when(claims.checkPermissionWithToken(eq(99L), any(), anyString()))
+        when(claims.checkPermissionWithToken(eq(99L), any(), any()))
                 .thenReturn(reactor.core.publisher.Mono.just(false));
 
         InsuranceAgentTools tools = new InsuranceAgentTools(99L, 7L, 99L, claims,
-                mock(CustomerServiceGateway.class), new ToolRegistry(), 1000,
+                mock(PolicyServiceGateway.class), new ToolRegistry(), 1000,
                 p -> { }, telemetry, "req-1", "corr-1", null);
 
         String result = tools.getClaimStatus();
@@ -54,12 +54,12 @@ class InsuranceAgentToolsObservabilityTest {
     void allowedToolDoesNotEmitSecurityDenied() {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.checkPermission(any(), any())).thenReturn(true);
-        when(claims.checkPermissionWithToken(any(), any(), anyString()))
+        when(claims.checkPermissionWithToken(any(), any(), any()))
                 .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimStatus(99L)).thenReturn(null); // NOT_FOUND path is fine; just check no denial
 
         InsuranceAgentTools tools = new InsuranceAgentTools(99L, 7L, 99L, claims,
-                mock(CustomerServiceGateway.class), new ToolRegistry(), 1000,
+                mock(PolicyServiceGateway.class), new ToolRegistry(), 1000,
                 p -> { }, telemetry, "req-1", "corr-1", null);
 
         tools.getClaimStatus();
@@ -75,7 +75,7 @@ class InsuranceAgentToolsObservabilityTest {
         List<InsuranceAgentTools.ProposedUpdate> proposals = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         InsuranceAgentTools tools = new InsuranceAgentTools(99L, 7L, 99L, claims,
-                mock(CustomerServiceGateway.class), new ToolRegistry(), 1000,
+                mock(PolicyServiceGateway.class), new ToolRegistry(), 1000,
                 proposals::add, telemetry, "req-1", "corr-1", null);
 
         String result = tools.proposeClaimUpdate("DOCS_REQUESTED", "awaiting police report");
@@ -87,3 +87,5 @@ class InsuranceAgentToolsObservabilityTest {
         assertThat(telemetry.eventTypes()).doesNotContain("SECURITY_DENIED");
     }
 }
+
+

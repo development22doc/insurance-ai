@@ -78,3 +78,4 @@ class GuardedToolCallbackTest {
         assertThat(guarded.getToolDefinition()).isSameAs(definition);
     }
 }
+

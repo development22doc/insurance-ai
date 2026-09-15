@@ -20,6 +20,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -40,9 +44,16 @@ public class PolicyContractReadService {
     @Cacheable(value = RedisCacheConfig.POLICY_CONTRACTS_CACHE, key = "T(com.claimassist.platform.policy_service.service.PolicyContractReadService).policyContractListKey(#customerId)", sync = true)
     public List<PolicyContractSummaryDto> getPoliciesForCustomer(Long customerId) {
         log.debug("Loading contract policy list for customerId={}", customerId);
-        return policyContractRepository.findByCustomerIdOrderByCreatedAtDesc(customerId)
-                .stream()
-                .map(this::toSummaryDto)
+        List<PolicyContract> contracts = policyContractRepository.findByCustomerIdOrderByCreatedAtDesc(customerId);
+        Map<Long, Plan> plansById = loadPlansById(contracts.stream()
+                .map(PolicyContract::getCurrentPolicyPeriod)
+                .filter(Objects::nonNull)
+                .map(PolicyPeriod::getPlanId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+        return contracts.stream()
+                .map(contract -> toSummaryDto(contract, plansById))
                 .toList();
     }
 
@@ -56,16 +67,22 @@ public class PolicyContractReadService {
         log.debug("Loading contract policy detail for customerId={} policyId={}", customerId, policyId);
         PolicyContract contract = policyContractRepository.findByIdAndCustomerId(policyId, customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Policy contract", String.valueOf(policyId)));
-        return toDetailDto(contract);
+        Map<Long, Plan> plansById = loadPlansById(contract.getCurrentPolicyPeriod() == null ? List.of() : List.of(contract.getCurrentPolicyPeriod().getPlanId()));
+        return toDetailDto(contract, plansById);
     }
 
     public List<PolicyPeriodDto> getPeriodsForPolicy(Long policyId) {
         Long customerId = currentUserProvider.getCurrentUserId();
         PolicyContract contract = policyContractRepository.findByIdAndCustomerId(policyId, customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Policy contract", String.valueOf(policyId)));
-        return policyPeriodRepository.findByPolicyContractIdOrderByRenewalSequenceAsc(contract.getId())
-                .stream()
-                .map(this::toPeriodDto)
+        List<PolicyPeriod> periods = policyPeriodRepository.findByPolicyContractIdOrderByRenewalSequenceAsc(contract.getId());
+        Map<Long, Plan> plansById = loadPlansById(periods.stream()
+                .map(PolicyPeriod::getPlanId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+        return periods.stream()
+                .map(period -> toPeriodDto(period, plansById))
                 .toList();
     }
 
@@ -76,7 +93,8 @@ public class PolicyContractReadService {
         if (contract.getCurrentPolicyPeriod() == null) {
             throw new ResourceNotFoundException("Policy current period", String.valueOf(policyId));
         }
-        return toPeriodDto(contract.getCurrentPolicyPeriod());
+        Map<Long, Plan> plansById = loadPlansById(List.of(contract.getCurrentPolicyPeriod().getPlanId()));
+        return toPeriodDto(contract.getCurrentPolicyPeriod(), plansById);
     }
 
     public static String policyContractListKey(Long customerId) {
@@ -87,9 +105,9 @@ public class PolicyContractReadService {
         return "contract:customer:" + customerId + ":policy:" + policyId;
     }
 
-    private PolicyContractSummaryDto toSummaryDto(PolicyContract contract) {
+    private PolicyContractSummaryDto toSummaryDto(PolicyContract contract, Map<Long, Plan> plansById) {
         PolicyPeriod currentPeriod = contract.getCurrentPolicyPeriod();
-        Plan plan = currentPeriod != null ? loadPlan(currentPeriod.getPlanId()) : null;
+        Plan plan = currentPeriod != null && currentPeriod.getPlanId() != null ? plansById.get(currentPeriod.getPlanId()) : null;
         Product product = plan != null ? plan.getProduct() : null;
 
         return new PolicyContractSummaryDto(
@@ -112,9 +130,9 @@ public class PolicyContractReadService {
         );
     }
 
-    private PolicyContractDetailDto toDetailDto(PolicyContract contract) {
+    private PolicyContractDetailDto toDetailDto(PolicyContract contract, Map<Long, Plan> plansById) {
         PolicyPeriod currentPeriod = contract.getCurrentPolicyPeriod();
-        Plan plan = currentPeriod != null ? loadPlan(currentPeriod.getPlanId()) : null;
+        Plan plan = currentPeriod != null && currentPeriod.getPlanId() != null ? plansById.get(currentPeriod.getPlanId()) : null;
         Product product = plan != null ? plan.getProduct() : null;
 
         return new PolicyContractDetailDto(
@@ -139,8 +157,8 @@ public class PolicyContractReadService {
         );
     }
 
-    private PolicyPeriodDto toPeriodDto(PolicyPeriod period) {
-        Plan plan = loadPlan(period.getPlanId());
+    private PolicyPeriodDto toPeriodDto(PolicyPeriod period, Map<Long, Plan> plansById) {
+        Plan plan = period != null && period.getPlanId() != null ? plansById.get(period.getPlanId()) : null;
         return new PolicyPeriodDto(
                 period.getId(),
                 period.getPolicyContract() != null ? period.getPolicyContract().getId() : null,
@@ -159,8 +177,11 @@ public class PolicyContractReadService {
         );
     }
 
-    private Plan loadPlan(Long planId) {
-        return planRepository.findById(planId)
-                .orElse(null);
+    private Map<Long, Plan> loadPlansById(List<Long> planIds) {
+        if (planIds == null || planIds.isEmpty()) {
+            return Map.of();
+        }
+        return planRepository.findAllById(planIds).stream()
+                .collect(Collectors.toMap(Plan::getId, Function.identity()));
     }
 }

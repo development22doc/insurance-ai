@@ -27,8 +27,6 @@ public class RedisCacheConfig {
     public static final String PRODUCTS_CACHE = "policyProducts";
     public static final String PRODUCT_DETAILS_CACHE = "policyProductDetails";
     public static final String PLAN_DETAILS_CACHE = "policyPlanDetails";
-    public static final String CUSTOMER_POLICIES_CACHE = "customerPolicyList";
-    public static final String CUSTOMER_POLICY_DETAILS_CACHE = "customerPolicyDetail";
     public static final String POLICY_CONTRACTS_CACHE = "policyContractList";
     public static final String POLICY_CONTRACT_DETAILS_CACHE = "policyContractDetail";
     public static final String POLICY_PERIOD_HISTORY_CACHE = "policyPeriodHistory";
@@ -37,8 +35,6 @@ public class RedisCacheConfig {
     private static final Duration PRODUCTS_TTL = Duration.ofMinutes(15);
     private static final Duration PRODUCT_DETAILS_TTL = Duration.ofMinutes(15);
     private static final Duration PLAN_DETAILS_TTL = Duration.ofMinutes(15);
-    private static final Duration CUSTOMER_POLICIES_TTL = Duration.ofMinutes(10);
-    private static final Duration CUSTOMER_POLICY_DETAILS_TTL = Duration.ofMinutes(10);
     private static final Duration POLICY_CONTRACTS_TTL = Duration.ofMinutes(10);
     private static final Duration POLICY_CONTRACT_DETAILS_TTL = Duration.ofMinutes(10);
     private static final Duration POLICY_PERIOD_HISTORY_TTL = Duration.ofMinutes(10);
@@ -52,10 +48,8 @@ public class RedisCacheConfig {
 
         JsonMapper.Builder mapperBuilder = JsonMapper.builder().addModule(new JavaTimeModule());
         ObjectMapper objectMapper = mapperBuilder.build();
-        objectMapper = objectMapper.copy().activateDefaultTyping(
-                objectMapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.EVERYTHING
-        );
+        // Avoid enabling global default typing to reduce deserialization attack surface.
+        objectMapper = objectMapper.copy();
 
         GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer(objectMapper);
         template.setKeySerializer(new StringRedisSerializer());
@@ -70,10 +64,8 @@ public class RedisCacheConfig {
     public RedisCacheManagerBuilderCustomizer cacheManagerCustomizer() {
         JsonMapper.Builder mapperBuilder = JsonMapper.builder().addModule(new JavaTimeModule());
         ObjectMapper objectMapper = mapperBuilder.build();
-        objectMapper = objectMapper.copy().activateDefaultTyping(
-                objectMapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.EVERYTHING
-        );
+        // Avoid enabling global default typing to reduce deserialization attack surface.
+        objectMapper = objectMapper.copy();
 
         GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer(objectMapper);
 
@@ -87,8 +79,6 @@ public class RedisCacheConfig {
                 .withCacheConfiguration(PRODUCTS_CACHE, defaultConfig.entryTtl(PRODUCTS_TTL))
                 .withCacheConfiguration(PRODUCT_DETAILS_CACHE, defaultConfig.entryTtl(PRODUCT_DETAILS_TTL))
                 .withCacheConfiguration(PLAN_DETAILS_CACHE, defaultConfig.entryTtl(PLAN_DETAILS_TTL))
-                .withCacheConfiguration(CUSTOMER_POLICIES_CACHE, defaultConfig.entryTtl(CUSTOMER_POLICIES_TTL))
-                .withCacheConfiguration(CUSTOMER_POLICY_DETAILS_CACHE, defaultConfig.entryTtl(CUSTOMER_POLICY_DETAILS_TTL))
                 .withCacheConfiguration(POLICY_CONTRACTS_CACHE, defaultConfig.entryTtl(POLICY_CONTRACTS_TTL))
                 .withCacheConfiguration(POLICY_CONTRACT_DETAILS_CACHE, defaultConfig.entryTtl(POLICY_CONTRACT_DETAILS_TTL))
                 .withCacheConfiguration(POLICY_PERIOD_HISTORY_CACHE, defaultConfig.entryTtl(POLICY_PERIOD_HISTORY_TTL))

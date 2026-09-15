@@ -4,6 +4,7 @@ import com.claimassist.platform.common_lib.observability.CorrelationIdFilter;
 import com.claimassist.platform.common_lib.observability.DeveloperIdentity;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import com.claimassist.platform.common_lib.security.KeycloakJwtAuthenticationConverter;
+import com.claimassist.platform.policy_service.security.InternalRequestIdentity;
 import jakarta.servlet.DispatcherType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -35,6 +36,11 @@ public class PolicyServiceSecurityConfig {
     @Bean
     public CurrentUserProvider currentUserProvider() {
         return new CurrentUserProvider();
+    }
+
+    @Bean
+    public InternalRequestIdentity internalRequestIdentity(CurrentUserProvider currentUserProvider) {
+        return new InternalRequestIdentity(currentUserProvider);
     }
 
     @Bean
@@ -77,8 +83,12 @@ public class PolicyServiceSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // Allow minimal actuator health/info publicly; other actuator endpoints require authentication
+                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        // Stripe webhooks are signed and must be reachable without JWT — validate via signature inside controller
+                        .requestMatchers("/api/v1/webhooks/stripe").permitAll()
+                        // Swagger/OpenAPI should be authenticated in production; keep it behind auth
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
                 .oauth2ResourceServer(oauth2 -> oauth2

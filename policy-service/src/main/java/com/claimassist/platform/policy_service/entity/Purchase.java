@@ -42,10 +42,6 @@ public class Purchase {
     @JoinColumn(name = "plan_id", nullable = false)
     Plan plan;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_policy_id")
-    CustomerPolicy customerPolicy;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "purchase_type", length = 32)
     PurchaseType purchaseType;

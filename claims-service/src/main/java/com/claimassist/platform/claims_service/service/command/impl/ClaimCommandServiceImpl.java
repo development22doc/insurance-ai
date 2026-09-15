@@ -12,7 +12,7 @@ import com.claimassist.platform.claims_service.repository.ClaimStatusHistoryRepo
 import com.claimassist.platform.claims_service.service.command.ClaimCommandService;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.SubmitClaimCommand;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands.UpdateClaimStatusCommand;
-import com.claimassist.platform.claims_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.claims_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.claims_service.support.IdempotencyService;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import com.claimassist.platform.common_lib.observability.event.EventLogger;
@@ -53,7 +53,7 @@ public class ClaimCommandServiceImpl implements ClaimCommandService {
     private final ClaimPartyRepository claimPartyRepository;
     private final ClaimStatusHistoryRepository claimStatusHistoryRepository;
     private final ClaimMapper claimMapper;
-    private final CustomerServiceGateway customerServiceGateway;
+    private final PolicyServiceGateway policyServiceGateway;
     private final IdempotencyService idempotencyService;
     private final EventLogger eventLogger;
     private final PerformanceLogger performanceLogger;
@@ -78,11 +78,15 @@ public class ClaimCommandServiceImpl implements ClaimCommandService {
 
     private ClaimResponse doSubmitClaim(SubmitClaimCommand command) {
         // Never trust a client-supplied policyId at face value - confirm it's a
-        // real, Active policy before opening a claim against it. Also confirms
-        // customer-service considers this policy valid, which is the closest this
-        // system gets to "does this policy belong to this caller" without
-        // duplicating customer-service's own ownership table here.
-        PolicyCoverageDto policy = customerServiceGateway.getPolicyCoverage(command.policyId(), command.submittedByUserId());
+        // real, Active policy before opening a claim against it. Policy Service
+        // is now the authoritative source for policy coverage validation.
+        // Coverage is evaluated at the incident time (asOf) to ensure the policy
+        // was active when the loss occurred, not necessarily at claim submission time.
+        PolicyCoverageDto policy = policyServiceGateway.getPolicyCoverage(
+                command.policyId(),
+                command.submittedByUserId(),
+                command.incidentDate()
+        );
         if (!"Active".equals(policy.status())) {
             throw new BadRequestException("Cannot file a claim against a policy that is not Active (current status: " + policy.status() + ")");
         }

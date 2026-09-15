@@ -172,7 +172,7 @@ export async function getAllPolicies(): Promise<Policy[]> {
   const data = await parseApiResponse<any[]>(response);
   console.log('[API] getAllPolicies parsed, count:', data.length);
 
-  // Transform Policy Service CustomerPolicySummaryDto to frontend Policy type
+  // Transform Policy Service PolicyContractSummaryDto to frontend Policy type
   // Backend returns: { id, policyNumber, status, effectiveDate, renewalDate, productType, planName, annualPremiumCents, coverageLimitCents, currency }
   return data.map((item: any) => ({
     id: item.id,
@@ -196,7 +196,7 @@ export async function getPolicy(policyId: string): Promise<Policy> {
 
   const data = await parseApiResponse<any>(response);
 
-  // Transform Policy Service CustomerPolicyDetailDto to frontend Policy type
+  // Transform Policy Service PolicyContractDetailDto to frontend Policy type
   return {
     id: data.id,
     policyNumber: data.policyNumber,

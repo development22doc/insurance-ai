@@ -73,6 +73,10 @@ server:
   port: 8084
   shutdown: graceful
 
+security:
+  internal:
+    trusted-service-client-ids: ${TRUSTED_SERVICE_CLIENT_IDS:claimassist-admin-service,claimassist-claims-service}
+
 management:
   endpoints:
     web:

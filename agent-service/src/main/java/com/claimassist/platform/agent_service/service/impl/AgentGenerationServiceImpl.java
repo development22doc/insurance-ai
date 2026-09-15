@@ -24,7 +24,7 @@ import com.claimassist.platform.agent_service.security.OutputGuardrails;
 import com.claimassist.platform.agent_service.service.AgentGenerationService;
 import com.claimassist.platform.agent_service.service.AgentTurnPersistence;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGatewayApi;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGatewayApi;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGatewayApi;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import com.claimassist.platform.common_lib.observability.MDCUtility;
@@ -67,7 +67,7 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
     private final AgentTurnPersistence agentTurnPersistenceService;
     private final ToolRegistry toolRegistry;
     private final ClaimsServiceGatewayApi claimsServiceGateway;
-    private final CustomerServiceGatewayApi customerServiceGateway;
+    private final PolicyServiceGatewayApi PolicyServiceGateway;
     private final InputGuardrails inputGuardrails;
     private final OutputGuardrails outputGuardrails;
     private final ConversationMemoryService conversationMemoryService;
@@ -83,7 +83,7 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
                                      AgentTurnPersistence agentTurnPersistenceService,
                                      ToolRegistry toolRegistry,
                                      ClaimsServiceGatewayApi claimsServiceGateway,
-                                     CustomerServiceGatewayApi customerServiceGateway,
+                                     PolicyServiceGatewayApi PolicyServiceGateway,
                                      InputGuardrails inputGuardrails,
                                      OutputGuardrails outputGuardrails,
                                      ConversationMemoryService conversationMemoryService,
@@ -97,7 +97,7 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
         this.agentTurnPersistenceService = agentTurnPersistenceService;
         this.toolRegistry = toolRegistry;
         this.claimsServiceGateway = claimsServiceGateway;
-        this.customerServiceGateway = customerServiceGateway;
+        this.PolicyServiceGateway = PolicyServiceGateway;
         this.inputGuardrails = inputGuardrails;
         this.outputGuardrails = outputGuardrails;
         this.conversationMemoryService = conversationMemoryService;
@@ -113,7 +113,7 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
                                      AgentTurnPersistence agentTurnPersistenceService,
                                      ToolRegistry toolRegistry,
                                      ClaimsServiceGatewayApi claimsServiceGateway,
-                                     CustomerServiceGatewayApi customerServiceGateway,
+                                     PolicyServiceGatewayApi PolicyServiceGateway,
                                      InputGuardrails inputGuardrails,
                                      OutputGuardrails outputGuardrails,
                                      ConversationMemoryService conversationMemoryService,
@@ -121,7 +121,7 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
                                      AgentTelemetry agentTelemetry) {
         this(chatClient, agentAiProperties, currentUserProvider, agentSessionRepository,
                 agentTurnPersistenceService, toolRegistry, claimsServiceGateway,
-                customerServiceGateway, inputGuardrails, outputGuardrails,
+                PolicyServiceGateway, inputGuardrails, outputGuardrails,
                 conversationMemoryService, conversationContextBuilder, agentTelemetry,
                 new com.claimassist.platform.agent_service.security.SecurityExpressions(claimsServiceGateway));
     }
@@ -257,7 +257,7 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
                                                             final List<ProposedUpdate> proposedUpdates = new CopyOnWriteArrayList<>();
                                                             final List<ToolExecutionMetadata> executions = new CopyOnWriteArrayList<>();
                                                             InsuranceAgentTools tools = new InsuranceAgentTools(
-                                                                    claimId, policyId, userId, claimsServiceGateway, customerServiceGateway, toolRegistry,
+                                                                    claimId, policyId, userId, claimsServiceGateway, PolicyServiceGateway, toolRegistry,
                                                                     agentAiProperties.getMaxNoteLength(), proposedUpdates::add,
                                                                     agentTelemetry, requestId, correlation, jwtTokenString);
 
@@ -421,3 +421,4 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
                 });
     }
 }
+

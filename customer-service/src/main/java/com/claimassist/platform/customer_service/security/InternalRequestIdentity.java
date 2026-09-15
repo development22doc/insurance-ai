@@ -79,4 +79,23 @@ public class InternalRequestIdentity {
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toSet());
     }
+
+    /**
+     * Verify that the current call is from a trusted internal service.
+     * Used for diagnostic endpoints that should only be called by internal services.
+     */
+    public void verifyInternalServiceCall() {
+        var jwt = currentUserProvider.getCurrentJwt();
+
+        if (CurrentUserProvider.classify(jwt) == CallerType.USER) {
+            throw new AccessDeniedException(
+                    "Diagnostic endpoint requires service token, not user token");
+        }
+
+        String serviceClientId = currentUserProvider.getServiceClientId();
+        if (serviceClientId == null || !trustedClients().contains(serviceClientId)) {
+            throw new AccessDeniedException(
+                    "Untrusted service caller for diagnostic endpoint: " + serviceClientId);
+        }
+    }
 }

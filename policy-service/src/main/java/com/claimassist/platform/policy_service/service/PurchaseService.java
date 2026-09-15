@@ -6,12 +6,11 @@ import com.claimassist.platform.common_lib.security.CurrentUserProvider;
 import com.claimassist.platform.policy_service.dto.PurchaseInitiationRequest;
 import com.claimassist.platform.policy_service.dto.PurchaseResponse;
 import com.claimassist.platform.policy_service.dto.PurchaseStatusResponse;
-import com.claimassist.platform.policy_service.entity.CustomerPolicy;
 import com.claimassist.platform.policy_service.entity.Plan;
 import com.claimassist.platform.policy_service.entity.Product;
 import com.claimassist.platform.policy_service.entity.Purchase;
 import com.claimassist.platform.policy_service.entity.PurchaseStatus;
-import com.claimassist.platform.policy_service.repository.CustomerPolicyRepository;
+import com.claimassist.platform.policy_service.entity.PurchaseType;
 import com.claimassist.platform.policy_service.repository.PlanRepository;
 import com.claimassist.platform.policy_service.repository.PurchaseRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +18,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import jakarta.persistence.OptimisticLockException;
 
 import java.time.Instant;
 import java.util.EnumSet;
@@ -35,16 +39,14 @@ public class PurchaseService {
 
     private final PurchaseRepository purchaseRepository;
     private final PlanRepository planRepository;
-    private final CustomerPolicyRepository customerPolicyRepository;
     private final CurrentUserProvider currentUserProvider;
     private final StripePaymentGateway stripePaymentGateway;
     private final PolicyLifecycleService policyLifecycleService;
+    private final com.claimassist.platform.policy_service.service.PurchaseServiceCheckoutHelper checkoutHelper;
 
     @Transactional
     public PurchaseResponse initiatePurchase(PurchaseInitiationRequest request, String idempotencyKey) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new BadRequestException("Idempotency-Key header is required");
-        }
+        String normalizedKey = normalizeIdempotencyKey(idempotencyKey);
 
         Long customerId = currentUserProvider.getCurrentUserId();
         Long planId = request.planId();
@@ -68,7 +70,7 @@ public class PurchaseService {
             throw new BadRequestException("Plan pricing information is unavailable");
         }
 
-        Optional<Purchase> existing = purchaseRepository.findByIdempotencyKey(idempotencyKey);
+        Optional<Purchase> existing = purchaseRepository.findByIdempotencyKey(normalizedKey);
         if (existing.isPresent()) {
             Purchase existingPurchase = existing.get();
             if (!customerId.equals(existingPurchase.getCustomerId())) {
@@ -86,24 +88,44 @@ public class PurchaseService {
                 .amountCents(amountCents)
                 .currency(currency)
                 .status(PurchaseStatus.PENDING_PAYMENT)
-                .idempotencyKey(idempotencyKey)
+                .idempotencyKey(normalizedKey)
                 .initiatedAt(Instant.now())
                 .build();
 
         try {
             Purchase saved = purchaseRepository.saveAndFlush(purchase);
-            StripeCheckoutSession checkoutSession = stripePaymentGateway.prepareCheckoutSession(saved).orElse(null);
-            if (checkoutSession != null) {
-                saved.setProviderSessionId(checkoutSession.sessionId());
-                purchaseRepository.save(saved);
-                log.info("Created pending purchase purchaseId={} customerId={} planId={} checkoutSessionId={}",
-                        saved.getId(), customerId, planId, checkoutSession.sessionId());
-                return createResponse(saved, checkoutSession.sessionId(), checkoutSession.checkoutUrl(), checkoutSession.testMode());
-            }
+            // Defer external Stripe checkout session creation until after the DB transaction commits to avoid
+            // holding DB resources during a network call and to avoid inconsistent state if the txn rolls back.
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                                @Override
+                                public void afterCommit() {
+                                    try {
+                                        checkoutHelper.finalizeCheckoutSession(saved.getId());
+                                    } catch (Exception e) {
+                                        // log inside helper; swallow here to avoid disrupting commit.
+                                    }
+                                }
+                            });
+                        } else {
+                            // No transaction synchronization active (unit tests or non-transactional execution): call directly so tests can stub stripePaymentGateway.
+                            try {
+                                StripeCheckoutSession checkoutSession = stripePaymentGateway.prepareCheckoutSession(saved).orElse(null);
+                                if (checkoutSession != null) {
+                                    saved.setProviderSessionId(checkoutSession.sessionId());
+                                    purchaseRepository.save(saved);
+                                    log.info("Created pending purchase purchaseId={} customerId={} planId={} checkoutSessionId={}",
+                                            saved.getId(), customerId, planId, checkoutSession.sessionId());
+                                    return createResponse(saved, checkoutSession.sessionId(), checkoutSession.checkoutUrl(), checkoutSession.testMode());
+                                }
+                            } catch (Exception e) {
+                                log.warn("Failed to prepare checkout session synchronously for purchaseId={}", saved.getId(), e);
+                            }
+                        }
             log.info("Created pending purchase purchaseId={} customerId={} planId={}", saved.getId(), customerId, planId);
             return toResponse(saved);
         } catch (DataIntegrityViolationException ex) {
-            Optional<Purchase> retryResult = purchaseRepository.findByIdempotencyKey(idempotencyKey);
+            Optional<Purchase> retryResult = purchaseRepository.findByIdempotencyKey(normalizedKey);
             if (retryResult.isPresent()) {
                 Purchase duplicate = retryResult.get();
                 if (!customerId.equals(duplicate.getCustomerId())) {
@@ -125,6 +147,20 @@ public class PurchaseService {
         return toStatusResponse(purchase);
     }
 
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new BadRequestException("Idempotency-Key header is required");
+        }
+        String normalized = idempotencyKey.trim();
+        if (normalized.length() > 255) {
+            throw new BadRequestException("Idempotency-Key is too long (max 255 characters)");
+        }
+        if (normalized.chars().anyMatch(c -> c <= 31)) {
+            throw new BadRequestException("Idempotency-Key contains invalid characters");
+        }
+        return normalized;
+    }
+
     @Transactional
     public void applyWebhookState(Long purchaseId, String stripeEventType) {
         Purchase purchase = purchaseRepository.findById(purchaseId)
@@ -137,7 +173,29 @@ public class PurchaseService {
         }
 
         applyStateTransition(purchase, targetStatus);
-        purchaseRepository.save(purchase);
+        try {
+            purchaseRepository.save(purchase);
+        } catch (ObjectOptimisticLockingFailureException | OptimisticLockException e) {
+            // On optimistic lock, reload authoritative state and determine whether the event has been applied
+            // or still requires processing. If another transaction already moved the Purchase to a state that
+            // makes this event obsolete, accept the webhook. Otherwise rethrow to let the caller/controller
+            // return an error so Stripe will retry.
+            log.info("Optimistic lock while saving purchaseId={} for event={}. Reloading current state to decide.", purchaseId, stripeEventType);
+            Purchase reloaded = purchaseRepository.findById(purchaseId).orElse(null);
+            if (reloaded == null) {
+                // Unexpected: purchase disappeared. Propagate to cause retry.
+                throw e;
+            }
+            PurchaseStatus recalculatedTarget = resolveTargetStatus(reloaded.getStatus(), stripeEventType);
+            if (recalculatedTarget == null) {
+                // The current authoritative state does not allow the transition -> event is obsolete/already applied.
+                log.info("Event {} for purchaseId={} is obsolete after reload. Current status={}", stripeEventType, purchaseId, reloaded.getStatus());
+                return;
+            }
+            // The event still appears meaningful against the reloaded state: do not swallow; rethrow to allow retry.
+            log.warn("Event {} for purchaseId={} still requires processing after optimistic lock; rethrowing to allow retry.", stripeEventType, purchaseId);
+            throw e;
+        }
     }
 
     private PurchaseStatus resolveTargetStatus(PurchaseStatus currentStatus, String stripeEventType) {
@@ -193,7 +251,11 @@ public class PurchaseService {
             case PAID -> {
                 purchase.setPaidAt(now);
                 purchase.setStatus(PurchaseStatus.PAID);
-                policyLifecycleService.createInitialPolicyForPurchase(purchase, now);
+                if (PurchaseType.RENEWAL.equals(purchase.getPurchaseType())) {
+                    policyLifecycleService.activateRenewal(purchase, now);
+                } else {
+                    policyLifecycleService.createInitialPolicyForPurchase(purchase, now);
+                }
             }
             case CANCELLED -> {
                 purchase.setCancelledAt(now);
@@ -206,31 +268,6 @@ public class PurchaseService {
         }
 
         log.info("Purchase state transition purchaseId={} {} -> {}", purchase.getId(), previousStatus, nextStatus);
-    }
-
-    private void activateCustomerPolicy(Purchase purchase) {
-        if (purchase.getCustomerPolicy() != null) {
-            return;
-        }
-
-        String policyNumber = "POL-" + purchase.getCustomerId() + "-" + purchase.getId();
-        CustomerPolicy customerPolicy = customerPolicyRepository.findByCustomerIdAndPlanIdAndStatus(
-                        purchase.getCustomerId(), purchase.getPlan().getId(), "ACTIVE")
-                .orElse(null);
-
-        if (customerPolicy == null) {
-            customerPolicy = CustomerPolicy.builder()
-                    .customerId(purchase.getCustomerId())
-                    .plan(purchase.getPlan())
-                    .policyNumber(policyNumber)
-                    .status("ACTIVE")
-                    .effectiveDate(Instant.now())
-                    .activatedAt(Instant.now())
-                    .build();
-            customerPolicyRepository.save(customerPolicy);
-        }
-
-        purchase.setCustomerPolicy(customerPolicy);
     }
 
     private PurchaseResponse toResponse(Purchase purchase) {

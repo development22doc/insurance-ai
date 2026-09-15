@@ -9,7 +9,7 @@ import com.claimassist.platform.agent_service.security.InputGuardrails;
 import com.claimassist.platform.agent_service.security.OutputGuardrails;
 import com.claimassist.platform.agent_service.service.AgentTurnPersistence;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.service.impl.AgentGenerationServiceImpl;
 import com.claimassist.platform.agent_service.ai.tool.ToolRegistry;
 import com.claimassist.platform.agent_service.support.OllamaTestSupport;
@@ -58,7 +58,7 @@ class AgentOllamaSecurityIntegrationTest {
         AgentGenerationServiceImpl svc = new AgentGenerationServiceImpl(
                 neverCalled, new AgentAiProperties(), mock(CurrentUserProvider.class),
                 mock(AgentSessionRepository.class), mock(AgentTurnPersistence.class), new ToolRegistry(),
-                mock(ClaimsServiceGateway.class), mock(CustomerServiceGateway.class),
+                mock(ClaimsServiceGateway.class), mock(PolicyServiceGateway.class),
                 new InputGuardrails(new AgentAiProperties()), new OutputGuardrails(new AgentAiProperties()),
                 new com.claimassist.platform.agent_service.memory.ConversationMemoryService(
                         mock(com.claimassist.platform.agent_service.repository.AgentMessageRepository.class),
@@ -93,7 +93,7 @@ class AgentOllamaSecurityIntegrationTest {
 
         AgentGenerationServiceImpl svc = new AgentGenerationServiceImpl(
                 chatClient, props, currentUser, sessionRepo, persistence, new ToolRegistry(), claims,
-                mock(CustomerServiceGateway.class), new InputGuardrails(props), new OutputGuardrails(props),
+                mock(PolicyServiceGateway.class), new InputGuardrails(props), new OutputGuardrails(props),
                 new com.claimassist.platform.agent_service.memory.ConversationMemoryService(
                         mock(com.claimassist.platform.agent_service.repository.AgentMessageRepository.class), props),
                 new com.claimassist.platform.agent_service.memory.ConversationContextBuilder(props),
@@ -106,6 +106,7 @@ class AgentOllamaSecurityIntegrationTest {
         // Normal questions are NOT rejected by the input guardrail.
         assertThat(events).noneMatch(e -> "error".equals(e.eventType()));
         verify(persistence, org.mockito.Mockito.timeout(5000)).finalizeTurn(
-                anyString(), any(), anyString(), anyLong(), any(), anyLong(), any(), any());
+                anyString(), any(), any(), anyLong(), any(), anyLong(), any(), any());
     }
 }
+

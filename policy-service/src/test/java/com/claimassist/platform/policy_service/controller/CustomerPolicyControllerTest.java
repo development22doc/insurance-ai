@@ -2,11 +2,10 @@ package com.claimassist.platform.policy_service.controller;
 
 import com.claimassist.platform.common_lib.error.ResourceNotFoundException;
 import com.claimassist.platform.common_lib.security.CurrentUserProvider;
-import com.claimassist.platform.policy_service.dto.CustomerPolicyDetailDto;
-import com.claimassist.platform.policy_service.dto.CustomerPolicySummaryDto;
+import com.claimassist.platform.policy_service.dto.PolicyContractDetailDto;
+import com.claimassist.platform.policy_service.dto.PolicyContractSummaryDto;
 import com.claimassist.platform.policy_service.dto.PolicyPeriodDto;
 import com.claimassist.platform.policy_service.exception.GlobalExceptionHandler;
-import com.claimassist.platform.policy_service.service.CustomerPolicyReadService;
 import com.claimassist.platform.policy_service.service.PolicyContractReadService;
 import com.claimassist.platform.policy_service.service.PolicyLifecycleService;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,9 +31,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CustomerPolicyControllerTest {
 
     @Mock
-    private CustomerPolicyReadService customerPolicyReadService;
-
-    @Mock
     private PolicyContractReadService policyContractReadService;
 
     @Mock
@@ -47,7 +43,7 @@ class CustomerPolicyControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new CustomerPolicyController(customerPolicyReadService, policyContractReadService, policyLifecycleService, currentUserProvider))
+        mockMvc = MockMvcBuilders.standaloneSetup(new CustomerPolicyController(policyContractReadService, policyLifecycleService, currentUserProvider))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(new LocalValidatorFactoryBean())
                 .build();
@@ -56,12 +52,14 @@ class CustomerPolicyControllerTest {
     @Test
     void getMyPolicies_returnsListForCurrentCustomer() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(42L);
-        when(customerPolicyReadService.getPoliciesForCustomer(42L)).thenReturn(List.of(
-                new CustomerPolicySummaryDto(
+        when(policyContractReadService.getPoliciesForCustomer(42L)).thenReturn(List.of(
+                new PolicyContractSummaryDto(
                         1L,
                         "POL-1",
                         "ACTIVE",
+                        11L,
                         Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2026-01-01T00:00:00Z"),
                         Instant.parse("2026-01-01T00:00:00Z"),
                         10L,
                         "Auto Insurance",
@@ -83,11 +81,13 @@ class CustomerPolicyControllerTest {
     @Test
     void getMyPolicy_returnsCustomerPolicyDetail() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(42L);
-        when(customerPolicyReadService.getPolicyForCustomer(42L, 7L)).thenReturn(new CustomerPolicyDetailDto(
+        when(policyContractReadService.getPolicyForCustomer(42L, 7L)).thenReturn(new PolicyContractDetailDto(
                 7L,
                 "POL-7",
                 "ACTIVE",
+                11L,
                 Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-01-01T00:00:00Z"),
                 null,
                 null,
@@ -110,8 +110,8 @@ class CustomerPolicyControllerTest {
     @Test
     void getMyPolicy_notFound_returns404() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(42L);
-        when(customerPolicyReadService.getPolicyForCustomer(42L, 99L))
-                .thenThrow(new ResourceNotFoundException("Policy", "99"));
+        when(policyContractReadService.getPolicyForCustomer(42L, 99L))
+                .thenThrow(new ResourceNotFoundException("Policy contract", "99"));
 
         mockMvc.perform(get("/api/v1/customers/me/policies/99"))
                 .andExpect(status().isNotFound());
@@ -171,11 +171,13 @@ class CustomerPolicyControllerTest {
     @Test
     void cancelPolicy_cancelsPolicyAndReturnsUpdatedDetail() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(42L);
-        when(customerPolicyReadService.getPolicyForCustomer(42L, 7L)).thenReturn(new CustomerPolicyDetailDto(
+        when(policyContractReadService.getPolicyForCustomer(42L, 7L)).thenReturn(new PolicyContractDetailDto(
                 7L,
                 "POL-7",
                 "CANCELLED",
+                11L,
                 Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-01-01T00:00:00Z"),
                 null,
                 null,

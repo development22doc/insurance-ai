@@ -46,7 +46,7 @@ public class ToolRegistry {
                 POLICY_COVERAGE,
                 "Get the claim's underlying policy coverage details.",
                 ToolRiskLevel.READ, ClaimPermission.VIEW,
-                0L, 2, false, "customer-service", "POLICY_READ"));
+                0L, 2, false, "policy-service", "POLICY_READ"));
         catalog.put(CLAIM_DOCUMENTS, new ToolMetadata(
                 CLAIM_DOCUMENTS,
                 "Get the documents submitted for this claim.",

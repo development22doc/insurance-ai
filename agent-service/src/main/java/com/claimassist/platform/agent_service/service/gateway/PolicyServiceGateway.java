@@ -1,7 +1,7 @@
 package com.claimassist.platform.agent_service.service.gateway;
 
 import com.claimassist.platform.agent_service.cache.CacheService;
-import com.claimassist.platform.agent_service.client.CustomerClient;
+import com.claimassist.platform.agent_service.client.PolicyClient;
 import com.claimassist.platform.agent_service.config.CacheProperties;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -15,31 +15,31 @@ import org.springframework.web.reactive.function.client.WebClient;
 /**
  * Coverage lookups degrade gracefully (a placeholder DTO, not a thrown
  * exception) - same reasoning as ClaimsServiceGateway's read-only calls: a
- * transient customer-service hiccup shouldn't abort the whole agent turn.
+ * transient policy-service hiccup shouldn't abort the whole agent turn.
  */
 @Slf4j
-public class CustomerServiceGateway implements CustomerServiceGatewayApi {
+public class PolicyServiceGateway implements PolicyServiceGatewayApi {
 
-    private static final String INSTANCE = "customerService";
+    private static final String INSTANCE = "policyService";
 
-    private final CustomerClient customerClient;
+        private final PolicyClient policyClient;
     private final CacheService cacheService;
     private final CacheProperties cacheProperties;
-    private final WebClient customerServiceWebClient;
+    private final WebClient policyServiceWebClient;
 
-    public CustomerServiceGateway(CustomerClient customerClient,
-                                 CacheService cacheService,
-                                 CacheProperties cacheProperties,
-                                 WebClient customerServiceWebClient) {
-        this.customerClient = customerClient;
+    public PolicyServiceGateway(PolicyClient policyClient,
+                                      CacheService cacheService,
+                                      CacheProperties cacheProperties,
+                                      WebClient policyServiceWebClient) {
+            this.policyClient = policyClient;
         this.cacheService = cacheService;
         this.cacheProperties = cacheProperties;
-        this.customerServiceWebClient = customerServiceWebClient;
+        this.policyServiceWebClient = policyServiceWebClient;
     }
 
     // Backwards-compatible constructor for tests and legacy callers
-    public CustomerServiceGateway(CustomerClient customerClient, CacheService cacheService, CacheProperties cacheProperties) {
-        this(customerClient, cacheService, cacheProperties, WebClient.create());
+    public PolicyServiceGateway(PolicyClient policyClient, CacheService cacheService, CacheProperties cacheProperties) {
+            this(policyClient, cacheService, cacheProperties, WebClient.create());
     }
 
     @CircuitBreaker(name = INSTANCE, fallbackMethod = "policyFallback")
@@ -50,7 +50,7 @@ public class CustomerServiceGateway implements CustomerServiceGatewayApi {
         String key = cacheService.key("get_policy_coverage", "policy", policyId);
         return cacheService.getOrLoad(
                 key, new TypeReference<PolicyCoverageDto>() {}, cacheProperties.getPolicyCoverageTtl(),
-                () -> customerClient.getPolicyCoverage(policyId, targetUserId),
+                () -> policyClient.getPolicyCoverage(policyId, null, targetUserId),
                 this::isCacheableCoverage);
     }
 
@@ -63,7 +63,7 @@ public class CustomerServiceGateway implements CustomerServiceGatewayApi {
     public reactor.core.publisher.Mono<PolicyCoverageDto> getPolicyCoverageReactive(Long policyId, Long targetUserId, String jwtToken) {
         String path = "/internal/v1/policies/" + policyId + "/coverage";
 
-        return customerServiceWebClient.get()
+        return policyServiceWebClient.get()
                 .uri(path)
                 .headers(h -> {
                     if (jwtToken != null && !jwtToken.isBlank()) {
@@ -89,10 +89,10 @@ public class CustomerServiceGateway implements CustomerServiceGatewayApi {
     @SuppressWarnings("unused")
     private PolicyCoverageDto policyFallback(Long policyId, Long targetUserId, Throwable t) {
         if (isNotFound(t)) {
-            log.warn("customer-service returned NOT FOUND for policy {}: {}", policyId, t.getMessage());
+            log.warn("policy-service returned NOT FOUND for policy {}: {}", policyId, t.getMessage());
             return new PolicyCoverageDto(policyId, null, "NOT_FOUND", "UNKNOWN", "UNKNOWN", null, null, null);
         }
-        log.warn("customer-service unavailable fetching coverage for policy {}: {}", policyId, t.getMessage());
+        log.warn("policy-service unavailable fetching coverage for policy {}: {}", policyId, t.getMessage());
         return new PolicyCoverageDto(policyId, "UNKNOWN", "UNAVAILABLE", "UNKNOWN", "UNKNOWN", null, null, null);
     }
 
@@ -107,3 +107,4 @@ public class CustomerServiceGateway implements CustomerServiceGatewayApi {
         return false;
     }
 }
+

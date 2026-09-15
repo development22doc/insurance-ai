@@ -3,7 +3,7 @@ package com.claimassist.platform.agent_service.service;
 import com.claimassist.platform.agent_service.ai.tool.ToolRegistry;
 import com.claimassist.platform.agent_service.llm.InsuranceAgentTools;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import org.junit.jupiter.api.Test;
@@ -60,7 +60,7 @@ class RequestIsolationTest {
 
     private InsuranceAgentTools toolsFor(long claimId, long policyId, List<String> proposals) {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
-        CustomerServiceGateway customer = mock(CustomerServiceGateway.class);
+        PolicyServiceGateway customer = mock(PolicyServiceGateway.class);
         when(claims.checkPermission(anyLong(), any())).thenReturn(true);
         when(claims.getClaimStatus(claimId)).thenReturn(
                 new ClaimStatusDto(claimId, policyId, "CLM", "SUBMITTED", "FIRE", 100L, null, List.of()));
@@ -71,3 +71,4 @@ class RequestIsolationTest {
                 p -> proposals.add(p.proposedStatus() + "/" + id.get()), null, "", "", null);
     }
 }
+

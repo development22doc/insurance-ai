@@ -7,7 +7,7 @@ import com.claimassist.platform.agent_service.entity.AgentSession;
 import com.claimassist.platform.agent_service.entity.AgentSessionId;
 import com.claimassist.platform.agent_service.repository.AgentSessionRepository;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.service.impl.AgentGenerationServiceImpl;
 import com.claimassist.platform.agent_service.support.AgentTelemetryTestSupport;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
@@ -56,7 +56,7 @@ class AgentGenerationServiceImplTest {
         ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
         when(claims.getClaimStatus(99L))
                 .thenReturn(new ClaimStatusDto(99L, 7L, "CLM-99", "UNDER_REVIEW", "FIRE", 1000L, null, List.of()));
-        CustomerServiceGateway customer = mock(CustomerServiceGateway.class);
+        PolicyServiceGateway customer = mock(PolicyServiceGateway.class);
         return new AgentGenerationServiceImpl(
                 client, props, currentUser, sessionRepo, persistence, new ToolRegistry(), claims, customer,
                 new com.claimassist.platform.agent_service.security.InputGuardrails(props),
@@ -118,7 +118,7 @@ class AgentGenerationServiceImplTest {
         List<StreamResponse> events = svc.streamResponse("hi", 99L).collectList().block();
 
         assertThat(events.get(0).errorCode()).isEqualTo("OLLAMA_UNAVAILABLE");
-        verify(persistence, timeout(5000)).finalizeTurn(anyString(), any(), anyString(),
+        verify(persistence, timeout(5000)).finalizeTurn(anyString(), any(), any(),
                 anyLong(), any(), anyLong(), any(), any());
     }
 
@@ -127,7 +127,7 @@ class AgentGenerationServiceImplTest {
         AgentTurnPersistence persistence = mock(AgentTurnPersistence.class);
         AgentGenerationServiceImpl svc = service(chatClientWith(Flux.just("ok")), persistence);
         svc.streamResponse("hi", 99L).collectList().block();
-        verify(persistence, timeout(5000)).finalizeTurn(anyString(), any(), anyString(),
+        verify(persistence, timeout(5000)).finalizeTurn(anyString(), any(), any(),
                 anyLong(), any(), anyLong(), any(), any());
     }
 
@@ -162,3 +162,4 @@ class AgentGenerationServiceImplTest {
         assertThat(textCaptor.getValue()).isEqualTo("The assistant is currently unavailable. Please try again shortly.");
     }
 }
+

@@ -25,7 +25,7 @@ spring:
           claims-service:
             connect-timeout: 2000
             read-timeout: 5000
-          customer-service:
+          policy-service:
             connect-timeout: 2000
             read-timeout: 5000
   data:
@@ -128,7 +128,7 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
-      customerService:
+      policyService:
         sliding-window-size: 20
         sliding-window-type: COUNT_BASED
         minimum-number-of-calls: 10
@@ -140,7 +140,7 @@ resilience4j:
       claimsService:
         max-concurrent-calls: 20
         max-wait-duration: 500ms
-      customerService:
+      policyService:
         max-concurrent-calls: 20
         max-wait-duration: 500ms
   ratelimiter:
@@ -149,7 +149,7 @@ resilience4j:
         limit-for-period: 100
         limit-refresh-period: 1s
         timeout-duration: 0s
-      customerService:
+      policyService:
         limit-for-period: 100
         limit-refresh-period: 1s
         timeout-duration: 0s
@@ -167,7 +167,7 @@ resilience4j:
         ignore-exceptions:
           - feign.FeignException.Unauthorized
           - feign.FeignException.NotFound
-      customerService:
+      policyService:
         max-attempts: 3
         wait-duration: 300ms
         enable-exponential-backoff: true

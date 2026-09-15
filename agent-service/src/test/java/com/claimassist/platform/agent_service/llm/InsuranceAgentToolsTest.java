@@ -2,7 +2,7 @@ package com.claimassist.platform.agent_service.llm;
 
 import com.claimassist.platform.agent_service.ai.tool.ToolRegistry;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.common_lib.dto.ClaimDocumentSummaryDto;
 import com.claimassist.platform.common_lib.dto.ClaimStatusDto;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
@@ -15,15 +15,17 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class InsuranceAgentToolsTest {
 
     private final ClaimsServiceGateway claims = mock(ClaimsServiceGateway.class);
-    private final CustomerServiceGateway customer = mock(CustomerServiceGateway.class);
+    private final PolicyServiceGateway customer = mock(PolicyServiceGateway.class);
     private final List<InsuranceAgentTools.ProposedUpdate> proposed = new ArrayList<>();
     private final ToolRegistry registry = new ToolRegistry();
     private InsuranceAgentTools tools;
@@ -32,15 +34,16 @@ class InsuranceAgentToolsTest {
     void setUp() {
         tools = new InsuranceAgentTools(42L, 7L, 42L, claims, customer, registry, 1000, proposed::add, null, "", "", null);
         when(claims.checkPermission(any(), any())).thenReturn(true);
-        when(claims.checkPermissionWithToken(any(), any(), anyString()))
+        when(claims.checkPermissionWithToken(any(), any(), any()))
                 .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.checkPermissionReactive(any(), any()))
                 .thenReturn(reactor.core.publisher.Mono.just(true));
-        when(claims.getClaimStatusReactive(any(), anyString()))
+        // Default success mocks - individual tests can override with reset()
+        when(claims.getClaimStatusReactive(any(), any()))
                 .thenReturn(reactor.core.publisher.Mono.just(
                         new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of())));
-        when(claims.getClaimStatus(any())).thenReturn(
-                new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of()));
+        when(customer.getPolicyCoverageReactive(any(), any(), any())).thenReturn(reactor.core.publisher.Mono.just(
+                new PolicyCoverageDto(7L, "P-1", "ACTIVE", "HOME", "Basic", 500L, 100000L, null)));
     }
 
     @Test
@@ -54,8 +57,8 @@ class InsuranceAgentToolsTest {
 
     @Test
     void getPolicyCoverageReturnsStructuredJson() {
-        when(customer.getPolicyCoverage(7L, 42L)).thenReturn(
-                new PolicyCoverageDto(7L, "P-1", "ACTIVE", "HOME", "Basic", 500L, 100000L, null));
+        when(customer.getPolicyCoverageReactive(any(), any(), any())).thenReturn(reactor.core.publisher.Mono.just(
+                new PolicyCoverageDto(7L, "P-1", "ACTIVE", "HOME", "Basic", 500L, 100000L, null)));
         String out = tools.getPolicyCoverage();
         assertThat(out).contains("\"success\":true").contains("\"coverageLimitCents\":100000");
     }
@@ -79,6 +82,11 @@ class InsuranceAgentToolsTest {
 
     @Test
     void getClaimStatusFailureReturnsStructuredFailure() {
+        reset(claims);
+        when(claims.checkPermission(any(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(any(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        when(claims.checkPermissionReactive(any(), any())).thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.getClaimStatusReactive(42L, ""))
                 .thenReturn(reactor.core.publisher.Mono.error(new IllegalStateException("down")));
         String out = tools.getClaimStatus();
@@ -89,10 +97,12 @@ class InsuranceAgentToolsTest {
 
     @Test
     void getPolicyCoverageFailureReturnsStructuredFailure() {
-        when(customer.getPolicyCoverage(7L, 42L)).thenThrow(new IllegalStateException("down"));
+        reset(customer);
+        when(customer.getPolicyCoverageReactive(any(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.error(new IllegalStateException("down")));
         String out = tools.getPolicyCoverage();
         assertThat(out).contains("\"success\":false")
-                .contains("\"errorCode\":\"CUSTOMER_SERVICE_UNAVAILABLE\"");
+                .contains("\"errorCode\":\"POLICY_SERVICE_UNAVAILABLE\"");
     }
 
     @Test
@@ -131,17 +141,23 @@ class InsuranceAgentToolsTest {
 
     @Test
     void unauthorizedReadToolRejectedWithoutBackendCall() {
+        reset(claims);
         when(claims.checkPermission(any(), any())).thenReturn(false);
+        when(claims.checkPermissionWithToken(any(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(false));
         when(claims.checkPermissionReactive(any(), any()))
                 .thenReturn(reactor.core.publisher.Mono.just(false));
         String out = tools.getClaimStatus();
         assertThat(out).contains("\"success\":false").contains("\"errorCode\":\"UNAUTHORIZED\"");
-        verify(claims, never()).getClaimStatusReactive(any(), anyString());
+        verify(claims, never()).getClaimStatusReactive(any(), any());
     }
 
     @Test
     void unauthorizedWriteToolRejectedWithoutProposal() {
+        reset(claims);
         when(claims.checkPermission(any(), any())).thenReturn(false);
+        when(claims.checkPermissionWithToken(any(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(false));
         when(claims.checkPermissionReactive(any(), any()))
                 .thenReturn(reactor.core.publisher.Mono.just(false));
         String out = tools.proposeClaimUpdate("DOCS_REQUESTED", "note");
@@ -151,8 +167,11 @@ class InsuranceAgentToolsTest {
 
     @Test
     void writeToolRequiresUpdateStatusPermission() {
+        reset(claims);
         when(claims.checkPermission(42L, com.claimassist.platform.common_lib.enums.ClaimPermission.UPDATE_STATUS))
                 .thenReturn(true);
+        when(claims.checkPermissionWithToken(eq(42L), eq(com.claimassist.platform.common_lib.enums.ClaimPermission.UPDATE_STATUS), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(claims.checkPermissionReactive(42L, com.claimassist.platform.common_lib.enums.ClaimPermission.UPDATE_STATUS))
                 .thenReturn(reactor.core.publisher.Mono.just(true));
         String out = tools.proposeClaimUpdate("DOCS_REQUESTED", "note");
@@ -183,7 +202,12 @@ class InsuranceAgentToolsTest {
 
     @Test
     void getClaimStatusNotFoundReturnsStructuredNonRetryableFailure() {
-        when(claims.getClaimStatusReactive(42L, ""))
+        reset(claims);
+        when(claims.checkPermission(any(), any())).thenReturn(true);
+        when(claims.checkPermissionWithToken(any(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        when(claims.checkPermissionReactive(any(), any())).thenReturn(reactor.core.publisher.Mono.just(true));
+        when(claims.getClaimStatusReactive(any(), any()))
                 .thenReturn(reactor.core.publisher.Mono.just(
                         new ClaimStatusDto(42L, 7L, null, "NOT_FOUND", "UNKNOWN", null, null, List.of())));
         String out = tools.getClaimStatus();
@@ -194,8 +218,10 @@ class InsuranceAgentToolsTest {
 
     @Test
     void getPolicyCoverageNotFoundReturnsStructuredNonRetryableFailure() {
-        when(customer.getPolicyCoverage(7L, 42L)).thenReturn(
-                new PolicyCoverageDto(7L, null, "NOT_FOUND", "UNKNOWN", "UNKNOWN", null, null, null));
+        reset(customer);
+        when(customer.getPolicyCoverageReactive(any(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.just(
+                        new PolicyCoverageDto(7L, null, "NOT_FOUND", "UNKNOWN", "UNKNOWN", null, null, null)));
         String out = tools.getPolicyCoverage();
         assertThat(out).contains("\"success\":false")
                 .contains("\"errorCode\":\"POLICY_NOT_FOUND\"")
@@ -209,7 +235,7 @@ class InsuranceAgentToolsTest {
         InsuranceAgentTools bad = new InsuranceAgentTools(null, 7L, 42L, claims, customer, registry, 1000, proposed::add, null, "", "", null);
         String out = bad.getClaimStatus();
         assertThat(out).contains("\"success\":false").contains("\"errorCode\":\"INVALID_TOOL_ARGUMENTS\"");
-        verify(claims, never()).getClaimStatusReactive(any(), anyString());
+        verify(claims, never()).getClaimStatusReactive(any(), any());
     }
 
     @Test
@@ -217,7 +243,7 @@ class InsuranceAgentToolsTest {
         InsuranceAgentTools bad = new InsuranceAgentTools(42L, 0L, 42L, claims, customer, registry, 1000, proposed::add, null, "", "", null);
         String out = bad.getPolicyCoverage();
         assertThat(out).contains("\"success\":false").contains("\"errorCode\":\"INVALID_TOOL_ARGUMENTS\"");
-        verify(customer, never()).getPolicyCoverage(any(), any());
+        verify(customer, never()).getPolicyCoverageReactive(any(), any(), any());
     }
 
     @Test
@@ -242,9 +268,9 @@ class InsuranceAgentToolsTest {
                 .thenReturn(reactor.core.publisher.Mono.just(
                         new ClaimStatusDto(42L, 7L, "CLM-1", "UNDER_REVIEW", "FIRE", 1000L, null, List.of())));
         assertThat(tools.getClaimStatus()).contains("\"source\":\"claims-service\"");
-        when(customer.getPolicyCoverage(7L, 42L)).thenReturn(
-                new PolicyCoverageDto(7L, "P-1", "ACTIVE", "HOME", "Basic", 500L, 100000L, null));
-        assertThat(tools.getPolicyCoverage()).contains("\"source\":\"customer-service\"");
+        when(customer.getPolicyCoverageReactive(any(), any(), any())).thenReturn(reactor.core.publisher.Mono.just(
+                new PolicyCoverageDto(7L, "P-1", "ACTIVE", "HOME", "Basic", 500L, 100000L, null)));
+        assertThat(tools.getPolicyCoverage()).contains("\"source\":\"policy-service\"");
     }
 
     @Test
@@ -256,3 +282,7 @@ class InsuranceAgentToolsTest {
                 .doesNotContain("db").doesNotContain("at com.claimassist");
     }
 }
+
+
+
+

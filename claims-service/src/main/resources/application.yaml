@@ -13,7 +13,7 @@ spring:
     openfeign:
       client:
         config:
-          customer-service:
+          policy-service:
             connect-timeout: 2000
             read-timeout: 5000
   autoconfigure:
@@ -33,6 +33,9 @@ spring:
 server:
   port: 8082
   shutdown: graceful
+
+policy-service:
+  uri: ${POLICY_SERVICE_URI:http://localhost:8084}
 
 outbox:
   publisher:
@@ -82,12 +85,12 @@ management:
 resilience4j:
   circuitbreaker:
     instances:
-      customerService:
+      policyService:
         sliding-window-size: 20
         minimum-number-of-calls: 10
   retry:
     instances:
-      customerService:
+      policyService:
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
         retry-exceptions:
@@ -98,5 +101,14 @@ resilience4j:
           - feign.FeignException.Unauthorized
           - feign.FeignException.NotFound
           - feign.FeignException.BadRequest
+  bulkhead:
+    instances:
+      policyService:
+        max-concurrent-calls: 10
+  ratelimiter:
+    instances:
+      policyService:
+        limit-for-period: 50
+        limit-refresh-period: 1s
 
 

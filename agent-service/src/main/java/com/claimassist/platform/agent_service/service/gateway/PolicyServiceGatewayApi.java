@@ -3,7 +3,7 @@ package com.claimassist.platform.agent_service.service.gateway;
 import com.claimassist.platform.common_lib.dto.PolicyCoverageDto;
 import reactor.core.publisher.Mono;
 
-public interface CustomerServiceGatewayApi {
+public interface PolicyServiceGatewayApi {
     PolicyCoverageDto getPolicyCoverage(Long policyId, Long targetUserId);
 
     /**
@@ -13,3 +13,4 @@ public interface CustomerServiceGatewayApi {
      */
     Mono<PolicyCoverageDto> getPolicyCoverageReactive(Long policyId, Long targetUserId, String jwtToken);
 }
+

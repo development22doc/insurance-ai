@@ -9,7 +9,7 @@ import com.claimassist.platform.agent_service.repository.AgentSessionRepository;
 import com.claimassist.platform.agent_service.service.AgentGenerationService;
 import com.claimassist.platform.agent_service.service.AgentTurnPersistence;
 import com.claimassist.platform.agent_service.service.gateway.ClaimsServiceGateway;
-import com.claimassist.platform.agent_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.agent_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.agent_service.service.impl.AgentGenerationServiceImpl;
 import com.claimassist.platform.agent_service.support.OllamaTestSupport;
 import com.claimassist.platform.agent_service.support.AgentTelemetryTestSupport;
@@ -133,8 +133,8 @@ class AgentServiceContextIntegrationTest {
         }
 
         @Bean
-        CustomerServiceGateway customerServiceGateway() {
-            return mock(CustomerServiceGateway.class);
+        PolicyServiceGateway PolicyServiceGateway() {
+            return mock(PolicyServiceGateway.class);
         }
 
         @Bean
@@ -180,7 +180,7 @@ class AgentServiceContextIntegrationTest {
         AgentGenerationService agentGenerationService(ChatClient chatClient,
                 AgentAiProperties props, ToolRegistry toolRegistry, CurrentUserProvider currentUser,
                 AgentSessionRepository sessionRepo, AgentTurnPersistence persistence,
-                ClaimsServiceGateway claims, CustomerServiceGateway customer,
+                ClaimsServiceGateway claims, PolicyServiceGateway customer,
                 com.claimassist.platform.agent_service.security.InputGuardrails inputGuardrails,
                 com.claimassist.platform.agent_service.security.OutputGuardrails outputGuardrails,
                 com.claimassist.platform.agent_service.memory.ConversationMemoryService conversationMemoryService,
@@ -192,3 +192,4 @@ class AgentServiceContextIntegrationTest {
         }
     }
 }
+

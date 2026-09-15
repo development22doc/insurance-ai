@@ -25,7 +25,7 @@ import com.claimassist.platform.claims_service.repository.ClaimStatusHistoryRepo
 import com.claimassist.platform.claims_service.service.command.ClaimCommands;
 import com.claimassist.platform.claims_service.service.command.ClaimCommandService;
 import com.claimassist.platform.claims_service.service.command.ClaimCommands;
-import com.claimassist.platform.claims_service.service.gateway.CustomerServiceGateway;
+import com.claimassist.platform.claims_service.service.gateway.PolicyServiceGateway;
 import com.claimassist.platform.claims_service.support.IdempotencyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +36,7 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
@@ -59,7 +60,7 @@ class ClaimCommandServiceTest {
     private ClaimMapper claimMapper;
 
     @Mock
-    private CustomerServiceGateway customerServiceGateway;
+    private PolicyServiceGateway policyServiceGateway;
 
     @Mock
     private IdempotencyService idempotencyService;
@@ -78,8 +79,9 @@ class ClaimCommandServiceTest {
 
     @BeforeEach
     void setUp() {
-submitCommand = new ClaimCommands.SubmitClaimCommand(
-                1L, "POL-001", Instant.now(),
+        Instant incidentDate = Instant.now();
+        submitCommand = new ClaimCommands.SubmitClaimCommand(
+                1L, "POL-001", incidentDate,
                 50000L, 1L, "test-key-123");
 
         statusCommand = new ClaimCommands.UpdateClaimStatusCommand(
@@ -89,8 +91,11 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     @Test
     void submitClaim_WithActivePolicy_ShouldSubmitClaimSuccess() {
         // Given
-        when(customerServiceGateway.getPolicyCoverage(1L, 1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
-                1L, "POL-001", "Active", "Plan Type A", "Health", 1000L, 100000L, null));
+        Instant incidentDate = submitCommand.incidentDate();
+        // Phase 22B: Claims policyId is a legacy Customer Service ID.
+        // PolicyCoverageDto now contains the resolved PolicyContract.id.
+        when(policyServiceGateway.getPolicyCoverage(1L, 1L, incidentDate)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
+                999L, "POL-001", "Active", "Plan Type A", "Health", 1000L, 100000L, null));
 
         when(claimRepository.save(any(Claim.class))).thenAnswer(invocation -> {
             Claim claim = invocation.getArgument(0);
@@ -124,8 +129,11 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     @Test
     void submitClaim_WithNonActivePolicy_ShouldThrowBadRequestException() {
         // Given
-        when(customerServiceGateway.getPolicyCoverage(1L, 1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
-                1L, "POL-001", "EXPIRED", "Plan Type A", "Health", 1000L, 100000L, null));
+        Instant incidentDate = submitCommand.incidentDate();
+        // Phase 22B: Claims policyId is a legacy Customer Service ID.
+        // PolicyCoverageDto now contains the resolved PolicyContract.id.
+        when(policyServiceGateway.getPolicyCoverage(1L, 1L, incidentDate)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
+                999L, "POL-001", "EXPIRED", "Plan Type A", "Health", 1000L, 100000L, null));
 
         when(idempotencyService.execute(
                 eq("test-key-123"),
@@ -145,8 +153,11 @@ submitCommand = new ClaimCommands.SubmitClaimCommand(
     @Test
     void submitClaim_WithActiveCanonicalStatus_ShouldSubmitClaimSuccess() {
         // Test that canonical "Active" status (title case) is accepted
-        when(customerServiceGateway.getPolicyCoverage(1L, 1L)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
-                1L, "POL-001", "Active", "Plan Type A", "Health", 1000L, 100000L, null));
+        Instant incidentDate = submitCommand.incidentDate();
+        // Phase 22B: Claims policyId is a legacy Customer Service ID.
+        // PolicyCoverageDto now contains the resolved PolicyContract.id.
+        when(policyServiceGateway.getPolicyCoverage(1L, 1L, incidentDate)).thenReturn(new com.claimassist.platform.common_lib.dto.PolicyCoverageDto(
+                999L, "POL-001", "Active", "Plan Type A", "Health", 1000L, 100000L, null));
 
         when(claimRepository.save(any(Claim.class))).thenAnswer(invocation -> {
             Claim claim = invocation.getArgument(0);
